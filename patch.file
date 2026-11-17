@@ -1,0 +1,102 @@
+--- script.js	2023-10-27 12:00:00.000000000 +0000
++++ script-new.js	2023-10-27 12:05:00.000000000 +0000
+@@ -1,4 +1,5 @@
+ const fs = require('fs');
++const readline = require('readline');
+ const process = require('process');
+ 
+ const model = "llama3";
+@@ -88,29 +89,46 @@
+   });
+ }
+ 
+-function executeTool(name, args) {
++function executeTool(name, args) {
+   try {
+     const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+     switch (name) {
+       case "read_file":
+         return fs.readFileSync(parsedArgs.path, 'utf-8');
+       case "write_file":
+         fs.writeFileSync(parsedArgs.path, parsedArgs.content);
+         return `Successfully wrote to ${parsedArgs.path}`;
+       default:
+         throw new Error(`Unknown tool: ${name}`);
+     }
+   } catch (error) {
+     return `Error executing ${name}: ${error.message}`;
+   }
+ }
+ 
+ async function askOllama() {
+-  const prompt = process.argv[2];
++  const messages = [];
++  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+   
+-  if (!prompt) {
+-    console.error("Please provide a prompt as a command-line argument.");
+-    process.exit(1);
++  function getPrompt() {
++    return new Promise((resolve) => {
++      rl.question('User > ', (input) => resolve(input));
++    });
+   }
+
+-  let messages = [
+-    { role: "user", content: prompt }
+-  ];
++  while (true) {
++    const promptInput = await getPrompt();
++    
++    if (!promptInput) continue; // Skip empty lines
+     
+-  while (true) {
+-    try {
++    messages.push({ role: "user", content: promptInput });
+       const data = await callOllama(messages);
+       
+       if (data.message?.tool_calls) {
+         // Handle tool calls immediately in a loop until final response or next user input
+         while (data.message.tool_calls) {
+           for (const toolCall of data.message.tool_calls) {
+             const functionName = toolCall.function.name;
+             const args = toolCall.function.arguments;
+             
+             console.log(`Calling tool: ${functionName}(${args})`);
+             const result = executeTool(functionName, args);
+             
+             // Add tool call to messages as assistant
+             messages.push(data.message);
+             // Add tool result to messages
+             messages.push({
+               role: "tool",
+               tool_call_id: toolCall.id,
+               content: result
+             });
+           }
+-        } else {
+-          break;
++          
++          // Get next response for tools
++          data = await callOllama(messages);
+         }
+       } else {
+         // Final response (no tools)
+         const finalResponse = data.message?.content || "";
+         fs.writeFileSync("response.md", finalResponse);
+         console.log("--- Final Response ---");
+         console.log(finalResponse);
+         console.log("----------------------");
+         console.log("Response saved to response.md");
+-        break;
+       }
+     } catch (error) {
+       console.error("Error calling Ollama:", error.message);
+-      break;
++      process.exit(1);
+     }
+   }
+ }
+ 
+-askOllama();
++askOllama().catch(console.error);

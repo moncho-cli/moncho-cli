@@ -1,0 +1,7 @@
+{
+  "name": "ollama-toolchain",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Modular Ollama toolchain with auto-loaded tools",
+  "main": "main.js"
+}
