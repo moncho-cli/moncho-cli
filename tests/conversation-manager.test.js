@@ -186,4 +186,38 @@ test('detectCompactionRequest only fires on deferred compact_context results', (
   assert.equal(detectCompactionRequest('not json'), false);
 });
 
+test('a recovered provider failure becomes a notice, never a transcript line', () => {
+  const notices = [];
+  const transcript = [];
+  const manager = new ConversationManager(toolFunctions, () => tools, () => null, {
+    log: (message) => transcript.push(String(message)),
+    onNotice: (kind, text, options) => notices.push({ kind, text, ...options }),
+  });
+
+  // What the onRetry hook of api/ollama.js calls for an attempt that is retried.
+  const retry = { attempt: 1, maxRetries: 3, delayMs: 5000, error: new Error('HTTP error! status: 502') };
+  manager.notifyRetry(retry);
+
+  assert.equal(notices.length, 1, 'the attempt must be raised as a notice');
+  assert.equal(notices[0].kind, 'warn', 'a retried attempt is not an error yet');
+  assert.equal(notices[0].code, 'retry', 'so the host can take it down when the turn lands');
+  assert.match(notices[0].text, /attempt 1\/3/);
+  assert.match(notices[0].text, /status: 502/);
+  assert.deepEqual(transcript, [], 'the transcript — the permanent record — must stay clean');
+
+  // A failure nothing recovered from is news *and* history: it ends the task.
+  manager.notifyNotice('error', 'Provider call failed: connect ECONNREFUSED', { code: 'provider-failure' });
+  assert.equal(notices.length, 2);
+  assert.equal(notices[1].kind, 'error');
+
+  // Presentation only: a hook that throws, and no hook at all, both stay harmless.
+  const throwing = new ConversationManager(toolFunctions, () => tools, () => null, {
+    log: () => {},
+    onNotice: () => { throw new Error('broken overlay'); },
+  });
+  assert.equal(throwing.notifyNotice('info', 'x'), null, 'a broken hook is swallowed');
+  const hookless = new ConversationManager(toolFunctions, () => tools, () => null, { log: () => {} });
+  assert.equal(hookless.notifyRetry(retry), null, 'without a hook the notice is dropped, not logged');
+});
+
 test.after(() => server.close());

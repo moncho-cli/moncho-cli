@@ -38,6 +38,7 @@ specs:
   - interface/transcript-scroll
   - interface/transcript-smooth-scroll
   - interface/conversation-colors
+  - interface/notice-overlay
   - interface/json-display
   - interface/user-messages
   - interface/session-replay

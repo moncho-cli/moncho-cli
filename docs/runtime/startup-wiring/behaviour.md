@@ -49,6 +49,14 @@ loop's observability guarantees; the implementation is linked below.
   context.
 - Tool failures are captured, not thrown: the error text becomes the tool chunk
   (marked `[error]`), so the model can react instead of the loop dying.
+- **A failure is told apart by whether it was recovered.** An attempt the provider
+  layer retries — or a `null`/empty response the loop retries — is raised through
+  `onNotice` as a transient notice and **never written to the transcript**, where
+  nothing would ever remove it (the stale "Error calling Ollama" line the backlog
+  reports). Only the failure that ends the task keeps its transcript line, and it is
+  raised as an `error` notice as well. `onNotice` is presentation only: a hook that
+  throws is swallowed, and a manager without one drops the message rather than
+  falling back to the transcript.
 - A `compact_context` result that requests a real compaction is detected by the
   loop, which then forces the compaction because it owns the provider connection.
 

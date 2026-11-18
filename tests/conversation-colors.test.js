@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 
 import {
   CONVERSATION_COLORS,
+  INTENT_COLOR,
+  INTENT_BOLD,
   classifyLine,
+  colorizeIntent,
   colorizeLine,
   colorizeLines,
+  highlightIntentSpans,
   isTagged,
 } from '../app/theme.js';
 import { formatTranscript, formatUserEcho } from '../app/tui-render.js';
@@ -13,7 +17,8 @@ import { withTui, visible, plainText } from './support/tui-harness.js';
 
 /**
  * The conversation palette (task-backlog: "conversation needs colors to be easier
- * to read").
+ * to read"; "the color of the intent text should be a brightish blue so is easier
+ * to find within the text, and bold").
  *
  * Two halves, both proven here:
  *  - the *classification* is pure text work (`classifyLine`/`colorizeLine`), and
@@ -31,14 +36,33 @@ const flush = async (rounds = 3) => {
 
 test('the palette names one colour per kind of conversation row', () => {
   assert.deepEqual(Object.keys(CONVERSATION_COLORS).sort(), [
-    'context', 'error', 'notice', 'tool', 'user',
+    'context', 'error', 'intent', 'notice', 'tool', 'user',
   ]);
   for (const [kind, color] of Object.entries(CONVERSATION_COLORS)) {
-    assert.match(color, /^[a-z]+$/, `${kind} names a plain blessed colour`);
+    // blessed tag colours are hyphenated names ('bright-blue'), never hex
+    assert.match(color, /^[a-z-]+$/, `${kind} names a plain blessed colour`);
   }
-  // the four parts of a turn must not share a colour
+  // the parts of a turn must not share a colour
   const used = Object.values(CONVERSATION_COLORS);
   assert.equal(new Set(used).size, used.length, 'each kind gets its own colour');
+});
+
+test('the intent gets its own bright-blue, bold style', () => {
+  // the backlog asks for a "brightish blue" that is findable, and bold
+  assert.equal(INTENT_COLOR, 'bright-blue');
+  assert.equal(INTENT_COLOR, CONVERSATION_COLORS.intent);
+  assert.equal(INTENT_BOLD, true);
+  assert.notEqual(INTENT_COLOR, CONVERSATION_COLORS.tool, 'the intent must not read as the tool colour');
+
+  // the name really resolves through blessed: '-' becomes the space its colour
+  // switch spells the bright blue with (program.js#_attr knows 'bright blue fg',
+  // not 'brightblue'). The probe under agent/utils checked the escape.
+  assert.match(colorizeIntent('intent: x'), /^\{bright-blue-fg\}\{bold\}/);
+  assert.equal(
+    colorizeIntent('intent: x'),
+    '{bright-blue-fg}{bold}intent: x{/bold}{/bright-blue-fg}',
+  );
+  assert.equal(colorizeIntent(), '{bright-blue-fg}{bold}{/bold}{/bright-blue-fg}');
 });
 
 test('classifyLine() tells the parts of a turn apart and leaves prose alone', () => {
@@ -46,12 +70,14 @@ test('classifyLine() tells the parts of a turn apart and leaves prose alone', ()
   assert.equal(classifyLine('You:'), 'user');
   assert.equal(classifyLine('You are wrong about this'), null, 'only the exact header');
 
-  // tool calls and their results
+  // a tool call and its result...
   assert.equal(classifyLine('  -> Calling read_file(path: app/tui.js)'), 'tool');
-  assert.equal(classifyLine('     intent: read the file to check the layout'), 'tool');
   assert.equal(classifyLine('  [read_file Output] (intent: read it)'), 'tool');
   assert.equal(classifyLine('\n  [run_bash Output]'), 'tool', 'main.js prefixes the header with a newline');
   assert.equal(classifyLine('▸   [read_file Output] — 40 char response (click to expand)'), 'tool');
+  // ...and the reason for it, which gets a colour of its own
+  assert.equal(classifyLine('     intent: read the file to check the layout'), 'intent');
+  assert.equal(classifyLine('intent: no leading spaces'), 'intent');
 
   // context and chrome
   assert.equal(classifyLine('[Context] 1.2k / 8.0k tokens (15%)'), 'context');
@@ -69,8 +95,9 @@ test('classifyLine() tells the parts of a turn apart and leaves prose alone', ()
   assert.equal(classifyLine('  [read_file Output] ⚠️ file not found'), 'error');
 
   // ordinary prose gets no colour: the terminal default and the markdown
-  // renderer are enough for it
+  // renderer are enough for it. 'intent' only counts as a row of its own.
   assert.equal(classifyLine('Here is what I found in the file:'), null);
+  assert.equal(classifyLine('the intent of this line is unclear'), null, 'not a label: plain prose');
   assert.equal(classifyLine(''), null);
   assert.equal(classifyLine('   '), null);
   assert.equal(classifyLine(undefined), null);
@@ -86,6 +113,7 @@ test('a line the markdown renderer already coloured is left untouched', () => {
     '{green-fg}│ quoted line{/green-fg}',
     '{green-fg}•{/green-fg} first item',
     '{bold}{underline}Title{/underline}{/bold}',
+    '{bright-blue-fg}{bold}(intent: already painted){/bold}{/bright-blue-fg}',
   ];
   for (const line of alreadyTagged) {
     assert.equal(isTagged(line), true);
@@ -116,6 +144,42 @@ test('colorizeLine()/colorizeLines() wrap a line without rewriting it', () => {
   assert.deepEqual(colorizeLines(), []);
 });
 
+test('the intent is bright blue and bold inside the row that carries it', () => {
+  // a standalone `intent:` row is the intent style, start to finish
+  assert.equal(
+    colorizeLine('     intent: check the region anchors'),
+    '{bright-blue-fg}{bold}     intent: check the region anchors{/bold}{/bright-blue-fg}',
+  );
+
+  // inside a tool header the row keeps its tool colour and only the span turns:
+  // the reason for the call is findable without losing "this is a tool result"
+  assert.equal(
+    colorizeLine('  [read_file Output] (intent: check the region anchors)'),
+    '{yellow-fg}  [read_file Output] '
+      + '{bright-blue-fg}{bold}(intent: check the region anchors){/bold}{/bright-blue-fg}{/yellow-fg}',
+  );
+
+  // ...and the same span inside a `-> Calling …` line, where the intent is the
+  // last argument (it ends at the ')' and never swallows it)
+  assert.equal(
+    colorizeLine('  -> Calling read_file(path: app/tui.js, intent: check the layout)'),
+    '{yellow-fg}  -> Calling read_file(path: app/tui.js, '
+      + '{bright-blue-fg}{bold}intent: check the layout{/bold}{/bright-blue-fg}){/yellow-fg}',
+  );
+
+  // an error row stays red; only its intent span turns
+  assert.equal(
+    colorizeLine('Error calling Ollama: (intent: not a real intent)'),
+    '{red-fg}Error calling Ollama: '
+      + '{bright-blue-fg}{bold}(intent: not a real intent){/bold}{/bright-blue-fg}{/red-fg}',
+  );
+
+  // highlightIntentSpans() is the reusable half, and it never rewrites a line
+  // that carries no span
+  assert.equal(highlightIntentSpans('plain prose'), 'plain prose');
+  assert.equal(highlightIntentSpans('a (intent: b) c'), 'a {bright-blue-fg}{bold}(intent: b){/bold}{/bright-blue-fg} c');
+});
+
 test('formatTranscript() colours the parts of a turn and keeps the markdown colours', () => {
   const rendered = formatTranscript([
     'You:',
@@ -131,8 +195,17 @@ test('formatTranscript() colours the parts of a turn and keeps the markdown colo
   assert.equal(rendered[0], '{cyan-fg}You:{/cyan-fg}', 'the echo header is the user colour');
   assert.equal(rendered[1], '{green-fg}│ what does the layout do?{/green-fg}', 'the quoted message keeps its markdown colour');
   assert.equal(rendered[2], '{yellow-fg}  -> Calling read_file(path: app/tui-layout.js){/yellow-fg}');
-  assert.equal(rendered[3], '{yellow-fg}     intent: check the region anchors{/yellow-fg}');
-  assert.equal(rendered[4], '{yellow-fg}  [read_file Output] (intent: check the region anchors){/yellow-fg}');
+  assert.equal(
+    rendered[3],
+    '{bright-blue-fg}{bold}     intent: check the region anchors{/bold}{/bright-blue-fg}',
+    'the intent row is bright blue and bold',
+  );
+  assert.equal(
+    rendered[4],
+    '{yellow-fg}  [read_file Output] '
+      + '{bright-blue-fg}{bold}(intent: check the region anchors){/bold}{/bright-blue-fg}{/yellow-fg}',
+    'the tool header keeps yellow and highlights only its intent span',
+  );
   assert.equal(rendered[5], '{magenta-fg}[Context] 1.2k / 8.0k tokens (15%){/magenta-fg}');
   assert.equal(rendered[6], '{red-fg}Error calling Ollama: connect ECONNREFUSED{/red-fg}');
   assert.equal(rendered[7], 'plain assistant prose', 'prose is untouched');
@@ -147,20 +220,31 @@ test('the colour reaches the terminal, and the visible glyphs are unchanged', as
   await withTui(async (tui, { painted }) => {
     tui.log(formatUserEcho('hello there'));
     tui.log('  -> Calling read_file(path: app/tui.js)');
+    tui.log('     intent: check the layout');
     tui.log('[Context] 1.2k / 8.0k tokens (15%)');
     tui.log('Error calling Ollama: connect ECONNREFUSED');
     await flush();
 
     const frame = painted();
-    // 36 = cyan, 33 = yellow, 35 = magenta, 31 = red
+    // 36 = cyan, 33 = yellow, 35 = magenta, 31 = red, 94 = bright blue, 1 = bold
     const cyan = frame.indexOf('You:');
     const yellow = frame.indexOf('Calling read_file');
+    const intent = frame.indexOf('intent: check the layout');
     const magenta = frame.indexOf('[Context] 1.2k');
     const red = frame.indexOf('Error calling Ollama');
-    assert.ok(cyan >= 0 && yellow >= 0 && magenta >= 0 && red >= 0, 'every row was painted');
+    assert.ok(cyan >= 0 && yellow >= 0 && intent >= 0 && magenta >= 0 && red >= 0, 'every row was painted');
 
     assert.match(frame.slice(Math.max(0, cyan - 20), cyan), /\x1b\[36m/, 'the echo header is cyan');
     assert.match(frame.slice(Math.max(0, yellow - 20), yellow), /\x1b\[33m/, 'the tool call is yellow');
+    // The intent is bright blue and bold. A 256-colour terminal paints
+    // '\x1b[1;94m'; the 8-colour tput of this harness folds the bright variant into
+    // bold + the base blue ('\x1b[1;34m'), which is still the bright blue there.
+    // Either escape means "bright blue and bold", and neither is the tool yellow.
+    assert.match(
+      frame.slice(Math.max(0, intent - 30), intent),
+      /\x1b\[(?:1;94|1;34|94|38;5;12)m/,
+      'the intent is bright blue and bold',
+    );
     assert.match(frame.slice(Math.max(0, magenta - 20), magenta), /\x1b\[35m/, 'the context notice is magenta');
     assert.match(frame.slice(Math.max(0, red - 20), red), /\x1b\[31m/, 'the error is red');
 
@@ -169,16 +253,19 @@ test('the colour reaches the terminal, and the visible glyphs are unchanged', as
     assert.match(text, /You:/);
     assert.match(text, /│ hello there/);
     assert.match(text, /Calling read_file\(path: app\/tui\.js\)/);
+    assert.match(text, /intent: check the layout/);
     assert.match(text, /\[Context\] 1\.2k \/ 8\.0k tokens \(15%\)/);
     assert.match(text, /Error calling Ollama: connect ECONNREFUSED/);
     assert.doesNotMatch(text, /-fg\}/, 'no blessed tag leaks as text');
     assert.doesNotMatch(plainText(frame), /-fg\}/);
+    assert.doesNotMatch(plainText(frame), /bright-blue/, 'the tag resolved instead of being printed');
   });
 });
 
 test('a coloured block header still toggles on the same row', async () => {
   await withTui(async (tui) => {
     // the header main.js builds for a tool result; the palette colours its label
+    // and highlights the intent span inside it
     const block = tui.logBlock({ header: '\n  [read_file Output] (intent: read it)', body: 'a\nb\nc' });
     await flush();
 

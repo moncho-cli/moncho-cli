@@ -6,6 +6,7 @@ import { createUsageMeter, recordProviderCall } from '../utils/usage-stats.js';
 import { estimateMessagesTokens } from '../utils/tokens.js';
 import { formatArgs as summarizeArgs } from './tool-call-format.js';
 import { handleToolBatch } from './tool-batch.js';
+import { formatRetryNotice, formatFailureNotice } from './notice-overlay.js';
 
 /**
  * The conversation loop.
@@ -18,6 +19,13 @@ import { handleToolBatch } from './tool-batch.js';
  * Task.md item 6 is enforced here too: every tool call's `intent` is printed to
  * the terminal *and* persisted in the chunk that carries the tool result, so the
  * reason for a call is both visible to the user and part of the model context.
+ *
+ * Failures are told apart by whether they were *recovered*: an attempt that is
+ * retried is news and goes to the transient notice overlay (`onNotice`, see
+ * app/notice-overlay.js) where it disappears on its own, while the failure that
+ * ends the task keeps a line in the transcript. Writing a retried attempt to the
+ * transcript is what left a stale "Error calling Ollama" line behind after a 502
+ * had already been recovered from (task-backlog: "clean up failed attempts").
  *
  * The tool calls of one message are a *batch*: `handleToolCalls` delegates to
  * `app/tool-batch.js`, which caps the batch at `MAX_PARALLEL_TOOL_CALLS`, runs the
@@ -34,6 +42,9 @@ export class ConversationManager {
     // The user's own message is announced before the model is called, so both
     // front ends can echo it: the transcript is otherwise one-sided.
     this.onUserMessage = options.onUserMessage || null;
+    // Transient notices (app/notice-overlay.js): a recovered failure is shown in
+    // the overlay and expires, instead of staying in the transcript forever.
+    this.onNotice = options.onNotice || null;
     // Which model answered: the key the usage table is kept under.
     this.model = options.model || null;
     // Token accounting per model (utils/usage-stats.js).
@@ -99,6 +110,28 @@ export class ConversationManager {
   }
 
   /**
+   * Show a transient notice: the overlay's business, never the transcript's.
+   *
+   * Presentation only, exactly like `onUserMessage` and `onContextChange`: a hook
+   * that throws must never cost the user their turn. Without a hook the message is
+   * dropped rather than written to the transcript, because that is the bug this
+   * hook exists to fix.
+   */
+  notifyNotice(kind, text, options = {}) {
+    if (!this.onNotice) return null;
+    try {
+      return this.onNotice(kind, text, options);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Report one retried attempt (the `onRetry` hook of api/ollama.js). */
+  notifyRetry(report = {}) {
+    return this.notifyNotice('warn', formatRetryNotice(report), { code: 'retry' });
+  }
+
+  /**
    * Creates a simple string representation of the function arguments.
    * - If the argument is a short string, number, or boolean (length <= 20),
    *   it shows "paramName: value".
@@ -139,11 +172,15 @@ export class ConversationManager {
         // What the request is about to cost, measured before it is sent: used
         // only when the provider answers without counters of its own.
         const promptTokens = this.contextWindow.estimatedTokens();
-        const data = await callOllama(this.contextWindow.chunks, this.getTools(), false, signal);
+        const data = await callOllama(this.contextWindow.chunks, this.getTools(), false, signal, {
+          // A retried attempt is a transient notice, not a transcript line.
+          onRetry: (report) => this.notifyRetry(report),
+        });
 
         // Treat null or empty response as an error and retry
         if (!data || !data.message) {
-          this.log("\nError: Received null/empty API response. Retrying...");
+          // Transient too: the loop retries it, so it must not outlive the retry.
+          this.notifyNotice('warn', 'Provider answered with an empty response. Retrying…', { code: 'empty-response' });
           continue;
         }
         this.recordUsage(data, promptTokens);
@@ -161,6 +198,9 @@ export class ConversationManager {
           this.log("\n[Info] Request aborted; stopping this task.");
           break;
         }
+        // Nothing recovered from this one: it ends the task, so it keeps its
+        // transcript line *and* is raised as a notice while the turn winds down.
+        this.notifyNotice('error', formatFailureNotice(error), { code: 'provider-failure' });
         this.log(`\nError calling Ollama: ${error.message}`);
         break;
       }

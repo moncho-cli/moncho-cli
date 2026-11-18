@@ -1,58 +1,74 @@
-status: done
+status: done — the three interface-polish items are implemented, spec'd and proven
 
-# Message queue: send at any moment, keep the queue above the input box, delete with ✕
+# Interface polish: bright intent text, a last-prompt hint, and self-hiding notices
 
-Taken from `task-backlog.md`:
+Three *easy* items picked from `task-backlog.md`:
 
-> able to send messages at any moment that are queued (kept right above the input
-> box) and injected when possible in the conversation. but while queued have an X
-> that you can delete them from the queue
+> the color of the intent text should be a brightish blue so is easier to find within
+> the text, and bold
 
-A turn can take minutes — tool chains, long provider calls — and the input box is
-*disarmed* while it runs: `question()` is only armed between turns, so a message
-typed during a turn goes nowhere. The user either loses what they typed or waits,
-idle, for the reply before typing the follow-up they already know they want.
+> if the input box is empty, it should have a grayed italic text saying "Last prompt:
+> ......."
 
-The fix is a queue: typing during a turn stores the message, keeps it visible right
-above the input box with a `✕` that deletes it, and the host loop injects it as the
-next prompt as soon as the running turn finishes.
+> clean up failed attempts, i got a 502 error then it worked but the error text was
+> still there. this info should also be displayed in some kind of overlay near the top
+> of the screen and auto hide after some minutes
 
-## What the queue must do
+They are one coherent pass over the interface: **what the agent is doing** (the intent
+of a tool call), **what you asked last** (the hint under an empty box) and **what went
+wrong once** (a transient notice instead of a scar in the transcript).
 
-| Step | Behaviour |
+## What each item must do
+
+| Item | Behaviour |
 | ---- | --------- |
-| accept | while a request is in flight the input box stays armed; Enter **queues** the message instead of resolving a question nobody armed |
-| keep | the queue is FIFO and the text is kept **verbatim** (pastes expanded), so the bytes the model receives are the bytes the user typed |
-| show | the rows sit **right above the input box**; the status bar, model row and transcript shift up by the queue height, and the queue disappears when it is empty |
-| delete | every row carries a `✕`; a click on the row removes that message only, and the region shrinks back |
-| inject | the host loop drains the queue **between turns** — "when possible" — so a queued message becomes the next prompt without waiting for the user |
-| survive | a message queued while idle is not queued at all: the box resolves the armed question exactly as it does today |
+| intent | the `intent:` line and the `(intent: …)` span of a tool header are painted **bright blue and bold**, so the reason for a call is findable at a glance inside the yellow tool block |
+| hint | an input box with **no text** shows a greyed `Last prompt: …` hint — the last prompt the box settled, flattened to one line — and any typed character replaces it; the hint is display only, never the box value |
+| notice | a failed provider attempt (a 502, an empty response) is announced as a **transient notice**: it never stays in the transcript, it shows in a small overlay near the top of the screen, and it hides by itself after a few minutes — sooner still when the turn it belonged to lands |
 
 ## Constraints
 
-- The queue model (`app/message-queue.js`) is **pure** — no neo-blessed, no screen —
-  so the order, the deletion and the row formatting are unit tested without a pty.
-- The widget binding lives in `app/queue-bar.js`, bound by `app/tui.js`, so the
-  screen wiring stays thin and every file stays under 300 lines.
-- Injection happens **between two turns**, never in the middle of a tool chain: an
-  injected message must not split an assistant `tool_calls` message from its `tool`
-  results.
-- The line CLI has no queue bar; typed input there is buffered by readline and
-  arrives at the next `question()`. That difference is stated, not hidden.
-- The queue never reaches the model context as a chunk of its own: the drained text
-  enters the conversation as the ordinary user prompt (`docs/interface/user-messages`).
+- **No new dependency.** The intent style is a blessed tag (`bright-blue`, `bold`); the
+  hint is the box content while the box is empty; the notice is a pure model plus one
+  blessed overlay box.
+- **Pure where it matters.** The hint's text/shape and the notice's lifetime are pure
+  (`app/input-hint.js`, `app/notice-overlay.js`) so both are unit tested without a pty.
+- **Presentation only.** No tag, no hint and no notice ever reaches the model context or
+  a session file, and the line CLI (which prints through `console.log`) keeps its plain
+  behaviour: a notice there is a plain `[<kind>] <text>` line.
+- **blessed has no italic.** Its tag vocabulary is bold/underline/blink/inverse/
+  invisible (`node_modules/neo-blessed/lib/program.js#_attr`), so the "grayed italic"
+  hint is rendered in the dimmest named colour (`grey`). That deviation is stated in the
+  spec, not hidden.
+- Every file touched stays **under 300 lines**; the specs under `docs/` and the suites
+  under `tests/` are updated in the same pass (`tests/docs-realm.test.js` enforces the
+  links).
 
 ## Steps
 
-- [x] **the queue model and its rows** — `app/message-queue.js` gains `createMessageQueue()` (enqueue / dequeue / remove / clear / subscribe, verbatim text, FIFO), `nextPrompt()` (the between-turns drain rule), `formatQueueRows()`/`formatQueueRow()`/`previewMessage()` (one `✕` row per message, capped with a `+N more` tail) and `queueRowAt()` (the click geometry), proven by `tests/message-queue.test.js`.
-- [x] **the queue bar in the TUI, and the injection point** — `app/queue-bar.js` renders the rows in the new region right above the input box (`app/tui-layout.js#setQueueHeight`), deletes on a `✕` click, and `app/prompt-input.js` queues a submission while a request is in flight and re-arms the box; `app/tui.js` opens that in-flight state with the spinner and exposes `dequeue()`/`queuedCount`; `main.js` drains the queue between turns through `nextPrompt()`. Proven by `tests/message-queue-tui.test.js` and `tests/tui.test.js`.
-- [x] **document and prove the message queue** — a `docs/interface/message-queue` spec (registered in `docs/index.yaml`) states the accept/keep/show/delete/inject rules; `interface/tui`, `interface/line-cli` and `runtime/startup-wiring` are updated; the tests above are linked by their exact case names.
+- [x] **bright blue, bold intent text** — `app/theme.js` gains an `intent` kind
+  (`bright-blue`, bold) that owns the standalone `intent: …` row and the `(intent: …)`
+  span inside a tool header; `tests/conversation-colors.test.js` and
+  `docs/interface/conversation-colors` follow the new palette.
+- [x] **the last-prompt hint in an empty box** — `app/input-hint.js` remembers the
+  prompt the box settled and paints `Last prompt: …` (grey, sanitised, display only)
+  over an empty box, reacting to the box's own content changes so it can never be
+  submitted; `docs/interface/tui` names the behaviour and the cases that prove it.
+- [x] **transient notices in a self-hiding overlay** — `app/notice-overlay.js` (pure:
+  the TTL, the rows, the kinds, the dedupe) and `app/notice-bar.js` (the blessed overlay
+  at `top: 1`, hidden while empty and hidden by one timer armed for the earliest expiry),
+  surfaced through `app/tui-surface.js`; `api/ollama.js` reports a retried attempt
+  through an injected `onRetry` hook and `app/conversation-manager.js` routes recovered
+  failures to `onNotice` instead of the transcript, keeping a transcript line only for
+  the failure that ends the task; `main.js` binds the hook and dismisses the retry notice
+  the moment the turn lands; `docs/interface/notice-overlay` states the rule and is
+  registered in `docs/index.yaml`.
 
 ## Done when
 
-- the spec exists, is registered, and names real `path#symbol` references and real test cases;
+- the three behaviours are in the code, each with a spec under `docs/` naming real
+  `path#symbol` references and the exact test cases that prove it;
 - `npm test` is green, `tests/docs-realm.test.js` included;
 - `node --check` passes on every file touched;
 - no file touched exceeds 300 lines;
-- a scratch probe under `agent/utils/` confirmed the row geometry and the click
-  mapping before the tests were written, and is deleted afterwards.
+- the backlog items are ticked and any scratch probe under `agent/utils/` is deleted.

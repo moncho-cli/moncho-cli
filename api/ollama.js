@@ -21,6 +21,9 @@ async function clearThinkingFile() {
   fs.writeFileSync(THINKING_FILE, '', 'utf-8');
 }
 
+/** How long to wait before retrying a failed attempt. */
+const RETRY_DELAY_MS = 5000;
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -119,9 +122,16 @@ function normalizeResponse(data) {
  * @param {{systemPrompt?: boolean}} [options] `systemPrompt:false` omits the agent
  *   system prompt; internal calls (e.g. the context summariser behind task.md
  *   item 8) must not answer as Moncho.
+ * @param {number} [options.retryDelayMs] how long to wait between attempts
+ *   (`RETRY_DELAY_MS` by default). Overridable so the retry path is testable without
+ *   a five-second wait.
+ * @param {Function} [options.onRetry] called with `{ attempt, maxRetries, delayMs,
+ *   error }` before a failed attempt is retried. A recovered attempt is *news*, not
+ *   history, so the host shows it in the transient notice overlay instead of
+ *   leaving an error line in the transcript forever (app/notice-overlay.js).
  */
 export async function callOllama(messages, tools, isStreaming = false, signal = null, options = {}) {
-  const { systemPrompt = true } = options;
+  const { systemPrompt = true, onRetry = null, retryDelayMs = RETRY_DELAY_MS } = options;
 
   // Load system prompt if not cached or if cache is empty
   if (systemPrompt && !systemPromptCache) {
@@ -138,7 +148,6 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
   ollamaMessages.push(...messages);
 
   const maxRetries = 3;
-  const retryDelayMs = 5000;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -223,7 +232,16 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
         throw error;
       }
       if (attempt < maxRetries) {
-        console.warn(`Ollama call failed (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${retryDelayMs/1000} seconds...`);
+        const report = { attempt, maxRetries, delayMs: retryDelayMs, error };
+        if (typeof onRetry === 'function') {
+          try {
+            onRetry(report);
+          } catch {
+            // display only: a broken notice hook must never cost the user the retry
+          }
+        } else {
+          console.warn(`Ollama call failed (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${retryDelayMs/1000} seconds...`);
+        }
         await sleep(retryDelayMs);
       } else {
         throw error;

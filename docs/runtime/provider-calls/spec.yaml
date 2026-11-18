@@ -6,8 +6,11 @@ summary: >
   callOllama() posts to the configured provider, injecting the agent system prompt
   unless explicitly disabled, and normalises both the Ollama and OpenAI response
   shapes (including tool calls) to one message object. Failures are retried up to
-  three times unless the abort signal is set, and the signal is passed to fetch.
-  detectProvider/describeModel derive the provider identity from the base URL.
+  three times unless the abort signal is set, and the signal is passed to fetch. A
+  retried attempt is reported through the injected onRetry hook so the host can show
+  it as a transient notice instead of a permanent transcript line
+  (docs/interface/notice-overlay). detectProvider/describeModel derive the provider
+  identity from the base URL.
 code:
   - path: api/ollama.js
     symbols: [callOllama]
@@ -21,3 +24,5 @@ tests:
       - a default call injects the agent system prompt and normalises the response
       - systemPrompt:false omits the agent prompt (used by the context summariser)
       - the abort signal is honoured
+      - a retried attempt is reported through onRetry, not the console
+      - a throwing onRetry hook never costs the retry

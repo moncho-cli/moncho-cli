@@ -71,7 +71,52 @@ Six regions, laid out relatively so blessed relayouts them on resize:
   view is emptied and the session replayed into it as lines and collapsible blocks
   (`docs/interface/session-replay`), so opening a session shows it as it was left.
 
+## The last-prompt hint (task-backlog)
+
+> if the input box is empty, it should have a grayed italic text saying "Last
+> prompt: ......."
+
+The box is the one place on screen that is blank most of the time, and a returning
+user cannot see what they asked a moment ago. `app/input-hint.js` fixes that:
+
+- **empty only.** The hint is up exactly while the box holds no text. The first
+  typed character replaces it with the text itself, and emptying the box brings it
+  back. What decides is the box's own **value**, not a flag: the hint is never left
+  over a box that has something in it.
+- **content, never value.** The hint is written to the widget's *content*; the
+  value stays empty. It can therefore never be submitted, queued
+  (`docs/interface/message-queue`) or sent to the model, and the host loop's
+  `question()` still resolves with what the user typed, or with nothing at all.
+- **one flattened line.** The text is `Last prompt: <prompt>` (`LAST_PROMPT_LABEL`)
+  with every run of whitespace collapsed to a single space — a multi-line prompt
+  still fits the one row the box has — truncated to `HINT_MAX_CHARS` with an `…`,
+  and sanitised first, so no control character can reach the widget. A prompt
+  nothing was typed for (a blank submission, or the `exit` sentinel) leaves the
+  previous hint in place: it is not a prompt.
+- **greyed out.** The hint is painted in `HINT_COLOR` (`grey`) and the box's own
+  colour is restored the moment it is replaced by real text.
+  neo-blessed has **no italic attribute** — its tag vocabulary is
+  bold/underline/blink/inverse/invisible (`program.js#_attr`) — so the "grayed
+  italic" the backlog asked for ships as the greyed part. The deviation is stated
+  here, not hidden.
+- **one event, no second listener.** The box rewrites its content from `setValue()`
+  whenever its value changes, and that emits `set content`, so the hint is repainted
+  from that single event. A second `keypress` listener would make every keystroke
+  arrive twice — exactly the bug the "armed by `question()` alone" rule above
+  guards against.
+- **the line CLI has no box hint.** It prints through `console.log` with readline
+  as its editor, so there is no widget to paint over; `docs/interface/line-cli`
+  states the difference.
+
 ## Status and feedback
+
+- **Transient notices float over the top of the transcript.** A provider failure the
+  retry loop recovered from is *news*, not history, so it is not written to the
+  transcript: it is shown in a borderless box at `top: 1` that hides itself after a
+  few minutes, so the regions below never move and the reader's scroll position is
+  untouched. The model, the expiry rules and the surface live in
+  `docs/interface/notice-overlay`; `app/tui.js` only creates the overlay and hands
+  it to the surface.
 
 - While a request is in flight the status bar shows an animated spinner frame; the
   meter keeps painting alongside it, the last logical status text is restored when
@@ -105,7 +150,8 @@ Six regions, laid out relatively so blessed relayouts them on resize:
   `app/paste-registry.js` (the paste table), `app/compaction-notice.js` (the
   once-per-event compaction line), `app/status-row.js` (status/spinner/meter
   bookkeeping), `app/tui-modal.js` (the picker modal and its `choose` surface),
-  `app/prompt-input.js` (the armed-question / queueing box), `config/constants.js`
+  `app/prompt-input.js` (the armed-question / queueing box), `app/input-hint.js`
+  (the last-prompt hint), `config/constants.js`
 - Spec of the pending-message queue above the input box: `docs/interface/message-queue`
 - Spec of the scroll position while output arrives: `docs/interface/transcript-scroll`
 - Spec of the wheel and page steps: `docs/interface/transcript-smooth-scroll`
@@ -113,6 +159,6 @@ Six regions, laid out relatively so blessed relayouts them on resize:
 - Spec of the reload when a session is resumed: `docs/interface/session-replay`
 - Spec of the collapsible results: `docs/interface/transcript-blocks`
 - Proof: `tests/tui.test.js`, `tests/tui-render.test.js`, `tests/tui-status.test.js`,
-  `tests/tui-modules.test.js`,
+  `tests/tui-modules.test.js`, `tests/input-hint.test.js`,
   `tests/transcript-blocks.test.js`, `tests/transcript-scroll.test.js`,
   `tests/transcript-smooth-scroll.test.js`, `tests/interrupt-controls.test.js`

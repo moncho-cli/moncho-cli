@@ -25,6 +25,12 @@ fixes that surface; the implementation is linked below.
   typed while a turn runs and hands it to the next `question()`, and `nextPrompt()`
   is called without a `dequeue`, so the front end is the only source of prompts.
   The difference is stated, not hidden.
+- **There is no notice overlay here either.** The transient notices
+  (`docs/interface/notice-overlay`) belong to the TUI, which has a floating box
+  near the top of the screen; the line CLI has no widget to float one over, so
+  `main.js` prints each notice as a `[<kind>] <text>` line instead. The
+  information is the same — a recovered provider attempt is reported and then
+  stops being reported — only the place differs.
 - Choosing between them is a single decision at startup: a TTY gives the TUI,
   otherwise the line CLI. No other module needs to know which one is active.
 

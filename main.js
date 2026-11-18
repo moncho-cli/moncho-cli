@@ -37,6 +37,24 @@ async function main() {
   const cli = tui || createCLI();
   const log = tui ? (...args) => tui.log(...args) : (...args) => console.log(...args);
 
+  // Transient notices (app/notice-overlay.js): a retried provider failure is *news*,
+  // not history, so it floats over the top of the transcript and hides itself after
+  // a few minutes instead of leaving a stale error line behind. The line CLI has no
+  // floating box, so it prints the notice as a plain line — the information is the
+  // same, only the place differs (docs/interface/line-cli).
+  // The handle of the current retry notice is kept so a turn that finally succeeds
+  // can take it down at once instead of waiting out its TTL.
+  let retryNotice = null;
+  const notify = (kind, text, options = {}) => {
+    if (tui) {
+      const handle = tui.notice(kind, text, options);
+      if (options.code === 'retry') retryNotice = handle;
+      return handle;
+    }
+    log(`[${kind}] ${text}`);
+    return null;
+  };
+
   log("Initializing tools...");
 
   // Tool results are echoed to the screen (with the call's intent) and also
@@ -85,6 +103,8 @@ async function main() {
     // transcript reads as a dialogue; the chunk the model receives is untouched
     // (app/tui-render.js#formatUserEcho is display only).
     onUserMessage: (text) => log(formatUserEcho(text)),
+    // Recovered failures go to the overlay, never to the transcript.
+    onNotice: (kind, text, options) => notify(kind, text, options),
     onContextChange: (stats) => {
       tui?.setTokens(stats.usage);
       tui?.notifyCompaction(stats);
@@ -195,6 +215,12 @@ async function main() {
       // (app/conversation-manager.js#ConversationManager), so the meter already
       // holds the final number before the spinner stops.
       await manager.processInput(userInput);
+      // The turn landed, so whatever the provider recovered from on the way is no
+      // longer worth showing: drop the retry notice now rather than at its TTL.
+      if (retryNotice !== null) {
+        tui?.dismissNotice(retryNotice);
+        retryNotice = null;
+      }
       saveSession('turn');
     } catch (error) {
       if (

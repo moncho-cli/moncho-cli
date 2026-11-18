@@ -6,8 +6,10 @@
 - [x] token consumtion should be refreshed more frequently, on every single call
 - [x] tool calling should allow the model to ask with an array of tools, up to 5 simoultaneous calls. the responses would be added in the context enclosed in <tool-multicall result><tool-call name=call-signature>...</tool-call></tool-multicall result> where call signature is a param type summary of how the tool was called. example: "name=string(5)"
 - [x] able to send messages at any moment that are queued (kept right above the input box) and injected when possible in the conversation. but while queued have an X that you can delete them from the queue
-- [ ] if the input box is empty, it should have a grayed italic text saying "Last prompt: ......."
+- [x] if the input box is empty, it should have a grayed italic text saying "Last prompt: ......."
 - [x] within each session, we should be saving token usage by model so we can have stats on the performance of the models
-- [ ] the color of the intent text should be a brightish blue so is easier to find within the text, and bold
+- [x] the color of the intent text should be a brightish blue so is easier to find within the text, and bold
 - [ ] show the moncho.png logo on the top right of the conversation, colors inverted (flip black and white) never larger than 200x200 px but if the window is small it can remain at 20%
 - [ ] clean up failed attempts, i got a 502 error then it worked but the error text was still there. this info should also be displayed in some kind of overlay near the top of the screen and auto hide after some minutes
+- [ ] implementation-plan.md should be updated more frequently, as soon as items are done and verified
+- [ ] the stdout on bash commands, formatted inside a json, cannot be properly truncated as one would use pipe + head/tail. so maybe bash responses should be a yaml header and the stdout after, and it be possible to pass head/tail parameters to let the model choose that

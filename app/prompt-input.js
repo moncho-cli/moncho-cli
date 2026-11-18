@@ -1,4 +1,5 @@
 import { sanitize } from './tui-render.js';
+import { createInputHint, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR } from './input-hint.js';
 
 /**
  * The input box as a two-state machine: an **armed question** between turns, or a
@@ -9,6 +10,12 @@ import { sanitize } from './tui-render.js';
  * host loop is busy in `processInput()` — so a submission must not vanish: it is
  * handed to the queue (task.md: "send at any moment … queued … injected when
  * possible") and the box stays armed for the next one.
+ *
+ * A third, purely cosmetic state is the **hint**: while the box holds no text it
+ * shows what the last prompt was, greyed out (task-backlog: "if the input box is
+ * empty, it should have a grayed italic text saying 'Last prompt: .......'").
+ * The formatting and the value/content rule live in `app/input-hint.js`, which is
+ * pure; this module only decides *when* to paint it.
  *
  * Kept apart from app/tui.js so the screen wiring stays thin, and free of
  * neo-blessed: the caller injects the box, the paste table, the queue and a log,
@@ -26,6 +33,7 @@ export function normalizePrompt(prompt) {
  * @param {object} options.inputBox  the blessed textbox
  * @param {object} [options.pastes]  the paste table (app/paste-registry.js)
  * @param {object} [options.queue]   the pending-message queue (app/message-queue.js)
+ * @param {object} [options.hint]    the last-prompt hint (app/input-hint.js)
  * @param {Function} [options.log]   where the "[pasted N lines -> …]" notice goes
  * @param {Function} [options.refresh] repaint hook
  */
@@ -33,21 +41,25 @@ export function createPromptInput({
   inputBox = null,
   pastes = null,
   queue = null,
+  hint = null,
   log = () => {},
   refresh = () => {},
 } = {}) {
   let pending = null;
   let inFlight = false;
   let labelText = ' > ';
+  // The "Last prompt: …" hint shown over an empty box (app/input-hint.js).
+  const lastPromptHint = hint || createInputHint({ inputBox, refresh });
 
   // The tests (and the picker hand-back) read the label off the box itself.
   if (inputBox) inputBox.getLabel = () => labelText;
 
-  /** Focus the box and start its single read cycle (a no-op if already reading). */
+  /** Focus the box, start its single read cycle and repaint the hint over it. */
   const arm = () => {
     if (!inputBox) return false;
     if (typeof inputBox.focus === 'function') inputBox.focus();
     if (typeof inputBox.readInput === 'function') inputBox.readInput();
+    lastPromptHint.apply();
     refresh();
     return true;
   };
@@ -57,6 +69,8 @@ export function createPromptInput({
     const resolve = pending;
     pending = null;
     if (inputBox && typeof inputBox.clearValue === 'function') inputBox.clearValue();
+    // The box is empty again, so the hint for the prompt just sent takes over.
+    lastPromptHint.note(value);
     if (typeof resolve === 'function') resolve(value);
     refresh();
     return value;
@@ -101,6 +115,20 @@ export function createPromptInput({
     submit,
     settle,
     arm,
+    /** Paint the last-prompt hint (or the box's own value) right now. */
+    applyHint: () => lastPromptHint.apply(),
+    /** The prompt the hint is built from ('' before the first one is sent). */
+    get lastPrompt() {
+      return lastPromptHint.lastPrompt;
+    },
+    /** What the hint shows right now, or null while the box shows its own value. */
+    get hint() {
+      return lastPromptHint.hint;
+    },
+    /** The hint bound to this box, for callers that need its surface. */
+    get inputHint() {
+      return lastPromptHint;
+    },
     normalizePrompt,
     /** Arm a question and resolve it with the next submission. */
     question(prompt, callback) {
@@ -150,3 +178,5 @@ export function createPromptInput({
     },
   };
 }
+
+export { createInputHint, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR };

@@ -37,6 +37,12 @@ implementation is linked below.
   prompt.
 - The `AbortSignal` is passed to `fetch`, so a cancelled task aborts the in-flight
   request rather than waiting for it.
+- A retried attempt is reported through the injected `onRetry({ attempt, maxRetries,
+  delayMs, error })` hook instead of being written to the console, because it is
+  *news* and not history: the host shows it in the transient notice overlay, where it
+  disappears on its own (`docs/interface/notice-overlay`). Without a hook the
+  previous `console.warn` line is kept, so the provider stays usable on its own, and
+  a hook that throws is swallowed — a broken notice must never cost the user a retry.
 - Streaming decodes SSE/data lines, ignores non-JSON keep-alive framing, writes
   thinking text to `thinking.md` instead of the transcript, and returns the full
   response text.

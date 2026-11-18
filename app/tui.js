@@ -5,13 +5,13 @@ import {
   createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT,
 } from './tui-layout.js';
 import { createTranscriptView } from './transcript-view.js';
-import { createChooser } from './tui-modal.js';
-import { createQueueBar, queueSurface } from './queue-bar.js';
+import { createTuiSurface } from './tui-surface.js';
+import { createQueueBar } from './queue-bar.js';
 import { createPromptInput, normalizePrompt } from './prompt-input.js';
+import { createNoticeBar } from './notice-bar.js';
 import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
 import { bindKeys } from './tui-keys.js';
-import { reloadConversation } from './session-replay.js';
 import {
   sanitize,
   formatArg,
@@ -29,9 +29,11 @@ import {
 // layout in ./tui-layout.js, the status-row bookkeeping in ./status-row.js, the
 // paste table in ./paste-registry.js, the compaction notice in
 // ./compaction-notice.js, the pending-message queue in ./message-queue.js (bound
-// to its region by ./queue-bar.js) and the input-box state machine in
-// ./prompt-input.js. They are all re-exported here so app/tui.js stays the single
-// entry point every importer (and the specs) already use.
+// to its region by ./queue-bar.js), the input-box state machine in
+// ./prompt-input.js, the transient notices in ./notice-overlay.js (bound to their
+// overlay by ./notice-bar.js) and the public surface in ./tui-surface.js. They are
+// all re-exported here so app/tui.js stays the single entry point every importer
+// (and the specs) already use.
 export { sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD };
 export { formatUserEcho, USER_ECHO_HEADER };
 export { SPINNER_FRAMES, SPINNER_INTERVAL_MS };
@@ -39,6 +41,9 @@ export { TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEI
 export { createQueueBar, queueSurface } from './queue-bar.js';
 export { createMessageQueue, formatQueueRows, formatQueueRow, previewMessage, queueRowAt, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER } from './message-queue.js';
 export { createPromptInput, normalizePrompt } from './prompt-input.js';
+export { createInputHint, hintSurface, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR } from './input-hint.js';
+export { createNoticeOverlay, noticeSurface, formatNoticeRows, formatNoticeRow, formatNoticeText, formatRetryNotice, formatFailureNotice, NOTICE_TTL_MS, NOTICE_MAX_ROWS, NOTICE_MAX_KEPT, NOTICE_COLORS, NOTICE_MARKERS, NOTICE_KINDS, NOTICE_MAX_CHARS } from './notice-overlay.js';
+export { createNoticeBar } from './notice-bar.js';
 
 /**
  * Build the TUI. Returns null when stdout is not a TTY (e.g. `./start.sh start`
@@ -46,7 +51,8 @@ export { createPromptInput, normalizePrompt } from './prompt-input.js';
  *
  * The returned object mirrors createCLI() ({ rl, question, exit, close }) and
  * adds log()/logBlock()/setStatus() for rendering the conversation and the status
- * bar.
+ * bar. Its shape is assembled by ./tui-surface.js, so this module stays the screen
+ * wiring: the regions, the keys and the teardown.
  */
 export function createTui(options = {}) {
   const input = options.input || process.stdin;
@@ -95,13 +101,19 @@ export function createTui(options = {}) {
     refresh,
   });
 
+  // The transient notices float over the top of the transcript instead of taking a
+  // row from it, so the regions below never move; the box hides itself while there
+  // is nothing live and on a timer armed for the earliest expiry
+  // (app/notice-bar.js, app/notice-overlay.js).
+  const noticeBar = createNoticeBar({ screen, refresh });
+
   // The input box has two states: an armed question between turns, and a
   // capturing box while a request is in flight — where Enter queues the message
   // instead of resolving a question nobody armed (app/prompt-input.js).
   const promptInput = createPromptInput({
     inputBox,
     pastes,
-    queue: queue.queue,
+    queue,
     log: (...args) => view.log(...args),
     refresh,
   });
@@ -131,20 +143,10 @@ export function createTui(options = {}) {
    */
   const logBlock = (options_) => view.logBlock(options_);
 
-  const setStatus = (text) => statusRow.setStatus(text);
-
-  // The status bar doubles as the context-window meter: usage() renders as
-  // "<used> / <max> tokens (<pct>%)", right-aligned and always visible.
-  const setTokens = (text) => statusRow.setMeter(text);
-
   // Compaction fires while a request is in flight, i.e. exactly when the status
   // bar's left slot is owned by the spinner, so the marker goes to the transcript
   // to be visible right away — once per event (app/compaction-notice.js).
   const compaction = createCompactionNotifier({ log });
-  const notifyCompaction = (stats) => {
-    if (closed) return;
-    compaction.notify(stats);
-  };
 
   inputBox.on('submit', (value) => {
     promptInput.submit(value);
@@ -188,102 +190,44 @@ export function createTui(options = {}) {
     statusRow.render();
   });
 
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    promptInput.abandon();
+    queue.close();
+    noticeBar.close();
+    view.close();
+    keys.dispose();
+    statusRow.dispose();
+    screen.destroy();
+  };
+
   statusRow.render();
   queue.paint();
 
-  const tui = {
-    // createCLI()-compatible surface
-    rl: {
-      question: (prompt, callback) => question(prompt, callback),
-    },
+  return createTuiSurface({
     question,
-    // Settle an armed question with the 'exit' sentinel the host loop understands.
-    exit() {
-      return promptInput.exit();
-    },
-    /** Reload a whole conversation (a resumed session) into the transcript. */
-    reload: (chunks) => {
-      // The transcript is replaced, so a compaction already announced is no
-      // longer on screen: the next one must be reported again.
-      compaction.reset();
-      return reloadConversation(chunks, { log, logBlock, clear: () => view.clear() });
-    },
-    close() {
-      if (closed) return;
-      closed = true;
-      promptInput.abandon();
-      queue.close();
-      view.close();
-      keys.dispose();
-      statusRow.dispose();
-      screen.destroy();
-    },
-    // TUI extras
-    log,
-    logBlock,
-    setStatus,
-    setTokens,
-    notifyCompaction,
-    /**
-     * Start the in-flight state: the spinner runs **and** the input box stays
-     * armed, so a message typed now is queued instead of going nowhere.
-     */
-    startSpinner(label) {
-      promptInput.startFlight();
-      return statusRow.startSpinner(label);
-    },
-    stopSpinner() {
-      promptInput.endFlight();
-      return statusRow.stopSpinner();
-    },
-    isSpinning: () => statusRow.isSpinning(),
-    // Transcript blocks: read, toggle, expand, collapse (used by main.js and tests)
-    get transcriptModel() {
-      return view.model;
-    },
-    get blocks() {
-      return view.model.blocks;
-    },
-    toggleBlock: (id) => view.toggleBlock(id),
-    expandBlock: (id) => view.expandBlock(id),
-    collapseBlock: (id) => view.collapseBlock(id),
-    clickTranscript: (data) => view.clickAt(data),
-    /**
-     * Ask the user to pick one of `labels`, in a modal.
-     *
-     * Resolves with the index of the choice, or null when cancelled — the shape
-     * the command registry's `choose(labels, { title })` expects.
-     */
-    choose: createChooser({ screen, inputBox, render: refresh }),
-    collapsePaste: (text) => pastes.collapse(text).text,
-    expandPastes: (text) => pastes.expand(text),
-    get pastes() {
-      return pastes.all;
-    },
-    refresh,
-    scrollBy,
-    scrollPage,
-    get transcriptView() {
-      return view;
-    },
+    promptInput,
+    view,
+    queue,
+    queueRegion,
+    pastes,
+    compaction,
+    statusRow,
     screen,
     transcript,
     statusBar,
     modelBar,
-    queueBar: queueRegion,
     inputBox,
     setQueueHeight,
-    get isClosed() {
-      return closed;
-    },
-    get modelLabel() {
-      return modelLabel;
-    },
-  };
-
-  // The pending-message queue (task.md): queued while a request is in flight and
-  // drained by the host loop between turns. Defined rather than spread, so the
-  // `queuedCount`/`queued` accessors stay live.
-  queueSurface(queue, tui);
-  return tui;
+    noticeBar,
+    refresh,
+    scrollBy,
+    scrollPage,
+    log,
+    logBlock,
+    close,
+    isClosed: () => closed,
+    modelLabel,
+  });
 }

@@ -1,0 +1,55 @@
+id: interface/notice-overlay
+domain: interface
+title: Transient notices in a self-hiding overlay near the top of the screen
+status: active
+summary: >
+  A provider failure that was recovered from (a 502 the retry loop then succeeded
+  with, an empty response it retried) is *news*, not history, so it is shown in a
+  floating overlay near the top of the screen instead of being written to the
+  transcript, where nothing would ever remove it. The model
+  (app/notice-overlay.js) gives every notice a TTL, refreshes a repeated kind+text
+  instead of stacking it, caps what it keeps, and lets a handle take one notice
+  down; the overlay (app/notice-bar.js) is a borderless box at top 1, hidden while
+  nothing is live and hidden again by a single timer armed for the earliest expiry.
+  api/ollama.js reports a retried attempt through an injected onRetry hook, the
+  conversation manager routes recovered failures to onNotice and keeps a transcript
+  line only for the failure that ends the task, and main.js dismisses the retry
+  notice as soon as the turn lands. The line CLI, having no floating box, prints the
+  same notice as a plain line.
+code:
+  - path: app/notice-overlay.js
+    symbols: [createNoticeOverlay, noticeSurface, formatNoticeText, formatNoticeRow, formatNoticeRows, formatRetryNotice, formatFailureNotice, NOTICE_TTL_MS, NOTICE_MAX_ROWS, NOTICE_MAX_KEPT, NOTICE_KINDS, NOTICE_COLORS, NOTICE_MARKERS, NOTICE_MAX_CHARS]
+  - path: app/notice-bar.js
+    symbols: [createNoticeBar]
+  - path: app/tui.js
+    symbols: [createTui]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: api/ollama.js
+    symbols: [callOllama, normalizeUsage]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/notice-overlay.test.js
+    cases:
+      - "formatNoticeText()/formatNoticeRow() paint one sanitised, coloured line"
+      - "formatRetryNotice()/formatFailureNotice() say what happened, and how it ended"
+      - "createNoticeOverlay() shows a notice and expires it on its own"
+      - "createNoticeOverlay() refreshes a repeated notice instead of stacking it"
+      - "createNoticeOverlay() caps what it keeps and can take one notice down"
+      - "createNoticeOverlay() notifies its subscribers, and a broken one is harmless"
+      - "the overlay floats over the transcript and hides itself when empty"
+      - "a recovered 502 shows in the overlay and clears when the turn lands"
+      - "createNoticeBar() arms one timer for the earliest expiry, not a repaint loop"
+  - path: tests/conversation-manager.test.js
+    cases:
+      - "a recovered provider failure becomes a notice, never a transcript line"
+      - "a summariser failure never breaks the task loop"
+  - path: tests/ollama-provider.test.js
+    cases:
+      - "a default call injects the agent system prompt and normalises the response"
+      - "the abort signal is honoured"
+      - "a retried attempt is reported through onRetry, not the console"
+      - "a throwing onRetry hook never costs the retry"

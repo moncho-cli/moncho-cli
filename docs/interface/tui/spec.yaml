@@ -11,7 +11,11 @@ summary: >
   (always visible), compactions are announced in the transcript exactly once, and
   the keys are bound apart from the screen wiring (interrupts on the program,
   scrolling on the screen). The queue bar right above the input box is the
-  pending-message region (docs/interface/message-queue).
+  pending-message region (docs/interface/message-queue). An input box with no text
+  shows the last prompt over it, greyed out (app/input-hint.js, task-backlog: "if
+  the input box is empty, it should have a grayed italic text saying 'Last prompt:
+  .......'"); the hint is display only — content, never value — and disappears with
+  the first typed character.
 code:
   - path: app/tui.js
     symbols: [createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, PASTE_THRESHOLD, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
@@ -33,9 +37,18 @@ code:
     symbols: [createChooser, chooseLabel, createPickerModal]
   - path: app/prompt-input.js
     symbols: [createPromptInput, normalizePrompt]
+  - path: app/input-hint.js
+    symbols: [createInputHint, hintSurface, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_MAX_CHARS, HINT_COLOR, EXIT_SENTINEL]
   - path: config/constants.js
     symbols: [describeModel, detectProvider]
 tests:
+  - path: tests/input-hint.test.js
+    cases:
+      - "formatLastPromptHint() labels the prompt and flattens it to one line"
+      - "createInputHint() paints over an empty box only, and never the value"
+      - "createInputHint() without a box is a harmless no-op"
+      - "an empty box shows the last prompt, and any keystroke replaces the hint"
+      - "a prompt queued during a turn is not the last prompt until it is sent"
   - path: tests/tui.test.js
     cases:
       - "a pty gets the three-region TUI (transcript, status bar, input box)"

@@ -1,18 +1,24 @@
 id: interface/conversation-colors
 domain: interface
-title: One colour per kind of conversation row
+title: One colour per kind of conversation row, and a bright-blue bold intent
 status: active
 summary: >
   app/theme.js names one blessed colour per kind of transcript row (the echoed
-  prompt, tool calls and results, context notices, errors, low-key chrome) and
-  classifyLine()/colorizeLine() apply it at the end of formatTranscript(). A line
-  the markdown renderer already coloured is left untouched, prose gets no colour,
-  the palette only wraps lines so the visible glyphs and the block-click row math
-  are unchanged, and colour stays presentation only: the model and the session
-  file never see a tag and the line CLI never renders one.
+  prompt, tool calls and tool results, the reason for a call, context notices,
+  errors, low-key chrome) and classifyLine()/colorizeLine() apply it at the end of
+  formatTranscript(). The reason for a tool call — the standalone `intent:` row and
+  the `(intent: …)` span inside a tool header — is painted bright blue and bold
+  (colorizeIntent(), INTENT_COLOR, INTENT_BOLD), which is the backlog item "the
+  color of the intent text should be a brightish blue so is easier to find within
+  the text, and bold"; highlightIntentSpans() recolours only that span, so the row
+  keeps the colour of its kind. A line the markdown renderer already coloured is
+  left untouched, prose gets no colour, the palette only wraps lines so the visible
+  glyphs and the block-click row math are unchanged, and colour stays presentation
+  only: the model and the session file never see a tag and the line CLI never
+  renders one.
 code:
   - path: app/theme.js
-    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, isTagged, classifyLine, colorizeLine, colorizeLines]
+    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, INTENT_COLOR, INTENT_BOLD, colorizeIntent, highlightIntentSpans, isTagged, classifyLine, colorizeLine, colorizeLines]
   - path: app/tui-render.js
     symbols: [formatTranscript, formatUserEcho, USER_ECHO_HEADER, USER_ECHO_PREFIX]
   - path: app/transcript.js
@@ -21,9 +27,11 @@ tests:
   - path: tests/conversation-colors.test.js
     cases:
       - "the palette names one colour per kind of conversation row"
+      - "the intent gets its own bright-blue, bold style"
       - "classifyLine() tells the parts of a turn apart and leaves prose alone"
       - "a line the markdown renderer already coloured is left untouched"
       - "colorizeLine()/colorizeLines() wrap a line without rewriting it"
+      - "the intent is bright blue and bold inside the row that carries it"
       - "formatTranscript() colours the parts of a turn and keeps the markdown colours"
       - "the colour reaches the terminal, and the visible glyphs are unchanged"
       - "a coloured block header still toggles on the same row"

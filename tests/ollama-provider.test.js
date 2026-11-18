@@ -12,10 +12,15 @@ import http from 'node:http';
  *  - the agent system prompt is still injected for normal calls (prompt.md), and
  *  - `systemPrompt:false` really omits it, which is what lets the context
  *    summariser behind task.md item 8 run as a neutral summariser instead of
- *    answering as Moncho.
+ *    answering as Moncho, and
+ *  - a retried attempt is reported through the injected `onRetry` hook instead of
+ *    the console, so the host can show it as a transient notice
+ *    (`docs/interface/notice-overlay`) rather than leaving a stale error line.
  */
 
 const requests = [];
+/** How many of the next requests the stub answers with a 502. */
+let failNext = 0;
 
 const server = http.createServer((req, res) => {
   let body = '';
@@ -24,6 +29,15 @@ const server = http.createServer((req, res) => {
     let parsed = null;
     try { parsed = JSON.parse(body); } catch { /* ignore */ }
     requests.push(parsed);
+
+    // A 502 the retry loop is expected to recover from, on demand (the backlog's
+    // report: "i got a 502 error then it worked").
+    if (failNext > 0) {
+      failNext -= 1;
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end('{"error":"bad gateway"}');
+      return;
+    }
 
     // OpenAI-compatible shape, which normalizeResponse must understand.
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -89,6 +103,56 @@ test('the abort signal is honoured', async () => {
   const controller = new AbortController();
   controller.abort();
   await assert.rejects(() => callOllama([{ role: 'user', content: 'x' }], [], false, controller.signal));
+});
+
+test('a retried attempt is reported through onRetry, not the console', async () => {
+  // The stub answers 502 once — exactly the backlog's report — then works.
+  const before = requests.length;
+  failNext = 1;
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  const retries = [];
+  let data;
+  try {
+    data = await callOllama([{ role: 'user', content: 'hello' }], [], false, null, {
+      // The production delay is five seconds; the override keeps the suite quick.
+      retryDelayMs: 1,
+      onRetry: (report) => retries.push(report),
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(data.message.content, 'stub reply', 'the retry must have succeeded');
+  assert.equal(requests.length - before, 2, 'the failed attempt was followed by exactly one retry');
+  assert.equal(retries.length, 1, 'exactly one attempt was retried');
+  assert.equal(retries[0].attempt, 1);
+  assert.equal(retries[0].maxRetries, 3);
+  assert.equal(retries[0].delayMs, 1);
+  assert.match(retries[0].error.message, /502/);
+  assert.deepEqual(warnings, [], 'the hook replaces the console line, it does not add to it');
+});
+
+test('a throwing onRetry hook never costs the retry', async () => {
+  // Nothing fails here, so the hook is not called at all: a broken notice hook
+  // cannot break a healthy call.
+  const healthy = await callOllama([{ role: 'user', content: 'hello' }], [], false, null, {
+    retryDelayMs: 1,
+    onRetry: () => { throw new Error('broken notice hook'); },
+  });
+  assert.equal(healthy.message.content, 'stub reply');
+
+  // ...and when it *is* called (a real 502), the throw is swallowed and the retry
+  // still happens: losing the notice must never cost the user their turn.
+  failNext = 1;
+  const recovered = await callOllama([{ role: 'user', content: 'hello' }], [], false, null, {
+    retryDelayMs: 1,
+    onRetry: () => { throw new Error('broken notice hook'); },
+  });
+  assert.equal(recovered.message.content, 'stub reply', 'the retry still happened');
 });
 
 test.after(() => server.close());
