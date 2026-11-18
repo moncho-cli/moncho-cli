@@ -61,6 +61,14 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     content: sanitize(modelLabel),
   });
 
+  // `inputOnFocus` is deliberately NOT set: it makes neo-blessed arm a read on
+  // every 'focus' event, while app/tui.js arms one explicitly in question().
+  // The two paths overlap around the picker modal (blessed destroys the modal,
+  // the box gets a blur, a focus and another read) and, because textarea
+  // attaches its key listener from a deferred tick, the overlapping read cycles
+  // leave TWO 'keypress' listeners on the box -- every later keystroke is then
+  // appended twice. question() is the single arming point, so focusing the box
+  // (e.g. when the modal closes) never starts a read of its own.
   const inputBox = blessed.textbox({
     parent: screen,
     label: ' > ',
@@ -70,7 +78,6 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     height: INPUT_HEIGHT,
     border: { type: 'line' },
     tags: false,
-    inputOnFocus: true,
     padding: { left: 1, right: 1 },
   });
 

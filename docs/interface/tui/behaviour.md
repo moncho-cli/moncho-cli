@@ -22,6 +22,10 @@ Five regions, laid out relatively so blessed relayouts them on resize:
   right edge) and keeps the newest transcript line in view.
 - The region layout lives in `createLayout()` (`app/tui-layout.js`), so the
   orchestration in `app/tui.js` stays about keys, questions and the public surface.
+- The input box is **armed by `question()` alone**. The region is created without
+  blessed's `inputOnFocus`, so gaining focus (e.g. when the picker modal closes)
+  never starts a read of its own; two overlapping read cycles would leave the box
+  with two `keypress` listeners and every typed character would land twice.
 
 ## Rendering
 

@@ -34,8 +34,8 @@ single tool call each, so discovery costs tokens instead of guesses. Both are
 ## grep
 
 - Searches file **contents** and returns `path:line: text` lines wrapped in a
-  `<grep pattern="…" path="…" matches=N files=M [truncated=true]>` tag, closed by
-  `</grep>`.
+  `<grep pattern="…" path="…" matches=N files=M [truncated=true] [before=N after=N]>`
+  tag, closed by `</grep>`.
 - `pattern` is a regular expression; `fixedStrings: true` searches for literal text
   and `ignoreCase: true` folds case. `buildSearchRegExp()` owns that conversion and
   raises `INVALID_PATTERN` for an unparsable expression.
@@ -43,6 +43,25 @@ single tool call each, so discovery costs tokens instead of guesses. Both are
   without the lines, and `maxResults` (default 200) caps the matching lines.
 - Lines are previewed to 400 characters and files above 2 MiB or binary are skipped.
 - No matches is **not** an error: the tag reports `matches=0` with `(no matches)`.
+
+## grep context lines (before / after)
+
+- `before` and `after` widen every match into a window of surrounding lines, so a
+  hit can be read in place instead of costing a follow-up `read_file` call. Both
+  default to `0`, which keeps the single-line output behaviour unchanged.
+- The width is clamped by `normalizeContextLines()` into `[0, MAX_CONTEXT_LINES]`
+  (20 per side): context must not multiply the output of a broad search, so a
+  request for `before: 9999` is served (and reported) as `before=20`.
+- `buildContextWindows()` turns one file's hits into display windows. Windows that
+  overlap **or touch** are merged and a matching line is never printed twice, so
+  adjacent hits share one block instead of repeating their shared context.
+- Matching lines keep `path:line: text`; context lines use `path-line- text`
+  (`formatWindowLine()`), and non-contiguous windows are separated by a `--` line
+  inside the `<grep>` body (`renderWindows()`).
+- Only **matching** lines count towards `maxResults`; a capped hit can still appear
+  as a context line of a retained match. The tag reports `before`/`after` once they
+  are non-zero, so the model can see how wide the window really was.
+- `filesOnly: true` ignores the context arguments entirely and returns paths only.
 
 ## blob
 
@@ -70,4 +89,4 @@ single tool call each, so discovery costs tokens instead of guesses. Both are
 
 - Implementation: `tools/grep.js`, `tools/blob.js`, `utils/project-scan.js`
 - Sandbox: `utils/path-safety.js` (docs/agent/file-safety)
-- Proof: `tests/discovery-tools.test.js`
+- Proof: `tests/discovery-tools.test.js`, `tests/grep-context.test.js`

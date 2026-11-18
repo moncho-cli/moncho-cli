@@ -46,7 +46,10 @@ test('sessions live under the gitignored agent/ tree by default', () => {
   assert.equal(sessionPath('2026-02-14T10-30-00-000Z'), 'agent/sessions/2026-02-14T10-30-00-000Z.json');
   // the agent/ tree is disposable by design: sessions never ship in a commit
   const ignore = fs.readFileSync('.gitignore', 'utf-8');
-  assert.match(ignore, /^agent\/$/m, 'agent/ must stay gitignored');
+  // The rule must be root-anchored: a bare `agent/` would also hide the docs
+  // realm's docs/agent/ specs, which are meant to ship.
+  assert.match(ignore, /^\/agent\/$/m, 'the root agent/ tree must stay gitignored');
+  assert.doesNotMatch(ignore, /^agent\/$/m, 'an unanchored agent/ would hide docs/agent/ too');
 });
 
 test('sessionId() derives a sortable, date-named id from a Date', () => {

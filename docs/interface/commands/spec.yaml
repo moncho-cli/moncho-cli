@@ -38,3 +38,4 @@ tests:
       - "the modal cancels with Escape and with Ctrl+C, returning null"
       - "the modal wraps at the ends and jumps with home/end"
       - "a picker with no rows cancels instead of resolving nonsense"
+      - "closing the picker modal leaves the input box reading a keystroke once"

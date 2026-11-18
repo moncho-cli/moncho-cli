@@ -1,8 +1,12 @@
-beauty ui changes
 status: done
 
-- [x] keep the context usage information always visible by aligningn it to the right of the row
-- [x] the output of the tool calls most of the times should be collapsed by default, the user would click to expand and see then click again to collapse, so by default just says inline at the end "X char response"
-- [x] under the ignored agent/ path create sessions/ where we will store date named files with the full context of the conversations, properly formatted to be able to be picked up
-- [x] by adding a command /sessions we could open a modal to select previous sessions and continue working on those (the commands should be iterable code so we can add more commands later)
-- [x] make sure JSON responses from commands are pretty printed
+# Backlog pick: "grep tool is missing the After and Before arguments to be able to return context lines"
+
+Source: `task-backlog.md` item 1. Work it one checkbox at a time with the
+`update_task` loop (start → implement → verify → complete), and keep the three
+realms linked: code in `tools/grep.js`, proof in `tests/`, contract in `docs/`.
+
+- [x] grep accepts "before"/"after" arguments and returns the surrounding context lines
+- [x] tests in tests/grep-context.test.js prove context lines, overlap merging and caps
+- [x] docs/agent/project-discovery describes the context arguments and links the new cases
+- [x] full suite is green and the picked backlog item is marked done

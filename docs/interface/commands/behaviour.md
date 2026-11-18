@@ -46,6 +46,10 @@ Each front end renders it its own way:
   consumes the keys itself (locking the screen's dispatch so the input box and the
   transcript do not also react), and resolves with the item — or `null` on Escape /
   Ctrl+C. `chooseLabel()` adapts that to the **index** contract the commands use.
+  Closing the modal restores the focus to the input box but must **not** start a
+  read of its own: the host arms the next prompt (`question()`) and that is the
+  single arming point. Otherwise the box carries two read cycles, every keystroke
+  lands in it twice, and typing after `/sessions` repeats each character.
 - **line CLI**: `createCLI().choose(labels)` prints a numbered list and reads the
   number back; an empty answer, `q` or an out-of-range number cancels.
 
