@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { withTui } from './support/tui-harness.js';
+import { displayWidth } from '../app/queue-rows.js';
 
 /**
  * The queue bar on screen: the region right above the input box, the
  * queue-while-in-flight rule and the deletion by click. The model, the rows and
- * the injection rule are pure and proven in tests/message-queue.test.js; here they
- * are driven through the real `createTui()` on the shared fake TTY.
+ * the injection rule are pure and proven in tests/message-queue.test.js and
+ * tests/queue-rows.test.js; here they are driven through the real `createTui()` on
+ * the shared fake TTY.
  */
 
 /** Flush neo-blessed's deferred repaints (it writes from setImmediate). */
@@ -157,5 +159,34 @@ test('a message typed while idle is not queued: the box settles the armed questi
     assert.equal(await armed, 'idle message', 'the idle submission answers the question');
     assert.equal(tui.queuedCount, 0, 'and nothing is queued behind its back');
     assert.equal(tui.queueBar.hidden, true);
+  });
+});
+
+test('a long queued message uses the whole bar and is never wrapped or clipped', async () => {
+  await withTui(async (tui, { output }) => {
+    tui.startSpinner();
+    // A message far longer than the old fixed 48-character preview.
+    await typeAndEnter(tui, 'readable '.repeat(20).trim());
+
+    // The bar reports the interior width it really has — the screen less its own two
+    // columns of padding — and the row spends the whole of it.
+    assert.equal(tui.queueColumns, 78, 'an 80-column screen leaves a 78-cell interior');
+    assert.equal(displayWidth(tui.queueRows()[0]), 78);
+    assert.ok(tui.queueRows()[0].endsWith('…'), 'the truncation is visible');
+
+    // One message, one display line: the region is exactly as tall as what it holds,
+    // so nothing below the last row can be clipped away.
+    assert.equal(tui.queueBar.getScreenLines().length, 1);
+    assert.equal(tui.queueBar.height, 1);
+
+    // A resize re-fits every row: the preview would otherwise keep the width of the
+    // terminal it was painted in.
+    output.columns = 40;
+    output.emit('resize');
+    await flush();
+    assert.equal(tui.queueColumns, 38);
+    assert.equal(displayWidth(tui.queueRows()[0]), 38);
+    assert.equal(tui.queueBar.getScreenLines().length, 1, 'still one row, never wrapped');
+    assert.equal(tui.queueBar.height, 1);
   });
 });

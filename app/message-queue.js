@@ -7,63 +7,11 @@
  * are the bytes the user typed), visible right above the input box, deletable one
  * row at a time, and drained by the host loop between two turns.
  *
- * Pure: no neo-blessed, no screen, so the order, the deletion, the row formatting
- * and the click geometry are all unit testable without a pty.
+ * Pure: no neo-blessed, no screen, so the order, the deletion and the click
+ * geometry are all unit testable without a pty. How a message is *drawn* — one row
+ * fitted to the width the bar really has — lives in `app/queue-rows.js`, which is
+ * re-exported here so `app/message-queue.js` stays the queue's single entry point.
  */
-
-/** Longest preview kept for one row, in characters. */
-export const QUEUE_PREVIEW_CHARS = 48;
-
-/** Message rows the bar shows before the rest collapse into a `+N more` tail. */
-export const QUEUE_MAX_ROWS = 4;
-
-/** The marker carried by every row; clicking the row deletes that message. */
-export const QUEUE_DELETE_MARKER = '✕';
-
-/** The tail row shown when more messages are queued than the bar paints. */
-export function formatQueueTail(hidden) {
-  return `+${Number(hidden) || 0} more`;
-}
-
-/**
- * One display-ready line for a queued message: whitespace runs (including the
- * newlines of a pasted block) collapse to single spaces and the result is
- * truncated to `maxChars`, with an ellipsis when something was dropped.
- *
- * Display only — the model keeps the raw text untouched.
- */
-export function previewMessage(text, { maxChars = QUEUE_PREVIEW_CHARS } = {}) {
-  const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
-  const limit = Math.max(1, Math.trunc(Number(maxChars)) || QUEUE_PREVIEW_CHARS);
-  if (flat.length <= limit) return flat;
-  return `${flat.slice(0, Math.max(0, limit - 1))}…`;
-}
-
-/**
- * One queue row: the delete marker, the 1-based position, then the preview.
- * Accepts a queue item (`{ id, text }`) or a bare string.
- */
-export function formatQueueRow(message, index = 0) {
-  const text = message && typeof message === 'object' ? message.text : message;
-  const position = Math.trunc(Number(index)) + 1;
-  const label = Number.isFinite(position) && position > 0 ? `${position}. ` : '';
-  return `${QUEUE_DELETE_MARKER} ${label}${previewMessage(text)}`;
-}
-
-/**
- * The rows of the queue bar, top to bottom: one `✕` row per message, in queue
- * order, and — when more than `maxRows` are waiting — a final `+N more` tail
- * naming how many rows are not painted.
- */
-export function formatQueueRows(messages = [], { maxRows = QUEUE_MAX_ROWS } = {}) {
-  const list = Array.isArray(messages) ? messages : [];
-  const cap = Math.max(0, Math.trunc(Number(maxRows)) || 0);
-  const shown = Math.min(list.length, cap);
-  const rows = list.slice(0, shown).map((message, index) => formatQueueRow(message, index));
-  const hidden = list.length - shown;
-  if (hidden > 0) rows.push(formatQueueTail(hidden));
-  return rows;
-}
 
 /**
  * Map a click on the queue region to the index of the message under the cursor:
@@ -74,7 +22,11 @@ export function formatQueueRows(messages = [], { maxRows = QUEUE_MAX_ROWS } = {}
  * region, below the painted messages or on the `+N more` tail yields -1 (nothing
  * to delete). `rtof` is blessed's fake->real map: a row a preview wrapped onto is
  * mapped back to the message it belongs to, so a wrap cannot delete its
- * neighbour. Pure and defensive: a missing widget or click yields -1 too.
+ * neighbour. A row fitted to the bar's width never wraps
+ * (`app/queue-rows.js#queuePreviewBudget`), so the map is only a safety net for a
+ * terminal that disagrees with our own cell counting.
+ *
+ * Pure and defensive: a missing widget or click yields -1 too.
  */
 export function queueRowAt({ data, pos, messages = [], itop = 0, offset = 0, rtof = null } = {}) {
   if (!pos || !data) return -1;
@@ -194,3 +146,7 @@ export function createMessageQueue() {
     },
   };
 }
+
+// The row formatting is a view of the queue, not part of its model: a row has to know
+// the width of the bar it is painted in (app/queue-rows.js).
+export * from './queue-rows.js';

@@ -16,5 +16,9 @@
 - [ ] make sure the intent string is not being repeated many times with exact same content, both in conversation and actual context sent to the model
 - [ ] be able to use arrow keys left and right to move through the text, and up/down to navigate messages history
 - [ ] conversation to show unicode emojis properly
-- [ ] the messages in queue get strangely truncated, too soon, i cant read whats there, idk if its will be sent properly
+- [x] the messages in queue get strangely truncated, too soon, i cant read whats there, idk if its will be sent properly — **fixed:** the queue row never knew how wide it was. The preview was capped at a fixed 48 characters whatever the terminal, and a row wider than the box wrapped onto a second display line that the region's height clipped, so the tail vanished with no `…`. A row is now fitted to the interior width of the bar, counted in cells (`app/queue-rows.js#queuePreviewBudget`), so it uses the whole width on a wide terminal and always stays one display line; the queued text itself was never altered — the queue keeps it verbatim.
 - [ ] destructive tool subagent gate: able to define via environment a specific url/key/model that will be used to assess the threat level of a destructive operation and could reject it given a env configurable threshold
+- [ ] add working time counter to sessions, show next avobe the token window size information row, also aligned to the right (so only add up time the model spent thiking or a tool call resolving) save this also in the usage stats
+- [ ] sometimes the input box for the message looses focus and i cant make it come back there, so i cant write anything. clicking should work, and periodically just put the focus back in there
+- [ ] text selection should copy to clipboard whatever was selected right on mouse up, in the conversation section
+- [ ] keep track of the package version, in README.md and files where this version is mentioned, top bar in the tui, etc

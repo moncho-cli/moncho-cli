@@ -45,13 +45,33 @@ collapse into a `+N more` tail naming how many are not shown. The widget is a vi
 of the model: every mutation repaints it, so the rows can never disagree with the
 queue.
 
+### the row is fitted to the width it really has
+
+A row measures what it is drawn in, so the preview stays readable (task-backlog:
+"the messages in queue get strangely truncated, too soon, i cant read whats there").
+The bar passes its interior width down as a number of **cells**, and
+`queuePreviewBudget` takes the `✕ <position>. ` prefix off that budget — the marker
+and the position stay readable whatever happens — and gives the rest to the preview.
+The counting is in cells, not characters (`displayWidth`, `truncateToWidth`): a wide
+glyph costs two cells and a combining mark none, so a row holding them still fits.
+
+A row therefore always ends up **one display line**, which is the point: the region's
+height is the number of rows *painted*, so a row that wrapped onto a second display
+line was clipped by the widget and its tail vanished with no `…` at all. A resize
+re-fits every row, because the width changed with the window. A caller with **no
+width** — the line CLI, which has no bar, or the first paint before the widget is
+laid out — keeps the historical fixed `QUEUE_PREVIEW_CHARS` cap rather than
+inventing one.
+
 ## delete
 
 A click on a row removes **that message only** and the region shrinks back; the
 click geometry (`queueRowAt`) maps the screen row through the widget's border and
 padding and through blessed's fake→real table, so a preview that happens to wrap
-still deletes the message it belongs to. A click outside the painted messages — on
-the border, above the region or on the `+N more` tail — deletes nothing.
+still deletes the message it belongs to. Since a row is fitted to the bar it never
+wraps, so that mapping is a safety net rather than the common path. A click outside
+the painted messages — on the border, above the region or on the `+N more` tail —
+deletes nothing.
 
 ## inject
 
@@ -74,12 +94,13 @@ is the only source of prompts. The difference is stated, not hidden.
 
 ## See also
 
-- Implementation: `app/message-queue.js` (the model, the rows, the geometry and the
-  injection rule), `app/queue-bar.js` (the widget binding), `app/prompt-input.js`
-  (the armed-question / queueing box), `app/tui-layout.js#setQueueHeight` (the
-  region), `app/tui.js#createTui`, `main.js`
+- Implementation: `app/message-queue.js` (the model, the click geometry and the
+  injection rule), `app/queue-rows.js` (how a message is drawn: the cell counting
+  and the width budget), `app/queue-bar.js` (the widget binding),
+  `app/prompt-input.js` (the armed-question / queueing box),
+  `app/tui-layout.js#setQueueHeight` (the region), `app/tui.js#createTui`, `main.js`
 - Spec of the surrounding screen: `docs/interface/tui`
 - Spec of the prompt as the model receives it: `docs/interface/user-messages`
 - Spec of the loop that drains it: `docs/runtime/startup-wiring`
-- Proof: `tests/message-queue.test.js`, `tests/message-queue-tui.test.js`,
-  `tests/tui.test.js`
+- Proof: `tests/message-queue.test.js`, `tests/queue-rows.test.js`,
+  `tests/message-queue-tui.test.js`, `tests/tui.test.js`

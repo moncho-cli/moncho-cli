@@ -1,8 +1,8 @@
 {
-  "name": "ollama-toolchain",
-  "version": "1.0.0",
+  "name": "moncho-cli",
+  "version": "1.0.1",
   "type": "module",
-  "description": "Modular Ollama toolchain with auto-loaded tools",
+  "description": "Opinionated, permission-less, pluricontextual agentic suite for software development",
   "main": "main.js",
   "scripts": {
     "start": "node main.js",

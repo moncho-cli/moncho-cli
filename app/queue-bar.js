@@ -9,10 +9,11 @@ import {
 /**
  * Bind the pending-message queue to the blessed region right above the input box.
  *
- * The model (app/message-queue.js) owns the order, the verbatim text and the row
- * formatting; this module is only the screen binding: it paints the rows, resizes
- * the region so the status bar, the model row and the transcript shift up by the
- * queue height, and deletes the message under a click.
+ * The model (app/message-queue.js) owns the order and the verbatim text; the rows
+ * they are painted as — fitted to the width the bar really has — live in
+ * app/queue-rows.js. This module is only the screen binding: it paints the rows,
+ * resizes the region so the status bar, the model row and the transcript shift up by
+ * the queue height, and deletes the message under a click.
  *
  * Kept apart from app/tui.js so the screen wiring stays thin, and pure in the
  * model sense: with no widget the whole thing still works (it just paints
@@ -24,16 +25,39 @@ export function createQueueBar({
   setHeight = () => {},
   refresh = () => {},
   maxRows = QUEUE_MAX_ROWS,
+  columns = null,
 } = {}) {
   let closed = false;
   let paintedHeight = 0;
 
-  /** The display rows of the queue, in queue order, tail included. */
-  const rows = () => formatQueueRows(queue.items, { maxRows });
+  /**
+   * The interior width the bar offers, in cells: the caller's accessor when it has one
+   * (the TUI, which knows the screen), otherwise the widget's own layout box, and 0
+   * when there is no widget at all — which tells the formatter to keep its no-width
+   * fallback (`app/queue-rows.js#queuePreviewBudget`).
+   *
+   * Re-read on every paint rather than cached: a resize changes it, and the rows are
+   * then re-fitted to the width the bar *really* has, which is the difference between
+   * a readable preview and one the widget clipped.
+   */
+  const roomFor = () => {
+    if (typeof columns === 'function') return Math.max(0, Math.trunc(Number(columns())) || 0);
+    if (!widget) return 0;
+    const width = Number(widget.width) || 0;
+    const chrome = Number(widget.iwidth) || 0;
+    return Math.max(0, width - chrome);
+  };
+
+  /** The display rows of the queue, in queue order, tail included, fitted to the bar. */
+  const rows = () => formatQueueRows(queue.items, { maxRows, columns: roomFor() });
 
   /**
    * Repaint from the model: the rows become the widget content and the region is
    * resized to them (0 rows hides it and restores the anchors above it).
+   *
+   * The height is set to the number of rows *painted*, and every row is fitted to one
+   * display line, so the region is exactly as tall as what it holds: nothing below the
+   * last row is clipped any more.
    */
   const paint = () => {
     if (closed) return [];
@@ -77,6 +101,10 @@ export function createQueueBar({
     paint,
     rows,
     clickAt,
+    /** The interior width the rows are fitted to right now (0: no bar). */
+    get columns() {
+      return roomFor();
+    },
     /** Queue one message verbatim; a blank message is not queued (null). */
     enqueue: (text) => queue.enqueue(text),
     /** Drop the oldest message and return its text, or null when empty. */
@@ -130,6 +158,10 @@ export function queueSurface(queue, target = {}) {
     clickQueue: { value: (data) => queue.clickAt(data), enumerable: true },
     /** Rows the bar paints right now (the region height). */
     queueHeight: { get: () => queue.height, enumerable: true },
+    /** The interior width the rows are fitted to, in cells (0 without a bar). */
+    queueColumns: { get: () => queue.columns, enumerable: true },
+    /** Repaint the bar from the model (e.g. after a resize changed its width). */
+    paintQueue: { value: () => queue.paint(), enumerable: true },
   });
 }
 

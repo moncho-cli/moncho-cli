@@ -40,7 +40,8 @@ export { formatUserEcho, USER_ECHO_HEADER };
 export { SPINNER_FRAMES, SPINNER_INTERVAL_MS };
 export { TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT };
 export { createQueueBar, queueSurface } from './queue-bar.js';
-export { createMessageQueue, formatQueueRows, formatQueueRow, previewMessage, queueRowAt, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER } from './message-queue.js';
+export { createMessageQueue, queueRowAt, formatQueueTail, formatQueueRows } from './message-queue.js';
+export { formatQueueRow, previewMessage, displayWidth, truncateToWidth, queuePreviewBudget, QUEUE_PREVIEW_CHARS, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER } from './queue-rows.js';
 export { createPromptInput, normalizePrompt } from './prompt-input.js';
 export { createInputHint, hintSurface, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR } from './input-hint.js';
 export { createNoticeOverlay, noticeSurface, formatNoticeRows, formatNoticeRow, formatNoticeText, formatRetryNotice, formatFailureNotice, NOTICE_TTL_MS, NOTICE_MAX_ROWS, NOTICE_MAX_KEPT, NOTICE_COLORS, NOTICE_MARKERS, NOTICE_KINDS, NOTICE_MAX_CHARS } from './notice-overlay.js';
@@ -103,6 +104,13 @@ export function createTui(options = {}) {
     widget: queueRegion,
     setHeight: setQueueHeight,
     refresh,
+    // The rows are fitted to the width the bar really has (app/queue-rows.js): a long
+    // queued message uses the whole of a wide terminal instead of a fixed
+    // 48-character preview, and never wraps past the region's height.
+    columns: () => {
+      const width = Number(screen.width) || Number(output.columns) || 0;
+      return width > 2 ? width - 2 : 0;
+    },
   });
 
   // The brand line sits on the very first row of the screen, right-aligned:
@@ -210,6 +218,9 @@ export function createTui(options = {}) {
   screen.on('resize', () => {
     transcript.setScrollPerc(100);
     statusRow.render();
+    // Every row that is fitted to a width has to be re-fitted at the new one: the
+    // queue bar's previews would otherwise keep the width of the old terminal.
+    queue.paint();
     brandBar.paint();
     // The brand line may fit or stop fitting at the new width, which moves the top
     // of the conversation; the notices follow the mark down or back up.

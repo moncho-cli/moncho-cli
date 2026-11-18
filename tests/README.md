@@ -40,6 +40,7 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `context-usage-refresh.test.js` | The live token meter: every window change and every call announces the usage, a broken listener is swallowed, and the compaction marker stays once-per-event. |
 | `model-usage.test.js` | Token accounting per model: provider counters normalised from both shapes, the exact/estimated split, the session file's usage block, and `/usage`. |
 | `brand.test.js` | The brand line: `MONCHO (v x.y.z)` formatted from the manifest, the one-row all-or-nothing fit rule, the reserved band, and the floating box in the top right of the conversation. |
+| `queue-rows.test.js` | How a queued message is drawn: the cell counting (wide glyphs two, combining marks none), the preview budget that keeps the `✕ N. ` marker, and the rule that a row is fitted to the bar it is painted in. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the
 suites import; they are not test files themselves.

@@ -4,14 +4,7 @@ import assert from 'node:assert/strict';
 import {
   createMessageQueue,
   nextPrompt,
-  previewMessage,
-  formatQueueRow,
-  formatQueueRows,
-  formatQueueTail,
   queueRowAt,
-  QUEUE_PREVIEW_CHARS,
-  QUEUE_MAX_ROWS,
-  QUEUE_DELETE_MARKER,
 } from '../app/message-queue.js';
 
 /**
@@ -20,10 +13,10 @@ import {
  * delete them from the queue").
  *
  * Everything here is pure — no neo-blessed, no screen — so the order, the verbatim
- * text, the row formatting, the click geometry and the injection rule are proven
- * without a pty. The widget binding that paints these rows and queues a submission
- * while a request is in flight is proven in tests/message-queue-tui.test.js, and
- * the region it makes room for in tests/tui.test.js.
+ * text, the click geometry and the injection rule are proven without a pty. How a
+ * message is *drawn* (the rows, the width budget) lives in tests/queue-rows.test.js,
+ * and the widget binding that paints those rows and queues a submission while a
+ * request is in flight is proven in tests/message-queue-tui.test.js.
  */
 
 test('createMessageQueue() keeps messages in FIFO order, verbatim', () => {
@@ -106,50 +99,6 @@ test('createMessageQueue() removes one message by id and clears the rest', () =>
   assert.equal(queue.isEmpty, true);
 });
 
-test('previewMessage() flattens whitespace and truncates long text', () => {
-  assert.equal(previewMessage('  hello   world  '), 'hello world');
-  assert.equal(previewMessage('a\nb\r\nc\td'), 'a b c d', 'a pasted block shows as one row');
-  assert.equal(previewMessage(null), '');
-  assert.equal(previewMessage(undefined), '');
-
-  const long = 'x'.repeat(QUEUE_PREVIEW_CHARS + 20);
-  const preview = previewMessage(long);
-  assert.equal(preview.length, QUEUE_PREVIEW_CHARS, 'the preview is capped');
-  assert.ok(preview.endsWith('…'), 'the truncation is visible');
-  assert.equal(previewMessage(long, { maxChars: 5 }), 'xxxx…');
-
-  const exact = 'y'.repeat(QUEUE_PREVIEW_CHARS);
-  assert.equal(previewMessage(exact), exact, 'a preview at the cap is not truncated');
-});
-
-test('formatQueueRows() paints one ✕ row per message, capped with a +N more tail', () => {
-  assert.deepEqual(formatQueueRows([]), [], 'an empty queue has no rows');
-  assert.equal(formatQueueTail(2), '+2 more');
-
-  const messages = ['first', 'second', 'third'].map((text, index) => ({ id: `msg-${index}`, text }));
-  assert.deepEqual(formatQueueRows(messages), [
-    `${QUEUE_DELETE_MARKER} 1. first`,
-    `${QUEUE_DELETE_MARKER} 2. second`,
-    `${QUEUE_DELETE_MARKER} 3. third`,
-  ]);
-
-  // Every row carries the delete marker and the queue position, in queue order.
-  assert.equal(formatQueueRow({ id: 'x', text: 'only' }, 0), `${QUEUE_DELETE_MARKER} 1. only`);
-  assert.equal(formatQueueRow('bare string', 4), `${QUEUE_DELETE_MARKER} 5. bare string`);
-
-  // More messages than the bar paints collapse into a single tail row.
-  const many = Array.from({ length: QUEUE_MAX_ROWS + 3 }, (_, i) => ({ id: `m${i}`, text: `msg ${i}` }));
-  const rows = formatQueueRows(many);
-  assert.equal(rows.length, QUEUE_MAX_ROWS + 1, 'the cap plus the tail');
-  assert.equal(rows.at(-1), '+3 more');
-  assert.equal(rows.filter((row) => row.startsWith(QUEUE_DELETE_MARKER)).length, QUEUE_MAX_ROWS);
-  assert.equal(rows[0], `${QUEUE_DELETE_MARKER} 1. msg 0`);
-  assert.equal(rows[QUEUE_MAX_ROWS - 1], `${QUEUE_DELETE_MARKER} ${QUEUE_MAX_ROWS}. msg ${QUEUE_MAX_ROWS - 1}`);
-
-  // maxRows: 0 keeps nothing but the count.
-  assert.deepEqual(formatQueueRows(messages, { maxRows: 0 }), ['+3 more']);
-});
-
 test('queueRowAt() maps a click to the message under the cursor', () => {
   const messages = ['a', 'b', 'c'].map((text, index) => ({ id: `msg-${index}`, text }));
   // The region right above the input box: painted from screen row 14, one row of
@@ -171,7 +120,9 @@ test('queueRowAt() maps a click to the message under the cursor', () => {
   // An offset (a scrolled region) shifts the mapping.
   assert.equal(queueRowAt({ ...geometry, offset: 1, data: { y: 15 } }), 1);
 
-  // A row a preview wrapped onto still resolves to the message it belongs to.
+  // A row a preview wrapped onto still resolves to the message it belongs to: a row is
+  // fitted to the bar's width, so this is the safety net for a terminal that disagrees
+  // with our own cell counting.
   assert.equal(queueRowAt({ ...geometry, rtof: [0, 1, 1, 2], data: { y: 17 } }), 1);
 
   // Junk never throws: a missing widget, a missing click, a NaN row.
