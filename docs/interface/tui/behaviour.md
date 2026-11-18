@@ -71,12 +71,17 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 - The transcript scrolls even while the input box owns focus: page-up/page-down
   (and shift-up/down), home and end work from the keyboard, and a direct
   `scrollBy()` is exposed for tests.
+- Arriving output only scrolls the view when the reader is parked at the bottom; a
+  reader who scrolled up keeps the offset they chose. The rule and the geometry it
+  reads are fixed by `docs/interface/transcript-scroll`.
 
 ## See also
 
 - Implementation: `app/tui.js` (screen wiring), `app/tui-layout.js` (regions),
   `app/tui-render.js` (pure text helpers), `app/status-row.js`
   (status/spinner/meter bookkeeping), `config/constants.js`
+- Spec of the scroll position while output arrives: `docs/interface/transcript-scroll`
 - Spec of the collapsible results: `docs/interface/transcript-blocks`
 - Proof: `tests/tui.test.js`, `tests/tui-status.test.js`,
-  `tests/transcript-blocks.test.js`, `tests/interrupt-controls.test.js`
+  `tests/transcript-blocks.test.js`, `tests/transcript-scroll.test.js`,
+  `tests/interrupt-controls.test.js`

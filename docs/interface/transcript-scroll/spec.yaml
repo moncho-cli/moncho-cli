@@ -1,0 +1,25 @@
+id: interface/transcript-scroll
+domain: interface
+title: Keeping the reader's scroll while output arrives
+status: active
+summary: >
+  An arriving message scrolls the transcript to the bottom only when the reader is
+  already parked there; a reader scrolled up keeps the offset they chose. The
+  decision is pure (isFollowingScroll over percent, scroll height and visible
+  height, with a rounding tolerance and a follow-when-nothing-scrolls default) and
+  the view applies it on every repaint, overriding blessed's automatic jump. A
+  block toggle forces the hold regardless of the rule.
+code:
+  - path: app/transcript-view.js
+    symbols: [FOLLOW_BOTTOM_PERCENT, isFollowingScroll, createTranscriptView]
+tests:
+  - path: tests/transcript-scroll.test.js
+    cases:
+      - "isFollowingScroll() follows at the bottom and holds above it"
+      - "isFollowingScroll() follows when there is nothing to scroll yet"
+      - "the transcript view holds the reader offset when a message arrives"
+      - "the transcript view follows new output while parked at the bottom"
+      - "keepScroll: true forces the hold even when parked at the bottom"
+      - "an arriving message does not jump the transcript while the reader is scrolled up"
+      - "an arriving message at the bottom still scrolls the newest line into view"
+      - "a fresh short transcript keeps following as it grows"

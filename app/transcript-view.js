@@ -2,6 +2,36 @@ import { TranscriptModel, blockAtClick } from './transcript.js';
 import { formatArg, formatTranscript } from './tui-render.js';
 
 /**
+ * Scroll percentage that still counts as "at the bottom". blessed positions the
+ * view to the very end (100) when the user presses End or the mouse reaches the
+ * bottom bar, so a small tolerance absorbs a one-row rounding difference.
+ */
+export const FOLLOW_BOTTOM_PERCENT = 99.5;
+
+/**
+ * The follow/hold rule, as pure arithmetic: may an arriving message scroll the
+ * transcript to the bottom?
+ *
+ * - **follow** when the view is parked at the bottom, so new output comes into
+ *   sight as it arrives;
+ * - **hold** when the user scrolled up to read history: the offset they chose
+ *   must survive the append;
+ * - **follow** when there is nothing to scroll yet (an unmeasured widget, or
+ *   content that already fits), so a short transcript keeps following.
+ *
+ * @param {object} state
+ * @param {number} state.percent        scroll position, 0..100
+ * @param {number} state.scrollHeight   scrollable height in rows
+ * @param {number} state.visibleHeight  rows of content on screen at once
+ */
+export function isFollowingScroll({ percent = 0, scrollHeight = 0, visibleHeight = 0 } = {}) {
+  const height = Number(visibleHeight) || 0;
+  const total = Number(scrollHeight) || 0;
+  if (height <= 0 || total <= height) return true;
+  return (Number(percent) || 0) >= FOLLOW_BOTTOM_PERCENT;
+}
+
+/**
  * Bind a TranscriptModel to a blessed scrollable widget.
  *
  * The widget is the *view*: every repaint derives its content from the model, so
@@ -18,27 +48,76 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
 
   const scrollOffset = () => (typeof widget?.getScroll === 'function' ? widget.getScroll() : 0);
 
+  /** Rows of content visible at once, as far as the widget can tell us. */
+  const visibleHeight = () => {
+    if (!widget) return 0;
+    const height = Number(widget.height) || 0;
+    const inner = Number(widget.iheight) || 0;
+    return height > 0 ? Math.max(0, height - inner) : 0;
+  };
+
+  /** Total scrollable height in rows (blessed's getScrollHeight()). */
+  const scrollHeight = () => {
+    if (!widget) return 0;
+    if (typeof widget.getScrollHeight === 'function') return Number(widget.getScrollHeight()) || 0;
+    return (Number(widget.childBase) || 0) + visibleHeight();
+  };
+
+  /**
+   * Is the transcript parked at the bottom right now? (see isFollowingScroll)
+   *
+   * The offset itself is the source of truth, not blessed's internal
+   * `_userScrolled` latch: the widget reaches the very end by several routes
+   * (End, mouse, resize) and the latch cannot be trusted to track them all.
+   * Before the first layout there is no geometry, and following is the safe
+   * answer: nothing has been scrolled away yet.
+   */
+  const following = () => {
+    if (!widget || !widget.lpos) return true;
+    return isFollowingScroll({
+      percent: typeof widget.getScrollPerc === 'function' ? widget.getScrollPerc() : 0,
+      scrollHeight: scrollHeight(),
+      visibleHeight: visibleHeight(),
+    });
+  };
+
   /**
    * Repaint the widget from the model.
    *
-   * Appending scrolls to the bottom (new output comes into view). Toggling a
-   * block passes `keepScroll`, which restores the scroll offset afterwards so
-   * expanding a block above the fold does not yank the view to the end.
+   * An append follows the conversation only when the view was already parked at
+   * the bottom ("conversation jumps to the bottom when a message arrives, it
+   * should not"): a reader who scrolled up keeps the offset they chose. That is
+   * the same hold a block toggle takes, so both go through `keepScroll`.
+   *
+   * `keepScroll: true` forces the hold; `keepScroll: false` forces the follow.
+   * Left undefined, the rule above decides.
    */
-  const paint = ({ keepScroll = false } = {}) => {
+  const paint = ({ keepScroll } = {}) => {
     if (closed || !widget) return false;
+    const hold = keepScroll === undefined ? !following() : Boolean(keepScroll);
     const offset = scrollOffset();
-    // The blessed log widget jumps to the bottom on every content change; a
-    // toggle must not, so the flag is raised for that repaint only.
-    const previous = widget._userScrolled;
-    if (keepScroll) widget._userScrolled = true;
+
+    /** Put the view exactly where this repaint decided it belongs. */
+    const apply = () => {
+      if (hold) widget.setScroll(offset);
+      else widget.setScrollPerc(100);
+    };
+
+    // The view owns the scroll position. blessed's log widget would jump to the
+    // bottom on every 'set content' — precisely the behaviour this fixes — so its
+    // auto-jump stays suppressed (`_userScrolled` left raised) and apply() below
+    // is the only thing that moves the view.
+    widget._userScrolled = true;
     widget.setContent(model.content);
-    if (keepScroll) {
-      widget.setScroll(offset);
-      setImmediate(() => {
-        widget._userScrolled = previous;
-      });
-    }
+    apply();
+
+    // blessed's handlers run on their own tick, so re-assert the decision there:
+    // the last paint is the one that wins, whatever order they run in.
+    setImmediate(() => {
+      if (closed || !widget) return;
+      apply();
+    });
+
     refresh();
     return true;
   };
@@ -113,6 +192,8 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
     collapseBlock,
     clickAt,
     paint,
+    /** True while new output follows the bottom of the transcript. */
+    isFollowing: following,
     close() {
       closed = true;
     },

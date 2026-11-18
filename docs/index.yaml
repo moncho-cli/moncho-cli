@@ -31,6 +31,7 @@ specs:
   - interface/interrupt-controls
   - interface/tui
   - interface/transcript-blocks
+  - interface/transcript-scroll
   - interface/json-display
   - interface/user-messages
   - interface/commands

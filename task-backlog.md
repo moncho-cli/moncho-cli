@@ -1,7 +1,7 @@
 - [x] grep tool is missing the After and Before arguments to be able to return context lines
 - [x] conversation should include the messages from the user too
 - [ ] conversation scrolling is not smooth
-- [ ] conversation jumps to the bottom when a message arrives, it should not
+- [x] conversation jumps to the bottom when a message arrives, it should not
 - [ ] converstaion needs colors to be easier to read
 - [ ] token consumtion should be refreshed more frequently, on every single call
 - [ ] tool calling should allow the model to ask with an array of tools, up to 5 simoultaneous calls. the responses would be added in the context enclosed in <tool-multicall result><tool-call name=call-signature>...</tool-call></tool-multicall result> where call signature is a param type summary of how the tool was called. example: "name=string(5)"
