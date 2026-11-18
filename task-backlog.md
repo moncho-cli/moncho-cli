@@ -9,7 +9,12 @@
 - [x] if the input box is empty, it should have a grayed italic text saying "Last prompt: ......."
 - [x] within each session, we should be saving token usage by model so we can have stats on the performance of the models
 - [x] the color of the intent text should be a brightish blue so is easier to find within the text, and bold
-- [ ] show the moncho.png logo on the top right of the conversation, colors inverted (flip black and white) never larger than 200x200 px but if the window is small it can remain at 20%
+- [x] show the moncho.png logo on the top right of the conversation, colors inverted (flip black and white) never larger than 200x200 px but if the window is small it can remain at 20% — **resolved as a text mark instead:** a terminal cell has one of 256 colours and no alpha, so a blended image is impossible here (see `docs/interface/brand-line`); the first row of the screen now carries `MONCHO (v x.y.z)`, right-aligned, with the conversation displaced one line below it
 - [x] clean up failed attempts, i got a 502 error then it worked but the error text was still there. this info should also be displayed in some kind of overlay near the top of the screen and auto hide after some minutes
 - [x] implementation-plan.md should be updated more frequently, as soon as items are done and verified
 - [x] the stdout on bash commands, formatted inside a json, cannot be properly truncated as one would use pipe + head/tail. so maybe bash responses should be a yaml header and the stdout after, and it be possible to pass head/tail parameters to let the model choose that
+- [ ] make sure the intent string is not being repeated many times with exact same content, both in conversation and actual context sent to the model
+- [ ] be able to use arrow keys left and right to move through the text, and up/down to navigate messages history
+- [ ] conversation to show unicode emojis properly
+- [ ] the messages in queue get strangely truncated, too soon, i cant read whats there, idk if its will be sent properly
+- [ ] destructive tool subagent gate: able to define via environment a specific url/key/model that will be used to assess the threat level of a destructive operation and could reject it given a env configurable threshold

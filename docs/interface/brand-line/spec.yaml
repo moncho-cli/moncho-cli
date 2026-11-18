@@ -1,0 +1,45 @@
+id: interface/brand-line
+domain: interface
+title: The MONCHO (v x.y.z) brand line on the first row of the screen
+status: active
+summary: >
+  The original backlog item asked for moncho.png to be shown as a fixed-position
+  image, colours inverted, capped at 200x200 px. That was implemented and dropped:
+  a terminal cell carries one colour chosen from a 256-entry palette (neo-blessed's
+  colors.js maps every hex to the nearest xterm index, and the library has no 24-bit
+  SGR path) and no alpha, so a raster image would need an out-of-band protocol
+  (kitty graphics, sixel, iTerm2 inline) that blessed does not speak -- and the
+  half-block fallback degenerated into a ~24x24 glyph mosaic. The decision was then
+  to show the real image or nothing, so no image is shown at all, and the mark is one
+  line of text instead: app/brand.js formats "MONCHO (v <version>)" from the version
+  package.json declares, and app/brand-bar.js paints it right-aligned on row 0, the
+  very first line of the screen. The conversation is displaced one line below it --
+  app/tui-layout.js#setBrandRows moves the transcript's top -- so the mark is a line
+  above the conversation rather than a box floating over it. It is all-or-nothing: a
+  window too narrow to hold the line whole hides the mark and puts the conversation
+  back on the top edge. The colour is applied as the box's style.fg rather than an
+  inline tag, because blessed counts a tag's own bytes towards the cell width and
+  would clip the version. The notice overlay anchors itself under the mark so a
+  notice never covers it.
+code:
+  - path: app/brand.js
+    symbols: [formatBrand, resolveBrandSize, BRAND_NAME, BRAND_VERSION, BRAND_COLOR, BRAND_TOP, BRAND_RIGHT]
+  - path: app/brand-bar.js
+    symbols: [createBrandBar]
+  - path: app/tui-layout.js
+    symbols: [createLayout, setBrandRows, BRAND_BAND_ROWS]
+  - path: app/tui.js
+    symbols: [createTui, createBrandBar, formatBrand, resolveBrandSize]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+tests:
+  - path: tests/brand.test.js
+    cases:
+      - "formatBrand() names the program and the version the manifest declares"
+      - "resolveBrandSize() holds one row, and hides the line that cannot fit whole"
+      - "createBrandBar() paints one row, displaces it, and gives it back"
+      - "a pty puts the brand line on row 0 and starts the conversation below it"
+      - "the brand line follows a resize and is hidden when the window cannot hold it"
+  - path: tests/tui.test.js
+    cases:
+      - "a pty gets the three-region TUI (transcript, status bar, input box)"

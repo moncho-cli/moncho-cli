@@ -58,9 +58,12 @@ degrades to `info` rather than painting an undefined colour.
 
 `app/notice-bar.js` binds the model to the screen:
 
-- a **borderless floating box** at `top: 1`, the width of the screen. It sits *over*
-  the top of the transcript instead of taking a row from it, so the regions below
-  never move and the reader's scroll position is untouched.
+- a **borderless floating box**, the width of the screen, hanging from an `anchor`.
+  It sits *over* the top of the transcript instead of taking a row from it, so the
+  regions below never move and the reader's scroll position is untouched. The anchor
+  is re-read on every paint: it is one row under the brand line
+  (`docs/interface/brand-line`), so a notice never covers the mark, and it follows
+  the conversation back to the top edge when a narrow window hides the mark.
 - **hidden while nothing is live** (`hidden: true`, `height: 0`), so a quiet session
   shows no chrome at all.
 - **self-hiding on one timer**, armed for the *earliest* expiry rather than for a

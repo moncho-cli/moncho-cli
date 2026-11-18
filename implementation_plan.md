@@ -1,50 +1,25 @@
-# Frequent plan updates, and bash output you can truncate — both items done and verified
+# Brand line: MONCHO (v x.y.z) on the first row of the screen
 
-status: done — `npm test` 307 tests, 307 pass, 0 fail
-
-## Items
-
-- [x] **plan steps tick as they are verified** — `utils/plan-file.js` (pure: the checkbox
-  parsing, the strict selection, the in-place tick, `planProgress`, the plan rendering)
-  and the new `step` action of `tools/update_task.js` (`step`/`stepIndex`); the task list is
-  never rewritten (`taskWritten: false`), the plan's own `status:` becomes
-  `done — every step verified` on the last tick, and refusals are `STEP_NOT_FOUND` /
-  `ALREADY_DONE` / `PLAN_FILE_NOT_FOUND`. Proven by `tests/task-plan-progress.test.js`
-  (13 cases) plus the five existing task cases.
-- [x] **a YAML header and head/tail for run_bash** — `utils/command-output.js` (pure:
-  `resolveWindow`, `windowLines`, `yamlScalar`, `renderYamlHeader`, `renderCommandOutput`)
-  and `tools/run_bash.js` now answer a **success** as a YAML header + `---` + stdout, window
-  that stdout with `head`/`tail`, refuse both at once with `INVALID_RANGE`, and keep the
-  structured `COMMAND_FAILED`/`TIMEOUT` envelope with a windowed stdout for a failure.
-  Proven by `tests/command-output-window.test.js` (14 cases) and the sandbox cases in
-  `tests/command-sandbox.test.js`.
+status: done
 
 ## Steps
 
-- [x] Write `utils/plan-file.js`: `parseCheckboxItems`/`parsePlanSteps`, `findCheckboxItem`/
-  `findPlanStep`, `markCheckboxItem`/`markPlanStepDone`, `readStatusLine`/`replaceStatusLine`,
-  `planProgress`, `renderPlan` — no `fs`, no terminal.
-- [x] Rework `tools/update_task.js` on top of it, add the `step` action and report
-  `planProgress` on `list`, keeping `renderPlan` re-exported.
-- [x] Write `utils/command-output.js` and rework `tools/run_bash.js` to answer a document,
-  with `head`/`tail` in the tool schema and a windowed failure envelope.
-- [x] Extend `docs/agent/task-tracking` and `docs/agent/command-sandbox` (behaviour.md +
-  spec.yaml) and register the new suites in `tests/README.md`.
-- [x] Add the three new suites and re-point every case a spec names; split the 500-line
-  `tests/harness-tools.test.js` by capability (harness-tools, command-sandbox,
-  command-output-window, context-window, task-plan-progress).
-- [x] Run `node --check` on every touched file and `npm test`; tick both backlog lines,
-  update `README.md`/`prompt.md`, leave no scratch file behind.
+- [x] Settle the image question for good: neo-blessed maps every hex colour to an xterm-256 index (no 24-bit SGR path) and speaks no graphics protocol, so a blended raster image is impossible and the half-block art degenerates into a ~24x24 stencil. Show the real image or nothing -> nothing, and delete the whole PNG path.
+- [x] Write `app/brand.js`: `formatBrand` over the version `package.json` declares (JSON import, one source of truth), `resolveBrandSize` (one row, all-or-nothing), `BRAND_TOP`/`BRAND_RIGHT` pinned to row 0 and the right edge.
+- [x] Write `app/brand-bar.js`: the borderless one-row box on row 0, the colour applied as `style.fg` (an inline tag would be counted against the cell width and clip the version), the reserved row and its release.
+- [x] Displace the conversation instead of covering it: `setBrandRows` moves the transcript's `top`, so the mark is a line above the conversation; the notice bar takes an `anchor` and hangs one row under the mark.
+- [x] Rewire the TUI: `createBrandBar` in `app/tui.js` (the whole screen is its room, repaint on resize, notices re-anchored after it), `brandBar`/`brandLine`/`brandSize` in `app/tui-surface.js`.
+- [x] Add `tests/brand.test.js` (formatting, fit rule, displacement, row 0 in a real TUI) and update `docs/interface/brand-line`, `docs/interface/tui`, `docs/interface/notice-overlay`, `docs/index.yaml`, `tests/README.md`, `README.md`.
+- [x] Verify: `node --check` on every touched file, `npm test` green (312 pass / 0 fail, docs-realm included), every file under 300 lines.
 
-## Verified
+## Notes
 
-- `npm test` → **307 tests, 307 pass, 0 fail**, `tests/docs-realm.test.js` included.
-- `node --check` clean on every touched file (`tools/run_bash.js`, `tools/update_task.js`,
-  `utils/command-output.js`, `utils/plan-file.js`, the suites).
-- End-to-end smoke: `run_bash({ command: 'ls app', head: 3 })` answers
-  `status: success … lines: 30 shown: 3 truncated: true mode: head`, then `---`, then the
-  three lines.
-- Every file touched is **under 300 lines**; the largest is `tests/command-output-window.test.js`
-  at 255 (the 500-line suite is gone; nothing grows past 300).
-- No scratch probe was written, so none is left behind: `git status` lists only the two
-  new modules and the new suites.
+- The blessed width quirk is the one non-obvious finding and it is documented in the
+  code: `{bright-white-fg}MONCHO (v 1.0.0){/bright-white-fg}` in a box sized to the
+  visible line renders `MONCHO (v      `, with the version cut off, because the tag's
+  own bytes are counted as cells. `style.fg` has nothing to count.
+- The notice overlay's anchor is a *function*, not a number: the brand line can hide
+  on a narrow window, and the notices have to follow the conversation back up.
+- Files touched, longest first: `app/tui.js` (262), `app/notice-bar.js` (157),
+  `app/tui-surface.js` (155), `app/tui-layout.js` (154), `tests/brand.test.js` (154),
+  `app/brand-bar.js` (147), `app/brand.js` (89).

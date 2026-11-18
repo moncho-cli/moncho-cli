@@ -13,9 +13,10 @@ import {
  * The model (`app/notice-overlay.js`) owns the kinds, the expiry and the rows; this
  * module is only the screen binding:
  *
- *  - it creates a **floating** box — `top: 1`, the width of the screen, no border —
- *    so it sits over the top of the transcript instead of taking a row from it and
- *    the layout below never moves;
+ *  - it creates a **floating** box — the width of the screen, no border — so it sits
+ *    over the top of the transcript instead of taking a row from it and the layout
+ *    below never moves. Its `anchor` is where "the top" is right now: one row under
+ *    the brand line (`app/brand-bar.js`), so a notice never covers the mark;
  *  - it is **hidden while there is nothing live**, so a quiet session shows no
  *    chrome at all;
  *  - it **hides itself** on a timer: the timer is armed for the earliest expiry, not
@@ -29,6 +30,7 @@ import {
 export function createNoticeBar({
   screen = null,
   overlay = null,
+  anchor = null,
   maxRows = NOTICE_MAX_ROWS,
   ttlMs = NOTICE_TTL_MS,
   now = () => Date.now(),
@@ -42,10 +44,20 @@ export function createNoticeBar({
   let timer = null;
   let painted = 0;
 
+  /**
+   * The row the overlay hangs from: one under the brand mark while it is shown, the
+   * top edge otherwise. `anchor` is a function because the top of the screen moves
+   * when the brand line hides or returns.
+   */
+  const anchorRow = () => {
+    const value = typeof anchor === 'function' ? anchor() : 1;
+    return Math.max(0, Math.trunc(Number(value)) || 0);
+  };
+
   const widget = screen
     ? blessed.box({
       parent: screen,
-      top: 1,
+      top: anchorRow(),
       left: 0,
       right: 0,
       height: 0,
@@ -86,6 +98,9 @@ export function createNoticeBar({
    */
   const paint = () => {
     if (closed) return [];
+    // Re-read the anchor on every paint: the brand line above may have hidden itself
+    // (a narrow window), which moves "the top of the transcript" back to row 0.
+    if (widget) widget.top = anchorRow();
     const rows = model.rows({ maxRows });
     painted = rows.length;
 

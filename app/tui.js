@@ -9,6 +9,7 @@ import { createTuiSurface } from './tui-surface.js';
 import { createQueueBar } from './queue-bar.js';
 import { createPromptInput, normalizePrompt } from './prompt-input.js';
 import { createNoticeBar } from './notice-bar.js';
+import { createBrandBar } from './brand-bar.js';
 import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
 import { bindKeys } from './tui-keys.js';
@@ -44,6 +45,8 @@ export { createPromptInput, normalizePrompt } from './prompt-input.js';
 export { createInputHint, hintSurface, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR } from './input-hint.js';
 export { createNoticeOverlay, noticeSurface, formatNoticeRows, formatNoticeRow, formatNoticeText, formatRetryNotice, formatFailureNotice, NOTICE_TTL_MS, NOTICE_MAX_ROWS, NOTICE_MAX_KEPT, NOTICE_COLORS, NOTICE_MARKERS, NOTICE_KINDS, NOTICE_MAX_CHARS } from './notice-overlay.js';
 export { createNoticeBar } from './notice-bar.js';
+export { createBrandBar } from './brand-bar.js';
+export { formatBrand, resolveBrandSize, BRAND_NAME, BRAND_VERSION, BRAND_COLOR, BRAND_TOP, BRAND_RIGHT } from './brand.js';
 
 /**
  * Build the TUI. Returns null when stdout is not a TTY (e.g. `./start.sh start`
@@ -79,6 +82,7 @@ export function createTui(options = {}) {
 
   const {
     transcript, statusBar, modelBar, queueBar: queueRegion, inputBox, setQueueHeight,
+    setBrandRows,
   } = createLayout({ screen, modelLabel });
 
   const pastes = createPasteRegistry();
@@ -101,11 +105,29 @@ export function createTui(options = {}) {
     refresh,
   });
 
+  // The brand line sits on the very first row of the screen, right-aligned:
+  // "MONCHO (v x.y.z)", the one mark a character-cell front end can render
+  // faithfully (see app/brand.js). It is built *before* the notice overlay so the
+  // notice anchors below it and never covers the mark.
+  const brandBar = createBrandBar({
+    screen,
+    refresh,
+    // The bar tells the layout how many rows it occupies, so the conversation is
+    // displaced down by that many while the mark is shown and returns when it hides.
+    reserve: (rows) => setBrandRows(rows),
+    region: () => ({
+      // The room is the screen itself: the mark is its first line, so the
+      // transcript's geometry is irrelevant to whether the line fits.
+      width: Number(screen.width) || 0,
+      height: Number(screen.height) || 0,
+    }),
+  });
+
   // The transient notices float over the top of the transcript instead of taking a
   // row from it, so the regions below never move; the box hides itself while there
   // is nothing live and on a timer armed for the earliest expiry
   // (app/notice-bar.js, app/notice-overlay.js).
-  const noticeBar = createNoticeBar({ screen, refresh });
+  const noticeBar = createNoticeBar({ screen, refresh, anchor: () => brandBar.band });
 
   // The input box has two states: an armed question between turns, and a
   // capturing box while a request is in flight — where Enter queues the message
@@ -188,6 +210,10 @@ export function createTui(options = {}) {
   screen.on('resize', () => {
     transcript.setScrollPerc(100);
     statusRow.render();
+    brandBar.paint();
+    // The brand line may fit or stop fitting at the new width, which moves the top
+    // of the conversation; the notices follow the mark down or back up.
+    noticeBar.paint();
   });
 
   const close = () => {
@@ -196,6 +222,7 @@ export function createTui(options = {}) {
     promptInput.abandon();
     queue.close();
     noticeBar.close();
+    brandBar.close();
     view.close();
     keys.dispose();
     statusRow.dispose();
@@ -204,6 +231,7 @@ export function createTui(options = {}) {
 
   statusRow.render();
   queue.paint();
+  brandBar.paint();
 
   return createTuiSurface({
     question,
@@ -221,6 +249,7 @@ export function createTui(options = {}) {
     inputBox,
     setQueueHeight,
     noticeBar,
+    brandBar,
     refresh,
     scrollBy,
     scrollPage,

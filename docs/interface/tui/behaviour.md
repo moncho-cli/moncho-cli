@@ -14,7 +14,7 @@ Six regions, laid out relatively so blessed relayouts them on resize:
 | queue bar | bottom 3, height 0..n | pending messages, one `✕` row each; hidden while empty |
 | status bar | bottom 3 + queue height | status text/spinner on the left, token meter on the right |
 | model row | bottom 4 + queue height | provider · model label, resolved at startup |
-| transcript | bottom 5 + queue height up to the top | scrollable, bordered conversation log |
+| transcript | bottom 5 + queue height up to one row below the top | scrollable, bordered conversation log |
 
 - The queue bar is the only region whose size changes: `setQueueHeight(rows)` makes
   room for the pending messages right above the input box — the status bar, the
@@ -112,9 +112,10 @@ user cannot see what they asked a moment ago. `app/input-hint.js` fixes that:
 
 - **Transient notices float over the top of the transcript.** A provider failure the
   retry loop recovered from is *news*, not history, so it is not written to the
-  transcript: it is shown in a borderless box at `top: 1` that hides itself after a
-  few minutes, so the regions below never move and the reader's scroll position is
-  untouched. The model, the expiry rules and the surface live in
+  transcript: it is shown in a borderless box hanging one row under the brand line
+  (`docs/interface/brand-line`) that hides itself after a few minutes, so the
+  regions below never move and the reader's scroll position is untouched. The model,
+  the expiry rules and the surface live in
   `docs/interface/notice-overlay`; `app/tui.js` only creates the overlay and hands
   it to the surface.
 

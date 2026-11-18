@@ -9,8 +9,9 @@ summary: >
   transcript, where nothing would ever remove it. The model
   (app/notice-overlay.js) gives every notice a TTL, refreshes a repeated kind+text
   instead of stacking it, caps what it keeps, and lets a handle take one notice
-  down; the overlay (app/notice-bar.js) is a borderless box at top 1, hidden while
-  nothing is live and hidden again by a single timer armed for the earliest expiry.
+  down; the overlay (app/notice-bar.js) is a borderless box hanging from an anchor
+  (one row under the brand line, so it never covers the mark), hidden while nothing
+  is live and hidden again by a single timer armed for the earliest expiry.
   api/ollama.js reports a retried attempt through an injected onRetry hook, the
   conversation manager routes recovered failures to onNotice and keeps a transcript
   line only for the failure that ends the task, and main.js dismisses the retry

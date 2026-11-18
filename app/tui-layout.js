@@ -6,15 +6,23 @@ import { sanitize } from './tui-render.js';
 //   queue     : bottom 3, height 0..n -> pending messages, one ✕ row each
 //   status bar: bottom 3 + queue height, height 1
 //   model row : bottom 4 + queue height, height 1 -> provider/model label
-//   transcript: bottom 5 + queue height .. top 0 -> scrollable conversation log
+//   transcript: bottom 5 + queue height .. below the brand row -> the conversation
+//   brand line: row 0, right-aligned -> "MONCHO (v x.y.z)"
 //
-// The queue region is the only one that changes size: while it is empty it is
-// hidden and every region above it keeps its base anchor (see setQueueHeight).
+// Two regions can move the others:
+//  - the queue bar, while it is empty it is hidden and every region above it keeps
+//    its base anchor (see setQueueHeight);
+//  - the brand row, the very first line of the screen: while the mark is shown the
+//    conversation is displaced one row down, and it gets the row back when the mark
+//    is hidden because the window is too narrow to hold it (see setBrandRows).
 export const TRANSCRIPT_BOTTOM = 5;
 export const MODEL_BOTTOM = 4;
 export const STATUS_BOTTOM = 3;
 export const QUEUE_BOTTOM = STATUS_BOTTOM;
 export const INPUT_HEIGHT = 3;
+
+/** Rows the conversation is displaced by, at the top, for the brand line. */
+export const BRAND_BAND_ROWS = 0;
 
 /**
  * Build the blessed regions of the TUI.
@@ -27,7 +35,9 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
   const transcript = blessed.log({
     parent: screen,
     label: ' Conversation ',
-    top: 0,
+    // Row 0 belongs to the brand line (setBrandRows): the conversation starts one row
+    // below it while the mark is shown, and comes back to the top edge when it is not.
+    top: BRAND_BAND_ROWS,
     left: 0,
     right: 0,
     bottom: TRANSCRIPT_BOTTOM,
@@ -121,5 +131,24 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     return height;
   }
 
-  return { transcript, statusBar, modelBar, queueBar, inputBox, setQueueHeight };
+  /**
+   * Displace the conversation by `rows` rows to make room for the brand line on row
+   * 0, which is what "the right aligned MONCHO and version would be the very first
+   * top line (displacing the conversation edge 1 line below)" means; 0 puts the
+   * conversation back on the top edge.
+   *
+   * Moving the region's `top` rather than padding it is what makes the row *belong*
+   * to the mark: the conversation's own border becomes the row below it.
+   *
+   * Returns the offset actually applied, so the caller can tell whether it moved.
+   */
+  function setBrandRows(rows = 0) {
+    const offset = Math.max(0, Math.trunc(Number(rows)) || 0);
+    transcript.top = offset;
+    return offset;
+  }
+
+  return {
+    transcript, statusBar, modelBar, queueBar, inputBox, setQueueHeight, setBrandRows,
+  };
 }

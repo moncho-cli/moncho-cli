@@ -18,7 +18,9 @@ test('a pty gets the three-region TUI (transcript, status bar, input box)', asyn
 
     // transcript: bordered, scrollable, pinned above the status bar
     assert.equal(tui.transcript.bottom, 5);
-    assert.equal(tui.transcript.top, 0);
+    // ...and starting one row down: row 0 is the brand line, so the conversation's
+    // own border is the row below the mark (see tests/brand.test.js).
+    assert.equal(tui.transcript.top, 1);
     assert.equal(tui.transcript.scrollable, true);
 
     // status bar: exactly one row, directly under the transcript

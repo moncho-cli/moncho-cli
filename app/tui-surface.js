@@ -36,6 +36,7 @@ export function createTuiSurface({
   inputBox,
   setQueueHeight,
   noticeBar,
+  brandBar = null,
   refresh,
   scrollBy,
   scrollPage,
@@ -128,6 +129,17 @@ export function createTuiSurface({
     },
     get modelLabel() {
       return modelLabel;
+    },
+    // The brand line in the top right corner of the conversation (app/brand-bar.js):
+    // the bar itself, plus read-only views of the line it paints and of the room the
+    // fit rule gave it, because the bar is a view of the line and never the other way
+    // round.
+    brandBar,
+    get brandLine() {
+      return brandBar ? brandBar.line : '';
+    },
+    get brandSize() {
+      return brandBar ? brandBar.size : null;
     },
   };
 

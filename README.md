@@ -35,6 +35,10 @@ to Ollama, chosen entirely through environment variables.
   model that answered it, saved with the session, and reported by `/usage`.
 - **Both front ends.** A neo-blessed TUI on a pty, a plain line chat when there is
   none — with the same commands and the same interrupt keys.
+- **A brand line, not a mosaic.** The first row of the screen carries
+  `MONCHO (v x.y.z)`, right-aligned and read from `package.json`. A cell carries one
+  colour and no alpha, so a raster logo cannot be composited here (the half-block
+  attempt degenerated into a ~24x24 stencil); a line is what renders faithfully.
 
 ## Quick start (Docker)
 
@@ -99,6 +103,10 @@ In the TUI every tool result is a **collapsible block**: one header line carryin
 its `X char response` size, expanded with a click. The status bar keeps the token
 meter pinned to its right edge, and new output only scrolls the view when you are
 already at the bottom — scroll up to read history and the conversation stays put.
+The very first row of the screen carries the **brand line**, `MONCHO (v x.y.z)`,
+right-aligned and in bright white, and the conversation starts one line below it —
+the mark is a line of its own, not a box floating over the text. A window too narrow
+to hold it whole hides it and gives the row back.
 
 ## Tools
 
