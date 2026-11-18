@@ -7,6 +7,7 @@ import { createSessionRecorder } from './app/session-recorder.js';
 import { createDefaultCommands, parseCommand, runCommand } from './app/commands.js';
 import { prettyPrintJson, formatCommandResult } from './app/json-display.js';
 import { formatUserEcho } from './app/tui-render.js';
+import { reloadConversation } from './app/session-replay.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
@@ -117,11 +118,32 @@ async function main() {
       log(`Unknown command /${parsed.name}. Try /help.`);
       return true;
     }
-    for (const line of formatCommandResult(result)) log(line);
     if (result.ok && result.code === 'RESUMED') {
+      // The reload empties the transcript, so it runs before the result is
+      // printed: otherwise it would wipe the confirmation it belongs with. And
+      // the conversation *view* is reloaded, not just the context: the chunks
+      // hold the whole dialogue, so the transcript is rebuilt from them — in the
+      // TUI as collapsible blocks, in the line CLI as header, body, blank.
+      const chunks = result.resumed?.chunks || manager.chunks;
+      if (typeof tui?.reload === 'function') tui.reload(chunks);
+      else reloadConversation(chunks, { log });
+      // Keep saving into the session that was opened, instead of starting a
+      // parallel file: resuming must continue the conversation.
+      if (result.resumed?.id) {
+        sessions.adopt(result.resumed.id, {
+          createdAt: result.resumed.createdAt,
+          model: result.resumed.model,
+        });
+      }
+      for (const line of formatCommandResult(result)) log(line);
+      if (result.resumed?.id) {
+        log(`[Session] Continuing ${result.resumed.id}; new turns are saved there.`);
+      }
       tui?.setTokens(manager.contextWindow.usage());
       saveSession('resume');
+      return true;
     }
+    for (const line of formatCommandResult(result)) log(line);
     return true;
   };
 

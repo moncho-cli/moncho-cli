@@ -2,7 +2,12 @@ import { callOllama } from '../api/ollama.js';
 import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
 import { registerContextWindow } from '../utils/host.js';
-import { getIntentFromRaw } from '../utils/tool-schema.js';
+import {
+  formatArgs as summarizeArgs,
+  formatCallLines,
+  formatToolResultChunk,
+  normalizeToolCall,
+} from './tool-call-format.js';
 
 /**
  * The conversation loop.
@@ -52,40 +57,9 @@ export class ConversationManager {
    * - Otherwise, it shows "paramName: [object Object]" or similar.
    */
   formatArgs(args) {
-    let formatted = '';
-
-    if (typeof args === 'string') {
-      // If args is already a string (single parameter), just format it directly
-      if (args.length <= 20) {
-        formatted = args;
-      } else {
-        formatted = `string(${args.length} chars)`;
-      }
-    } else if (typeof args === 'object' && args !== null) {
-      const parts = [];
-      for (const [key, value] of Object.entries(args)) {
-        let displayValue;
-
-        if (typeof value === 'string') {
-          if (value.length <= 150) {
-            displayValue = value;
-          } else {
-            displayValue = `string(${value.length} chars)`;
-          }
-        } else if (typeof value === 'number' || typeof value === 'boolean') {
-          displayValue = `${value}`;
-        } else {
-          displayValue = `[object Object]`;
-        }
-
-        parts.push(`${key}: ${displayValue}`);
-      }
-      formatted = parts.join(', ');
-    } else {
-      formatted = `${args}`;
-    }
-
-    return formatted;
+    // The call's shape lives in ./tool-call-format.js, so the session replay
+    // prints the very same summary when it reloads a conversation.
+    return summarizeArgs(args);
   }
 
   async processInput(userInput) {
@@ -186,19 +160,14 @@ export class ConversationManager {
 
     for (const toolCall of toolCalls) {
       if (signal?.aborted) break;
-      const functionName = toolCall.function.name;
-      const rawArgs = toolCall.function.arguments;
-      const callId = toolCall.id || `call_${toolCalls.indexOf(toolCall)}`;
-
-      // Preserve readable logging regardless of whether args are a string or object.
-      let displayArgs = rawArgs;
-      if (typeof rawArgs === "string") {
-        try { displayArgs = JSON.parse(rawArgs); } catch { displayArgs = rawArgs; }
+      // The call's shape (name, parsed args, intent) comes from the shared
+      // formatter, so the printed lines and the replay agree by construction.
+      const call = normalizeToolCall(toolCall, toolCalls.indexOf(toolCall));
+      const { name: functionName, rawArgs, intent } = call;
+      const callId = call.id;
+      for (const line of formatCallLines(call)) {
+        this.log(line);
       }
-
-      const intent = getIntentFromRaw(rawArgs);
-      this.log(`\n  -> Calling ${functionName}(${this.formatArgs(displayArgs)})`);
-      this.log(`     intent: ${intent}`);
 
       let result;
       let isError = false;
@@ -225,9 +194,9 @@ export class ConversationManager {
 
   /** Render a tool result chunk, prefixing it with the call's intent. */
   formatToolChunk({ functionName, intent, result, isError }) {
-    const body = typeof result === 'string' ? result : JSON.stringify(result);
-    const header = `intent: ${intent}`;
-    return isError ? `${header}\n[error] ${body}` : `${header}\n${body}`;
+    // The shape lives in ./tool-call-format.js#formatToolResultChunk, so the
+    // session replay unwraps exactly what the loop stored.
+    return formatToolResultChunk({ intent, result, isError });
   }
 
   async handleFinalResponse(content) {

@@ -125,6 +125,10 @@ export function sessionsCommand() {
         code: 'RESUMED',
         id: session.id,
         chunks: chunks.length,
+        // The host reloads the conversation view from these and keeps saving into
+        // this same file, so resuming continues the conversation instead of
+        // starting a parallel one (docs/interface/session-replay).
+        resumed: { id: session.id, createdAt: session.createdAt, model: session.model, chunks },
         message: `Resumed ${session.id} (${chunks.length} chunk(s)).`,
       };
     },

@@ -59,6 +59,9 @@ Five regions, laid out relatively so blessed relayouts them on resize:
   results, context notices and errors each get their own colour, while a line the
   markdown renderer already coloured is left as it is and prose keeps the terminal
   default. The palette and its rules live in `docs/interface/conversation-colors`.
+- `reload(chunks)` replaces the whole transcript with a stored conversation: the
+  view is emptied and the session replayed into it as lines and collapsible blocks
+  (`docs/interface/session-replay`), so opening a session shows it as it was left.
 
 ## Status and feedback
 
@@ -91,6 +94,7 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 - Spec of the scroll position while output arrives: `docs/interface/transcript-scroll`
 - Spec of the wheel and page steps: `docs/interface/transcript-smooth-scroll`
 - Spec of the conversation palette: `docs/interface/conversation-colors`
+- Spec of the reload when a session is resumed: `docs/interface/session-replay`
 - Spec of the collapsible results: `docs/interface/transcript-blocks`
 - Proof: `tests/tui.test.js`, `tests/tui-status.test.js`,
   `tests/tui-modules.test.js`,

@@ -53,8 +53,13 @@ completed turn and once more when the user exits, so the file always reflects th
 live window — including after a compaction, because the snapshot is the window as
 it stands. `saveIfUsed()` skips an untouched window, so a session that never
 exchanged a message leaves no file behind.
+- `adopt(id, { createdAt, model })` points the recorder at an **existing** session,
+  which is what resuming does: the conversation continues in the file it came from
+  instead of forking a parallel one, and it keeps the original start date
+  (`docs/interface/session-replay`).
 
 ## See also
 
 - Implementation: `utils/session-store.js`, `app/session-recorder.js`, `main.js`
+- Spec of the reload after a resume: `docs/interface/session-replay`
 - Proof: `tests/session-store.test.js`

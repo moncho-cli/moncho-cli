@@ -1,0 +1,41 @@
+id: interface/session-replay
+domain: interface
+title: Reloading a stored conversation when a session is resumed
+status: active
+summary: >
+  Resuming a session replaces the context window and reloads the transcript from
+  the stored chunks: replayChunks() turns them back into render operations (the
+  You: echo, the tool calls with their intents, collapsible tool results, the
+  assistant prose bracketed by the reply delimiters, a compaction notice) and
+  renderReplay()/reloadConversation() drive either front end with them. The tool
+  name is recovered from the call the result answers, the shared
+  app/tool-call-format.js builds every shape so a reloaded conversation looks like
+  the live one, and the recorder adopts the resumed id so later turns are saved
+  into the same file.
+code:
+  - path: app/session-replay.js
+    symbols: [REPLAY_REPLY_HEADER, REPLAY_REPLY_FOOTER, UNKNOWN_TOOL_NAME, formatCompactedNotice, replayChunks, renderReplay, reloadConversation]
+  - path: app/tool-call-format.js
+    symbols: [formatArgs, normalizeToolCall, normalizeToolCalls, formatCallLines, formatToolHeader, formatToolResultChunk, parseToolChunk]
+  - path: app/commands.js
+    symbols: [createCommandRegistry, parseCommand, createDefaultCommands, helpCommand, sessionsCommand, runCommand]
+  - path: app/session-recorder.js
+    symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView, pageStepRows, isFollowingScroll, WHEEL_STEP_ROWS, FOLLOW_BOTTOM_PERCENT]
+  - path: app/tui.js
+    symbols: [createTui]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/session-replay.test.js
+    cases:
+      - "replayChunks() rebuilds the dialogue the live loop had written"
+      - "the tool name is recovered from the call the result answers"
+      - "a chunk list that does not match a live session still replays"
+      - "a failed tool result keeps its error marker out of the body"
+      - "renderReplay() drives a block-aware front end and a plain one"
+      - "reloadConversation() empties the view before it replays the session"
+      - "opening a session in the TUI reloads the conversation on screen"
+      - "resuming keeps saving into the session it opened"
+      - "a resumed conversation still answers commands and reaches /help"

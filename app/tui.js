@@ -7,6 +7,7 @@ import { chooseLabel } from './tui-modal.js';
 import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
 import { bindKeys } from './tui-keys.js';
+import { reloadConversation } from './session-replay.js';
 import {
   sanitize,
   formatArg,
@@ -198,6 +199,13 @@ export function createTui(options = {}) {
       if (typeof pending !== 'function') return false;
       settle('exit');
       return true;
+    },
+    /** Reload a whole conversation (a resumed session) into the transcript. */
+    reload: (chunks) => {
+      // The transcript is replaced, so a compaction already announced is no
+      // longer on screen: the next one must be reported again.
+      compaction.reset();
+      return reloadConversation(chunks, { log, logBlock, clear: () => view.clear() });
     },
     close() {
       if (closed) return;

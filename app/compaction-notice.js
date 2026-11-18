@@ -37,6 +37,14 @@ export function createCompactionNotifier({ log } = {}) {
       if (typeof log === 'function') log(line);
       return line;
     },
+    /**
+     * Forget what has been announced, so the *next* compaction is reported.
+     * Needed when the transcript is replaced (a resumed session): the events the
+     * counter tracked are no longer on screen.
+     */
+    reset() {
+      marks = 0;
+    },
     /** How many compactions have been announced so far. */
     get announced() {
       return marks;

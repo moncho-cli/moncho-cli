@@ -27,17 +27,26 @@ export function createSessionRecorder({
   cwd = process.cwd(),
   now = () => new Date(),
   id = null,
+  createdAt = null,
 } = {}) {
   const startedAt = now();
-  const sessionId_ = id || sessionId(startedAt);
+  let sessionId_ = id || sessionId(startedAt);
+  // The session's original creation date: a resumed conversation keeps it, so the
+  // file keeps saying when the conversation started (not when it was reopened).
+  let created = createdAt ? new Date(createdAt) : startedAt;
+  if (Number.isNaN(created.getTime())) created = startedAt;
   let savedAt = null;
   let saves = 0;
 
   return {
-    id: sessionId_,
+    get id() {
+      return sessionId_;
+    },
     dir,
     model,
-    startedAt: startedAt.toISOString(),
+    get startedAt() {
+      return created.toISOString();
+    },
     get path() {
       return sessionPath(sessionId_, { dir });
     },
@@ -46,6 +55,29 @@ export function createSessionRecorder({
     },
     get savedAt() {
       return savedAt;
+    },
+    /**
+     * Continue an existing session instead of starting a new one.
+     *
+     * Resuming a conversation must keep saving into the file it came from —
+     * otherwise every `/sessions` fork leaves a stray file behind and the one the
+     * user picked stops being updated.
+     *
+     * @param {string} nextId the resumed session id
+     * @param {object} [extra] `{ createdAt, model }` taken from the session file
+     */
+    adopt(nextId, { createdAt: created_ = null, model: adoptedModel = undefined } = {}) {
+      if (nextId == null || String(nextId).trim() === '') {
+        throw new Error('adopt() requires a session id.');
+      }
+      sessionId_ = String(nextId).trim();
+      if (created_) {
+        const at = new Date(created_);
+        if (!Number.isNaN(at.getTime())) created = at;
+      }
+      if (adoptedModel !== undefined && adoptedModel !== null) model = adoptedModel;
+      savedAt = null;
+      return sessionId_;
     },
     /**
      * Snapshot `chunks` into the session file.
@@ -59,7 +91,7 @@ export function createSessionRecorder({
       const record = writeSession(
         serializeSession({
           id: sessionId_,
-          createdAt: startedAt,
+          createdAt: created,
           updatedAt: at,
           model,
           cwd,

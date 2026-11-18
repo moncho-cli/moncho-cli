@@ -31,6 +31,11 @@ registry and the commands that ship with it; the implementation is linked below.
   - `id` given: resumes that session directly, prefix match included;
   - a cancelled pick, an unknown id or an unreadable file each return their own
     code and leave the window untouched.
+  The `RESUMED` result also carries the loaded chunks, the id and the session's
+  start date, because resuming is more than a window swap: the host **reloads the
+  conversation view** from them and adopts the id, so the reloaded dialogue is on
+  screen and later turns are saved into the same file
+  (`docs/interface/session-replay`).
 - **`/help`** — the command list, derived from the registry itself.
 
 ## The picker
@@ -58,4 +63,5 @@ Each front end renders it its own way:
 - Implementation: `app/commands.js`, `app/picker.js`, `app/tui-modal.js`,
   `app/cli.js`, `main.js`
 - Spec of the stored sessions: `docs/runtime/session-store`
+- Spec of the reload after a resume: `docs/interface/session-replay`
 - Proof: `tests/commands.test.js`, `tests/tui-modal.test.js`

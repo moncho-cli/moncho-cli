@@ -250,6 +250,16 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
     return toggleBlock(block.id);
   };
 
+  /**
+   * Drop every entry, so a whole conversation can be reloaded in its place
+   * (resuming a session). The view follows again from here, so the reloaded
+   * conversation ends parked at its newest line — where the live one was left.
+   */
+  const clear = () => {
+    model.clear();
+    return paint({ keepScroll: false });
+  };
+
   return {
     model,
     log,
@@ -258,6 +268,7 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
     expandBlock,
     collapseBlock,
     clickAt,
+    clear,
     paint,
     scrollRows,
     scrollPage,
