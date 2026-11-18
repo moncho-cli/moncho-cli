@@ -1,4 +1,4 @@
-# **document and prove the tool batch** — a `docs/agent/tool-multicall` spec (registered in `docs/index.yaml`) states the cap, the simultaneous dispatch, the envelope grammar and the signature; `tool-call-contract`, `session-replay` and `usage-refresh` are updated; `tests/tool-multicall.test.js` proves the signature, the round-trip, the cap, the concurrency and the context shape, and `tests/session-replay.test.js` proves an enveloped chunk replays.
+# **document and prove the message queue** — a `docs/interface/message-queue` spec (registered in `docs/index.yaml`) states the accept/keep/show/delete/inject rules; `interface/tui`, `interface/line-cli` and `runtime/startup-wiring` are updated; the tests above are linked by their exact case names.
 
 status: done
 

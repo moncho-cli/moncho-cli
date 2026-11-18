@@ -6,15 +6,21 @@ extras; the implementation is linked below.
 
 ## Layout
 
-Five regions, laid out relatively so blessed relayouts them on resize:
+Six regions, laid out relatively so blessed relayouts them on resize:
 
 | Region | Position | Purpose |
 | ------------- | --------------------------- | ----------------------------------------- |
 | input box | bottom 0, height 3 | the prompt the user types into |
-| status bar | bottom 3, height 1 | status text/spinner on the left, token meter on the right |
-| model row | bottom 4, height 1 | provider · model label, resolved at startup |
-| transcript | bottom 5 up to the top | scrollable, bordered conversation log |
+| queue bar | bottom 3, height 0..n | pending messages, one `✕` row each; hidden while empty |
+| status bar | bottom 3 + queue height | status text/spinner on the left, token meter on the right |
+| model row | bottom 4 + queue height | provider · model label, resolved at startup |
+| transcript | bottom 5 + queue height up to the top | scrollable, bordered conversation log |
 
+- The queue bar is the only region whose size changes: `setQueueHeight(rows)` makes
+  room for the pending messages right above the input box — the status bar, the
+  model row and the transcript shift up by that many rows — and at 0 it hides the
+  region and restores every base anchor, so an empty queue costs no row. The rules
+  it serves live in `docs/interface/message-queue`.
 - **Without a TTY `createTui()` returns `null`** (e.g. the detached
   `start.sh start` run), and the host falls back to the line CLI. It must never
   throw when there is no pty.
@@ -25,7 +31,9 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 - The input box is **armed by `question()` alone**. The region is created without
   blessed's `inputOnFocus`, so gaining focus (e.g. when the picker modal closes)
   never starts a read of its own; two overlapping read cycles would leave the box
-  with two `keypress` listeners and every typed character would land twice.
+  with two `keypress` listeners and every typed character would land twice. The one
+  other arming point is the re-arm after a *queued* submission
+  (`docs/interface/message-queue`), which runs on the next tick for the same reason.
 
 ## Rendering
 
@@ -69,6 +77,9 @@ Five regions, laid out relatively so blessed relayouts them on resize:
   meter keeps painting alongside it, the last logical status text is restored when
   the reply lands, and stopping the spinner never leaves a frame behind (including
   after an abort).
+- `startSpinner()` is also what opens the in-flight state of the input box: the box
+  stays armed for the whole turn, so a message typed then is queued rather than
+  lost (`docs/interface/message-queue`). `stopSpinner()` closes that state again.
 - `setTokens()` accepts the usage string the host passes from
   `onContextChange`, so the meter is driven by real window stats; a mid-request
   update repaints at once instead of being swallowed by the spinner.
@@ -93,13 +104,15 @@ Five regions, laid out relatively so blessed relayouts them on resize:
   `app/tui-render.js` (pure text helpers), `app/tui-keys.js` (key bindings),
   `app/paste-registry.js` (the paste table), `app/compaction-notice.js` (the
   once-per-event compaction line), `app/status-row.js` (status/spinner/meter
-  bookkeeping), `config/constants.js`
+  bookkeeping), `app/tui-modal.js` (the picker modal and its `choose` surface),
+  `app/prompt-input.js` (the armed-question / queueing box), `config/constants.js`
+- Spec of the pending-message queue above the input box: `docs/interface/message-queue`
 - Spec of the scroll position while output arrives: `docs/interface/transcript-scroll`
 - Spec of the wheel and page steps: `docs/interface/transcript-smooth-scroll`
 - Spec of the conversation palette: `docs/interface/conversation-colors`
 - Spec of the reload when a session is resumed: `docs/interface/session-replay`
 - Spec of the collapsible results: `docs/interface/transcript-blocks`
-- Proof: `tests/tui.test.js`, `tests/tui-status.test.js`,
+- Proof: `tests/tui.test.js`, `tests/tui-render.test.js`, `tests/tui-status.test.js`,
   `tests/tui-modules.test.js`,
   `tests/transcript-blocks.test.js`, `tests/transcript-scroll.test.js`,
   `tests/transcript-smooth-scroll.test.js`, `tests/interrupt-controls.test.js`

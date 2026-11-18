@@ -33,6 +33,7 @@ specs:
   - context/model-usage
   - interface/interrupt-controls
   - interface/tui
+  - interface/message-queue
   - interface/transcript-blocks
   - interface/transcript-scroll
   - interface/transcript-smooth-scroll

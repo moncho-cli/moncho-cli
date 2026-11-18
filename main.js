@@ -1,4 +1,5 @@
 import { loadTools } from './utils/tool-loader.js';
+import { nextPrompt } from './app/message-queue.js';
 import { ConversationManager } from './app/conversation-manager.js';
 import { createCLI } from './app/cli.js';
 import { createTui } from './app/tui.js';
@@ -165,7 +166,17 @@ async function main() {
   log(`Commands: ${commands.list().map((command) => `/${command.name}`).join(', ')} (try /help)`);
 
   while (true) {
-    const userInput = await cli.question(tui ? '> ' : '\n> ');
+    // Between two turns -- and only there -- the pending-message queue is drained
+    // (app/message-queue.js#nextPrompt): a message typed while the last turn was in
+    // flight becomes the next prompt instead of waiting for the user to type it
+    // again (task.md: "injected when possible"). Draining here, and never inside a
+    // tool chain, is what keeps an assistant `tool_calls` message together with its
+    // `tool` results. The line CLI has no queue bar, so `tui` is null there and
+    // readline buffers the typed line for the next question() exactly as before.
+    const userInput = await nextPrompt({
+      dequeue: () => tui?.dequeue(),
+      ask: () => cli.question(tui ? '> ' : '\n> '),
+    });
 
     if (userInput.toLowerCase() === 'exit') {
       log("Exiting...");

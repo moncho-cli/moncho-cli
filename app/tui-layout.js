@@ -3,16 +3,21 @@ import { sanitize } from './tui-render.js';
 
 // Screen regions (from the bottom up):
 //   input box : bottom 0, height 3 (border 'line')
-//   status bar: bottom 3, height 1
-//   model row : bottom 4, height 1 -> provider/model label
-//   transcript: bottom 5 .. top 0 -> scrollable, bordered conversation log
+//   queue     : bottom 3, height 0..n -> pending messages, one ✕ row each
+//   status bar: bottom 3 + queue height, height 1
+//   model row : bottom 4 + queue height, height 1 -> provider/model label
+//   transcript: bottom 5 + queue height .. top 0 -> scrollable conversation log
+//
+// The queue region is the only one that changes size: while it is empty it is
+// hidden and every region above it keeps its base anchor (see setQueueHeight).
 export const TRANSCRIPT_BOTTOM = 5;
 export const MODEL_BOTTOM = 4;
 export const STATUS_BOTTOM = 3;
+export const QUEUE_BOTTOM = STATUS_BOTTOM;
 export const INPUT_HEIGHT = 3;
 
 /**
- * Build the five blessed regions of the TUI.
+ * Build the blessed regions of the TUI.
  *
  * Kept apart from app/tui.js so the orchestration (keys, questions, the public
  * surface) stays readable and the layout numbers live in one place. The regions
@@ -61,6 +66,21 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     content: sanitize(modelLabel),
   });
 
+  // The queue bar sits right above the input box and is hidden while the queue
+  // is empty, so it costs no row when nothing is waiting. Its rows are painted
+  // by app/queue-bar.js and a click on a row deletes that message.
+  const queueBar = blessed.box({
+    parent: screen,
+    left: 0,
+    right: 0,
+    bottom: QUEUE_BOTTOM,
+    height: 0,
+    tags: true,
+    hidden: true,
+    clickable: true,
+    padding: { left: 1, right: 1 },
+  });
+
   // `inputOnFocus` is deliberately NOT set: it makes neo-blessed arm a read on
   // every 'focus' event, while app/tui.js arms one explicitly in question().
   // The two paths overlap around the picker modal (blessed destroys the modal,
@@ -81,5 +101,25 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     padding: { left: 1, right: 1 },
   });
 
-  return { transcript, statusBar, modelBar, inputBox };
+  /**
+   * Make room for `rows` queue rows right above the input box: the status bar,
+   * the model row and the transcript shift up by that many rows, and at 0 the
+   * region is hidden again and every anchor is restored to its base value.
+   *
+   * Returns the height actually applied, so the caller can tell whether the
+   * layout moved.
+   */
+  function setQueueHeight(rows = 0) {
+    const height = Math.max(0, Math.trunc(Number(rows)) || 0);
+    const offset = height;
+
+    queueBar.height = height;
+    queueBar.hidden = height === 0;
+    statusBar.bottom = STATUS_BOTTOM + offset;
+    modelBar.bottom = MODEL_BOTTOM + offset;
+    transcript.bottom = TRANSCRIPT_BOTTOM + offset;
+    return height;
+  }
+
+  return { transcript, statusBar, modelBar, queueBar, inputBox, setQueueHeight };
 }

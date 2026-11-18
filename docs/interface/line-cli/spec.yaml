@@ -8,7 +8,9 @@ summary: >
   same value the host loop reads as the user typing exit) and reports false when
   nothing is armed; choose() prints a numbered list and reads the number back, the
   line-CLI counterpart of the TUI picker modal. The TUI mirrors this surface so the
-  host loop is front-end agnostic.
+  host loop is front-end agnostic. There is no queue bar here: readline buffers what
+  is typed while a turn runs, and nextPrompt() is called without a dequeue, so the
+  front end is the only source of prompts (docs/interface/message-queue).
 code:
   - path: app/cli.js
     symbols: [createCLI]

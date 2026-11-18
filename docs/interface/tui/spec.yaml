@@ -3,14 +3,15 @@ domain: interface
 title: Full-screen TUI layout, rendering and feedback
 status: active
 summary: >
-  With a pty, createTui() builds a five-region blessed screen (input box, status
+  With a pty, createTui() builds a blessed screen (input box, queue bar, status
   bar, model row, scrollable transcript) and returns null without one so the line
   CLI is kept. Model text is sanitised and escaped before rendering, long pastes
   collapse and expand byte-for-byte through a paste table, the status bar carries
   the status or spinner on the left and the context meter pinned to its right edge
   (always visible), compactions are announced in the transcript exactly once, and
   the keys are bound apart from the screen wiring (interrupts on the program,
-  scrolling on the screen).
+  scrolling on the screen). The queue bar right above the input box is the
+  pending-message region (docs/interface/message-queue).
 code:
   - path: app/tui.js
     symbols: [createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, PASTE_THRESHOLD, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
@@ -25,27 +26,34 @@ code:
   - path: app/status-row.js
     symbols: [createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
   - path: app/tui-layout.js
-    symbols: [createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, INPUT_HEIGHT]
+    symbols: [createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT]
   - path: app/transcript-view.js
     symbols: [createTranscriptView]
+  - path: app/tui-modal.js
+    symbols: [createChooser, chooseLabel, createPickerModal]
+  - path: app/prompt-input.js
+    symbols: [createPromptInput, normalizePrompt]
   - path: config/constants.js
     symbols: [describeModel, detectProvider]
 tests:
   - path: tests/tui.test.js
     cases:
       - "a pty gets the three-region TUI (transcript, status bar, input box)"
+      - "the queue bar shifts the regions above it up by its height"
       - "the transcript scrolls, including from the keyboard"
       - "a mid-session resize keeps the layout and repaints"
       - "log() sanitizes model output and keeps one line per row"
       - "question() resolves through the input box, like createCLI().rl.question"
       - "without a pty createTui() returns null so the line chat is kept"
+      - "the tool-call intent is echoed to the transcript, ahead of the result"
+      - "notifyCompaction() marks a compaction in the transcript, once per event"
+  - path: tests/tui-render.test.js
+    cases:
       - "sanitize() and formatArg() behave as documented"
       - "assistant replies are rendered with markdown coloring"
       - "a long paste collapses to a paste tag and expands back byte-for-byte"
-      - "the tool-call intent is echoed to the transcript, ahead of the result"
       - "the read_file result tag renders as a header, not raw text"
       - "the grep and blob result tags render as headers, not raw text"
-      - "notifyCompaction() marks a compaction in the transcript, once per event"
   - path: tests/tui-modules.test.js
     cases:
       - "createPasteRegistry() collapses a long paste and restores it byte-for-byte"

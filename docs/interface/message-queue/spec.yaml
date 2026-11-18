@@ -1,0 +1,51 @@
+id: interface/message-queue
+domain: interface
+title: Sending messages while a turn is in flight, and deleting them from the queue
+status: active
+summary: >
+  A message typed while a request is in flight is queued instead of going nowhere:
+  the input box stays armed for the whole turn (app/prompt-input.js), the submission
+  is stored FIFO and verbatim (paste tags expanded back) in a pure model
+  (app/message-queue.js), the rows are painted with a ✕ each in a region right above
+  the input box that shifts the status bar, the model row and the transcript up by
+  the queue height (app/queue-bar.js, app/tui-layout.js#setQueueHeight), a click on
+  a row deletes that message only, and the host loop drains the queue between two
+  turns through nextPrompt() so an injected message can never split an assistant
+  tool_calls message from its tool results. The line CLI has no queue bar and keeps
+  readline's own buffering.
+code:
+  - path: app/message-queue.js
+    symbols: [createMessageQueue, nextPrompt, formatQueueRows, formatQueueRow, formatQueueTail, previewMessage, queueRowAt, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER, QUEUE_PREVIEW_CHARS]
+  - path: app/queue-bar.js
+    symbols: [createQueueBar, queueSurface]
+  - path: app/prompt-input.js
+    symbols: [createPromptInput, normalizePrompt]
+  - path: app/tui-layout.js
+    symbols: [createLayout, setQueueHeight, QUEUE_BOTTOM]
+  - path: app/tui.js
+    symbols: [createTui]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/message-queue.test.js
+    cases:
+      - "createMessageQueue() keeps messages in FIFO order, verbatim"
+      - "createMessageQueue() notifies its subscribers on every change"
+      - "createMessageQueue() removes one message by id and clears the rest"
+      - "previewMessage() flattens whitespace and truncates long text"
+      - "formatQueueRows() paints one ✕ row per message, capped with a +N more tail"
+      - "queueRowAt() maps a click to the message under the cursor"
+      - "nextPrompt() injects the oldest queued message between turns, else asks"
+      - "nextPrompt() drains one message per turn, in order"
+  - path: tests/message-queue-tui.test.js
+    cases:
+      - "a submission while a request is in flight is queued, and shown above the input box"
+      - "the box stays armed after a queued submission, so the next keystroke lands"
+      - "the queued text is verbatim, and the queue drains in order between turns"
+      - "a click on a ✕ row deletes that message only, and the region shrinks back"
+      - "a message typed while idle is not queued: the box settles the armed question"
+  - path: tests/tui.test.js
+    cases:
+      - "a pty gets the three-region TUI (transcript, status bar, input box)"
+      - "the queue bar shifts the regions above it up by its height"
+      - "a mid-session resize keeps the layout and repaints"

@@ -6,15 +6,19 @@ summary: >
   main.js picks the front end (TUI with a pty, else the line CLI), loads the tools
   with a result hook, resolves the context size once, and builds the
   ConversationManager with an onContextChange hook, then records the live
-  conversation to a dated session file after every turn. The manager announces
-  every window change and every call (`docs/context/usage-refresh`), so the host
-  paints no usage itself. The loop checks the budget
-  before every call, stores tool calls as one assistant chunk plus one tool chunk
-  each (intent included), retries transient empty responses, and ends quietly on
-  abort; a failed compaction never breaks the task.
+  conversation to a dated session file after every turn. Each turn's prompt comes
+  from nextPrompt(), which drains the pending-message queue and only asks the front
+  end when it is empty (docs/interface/message-queue). The manager announces every
+  window change and every call (docs/context/usage-refresh), so the host paints no
+  usage itself. The loop checks the budget before every call, stores tool calls as
+  one assistant chunk plus one tool chunk each (intent included), retries transient
+  empty responses, and ends quietly on abort; a failed compaction never breaks the
+  task.
 code:
   - path: main.js
     symbols: [main]
+  - path: app/message-queue.js
+    symbols: [nextPrompt, createMessageQueue]
   - path: app/conversation-manager.js
     symbols: [ConversationManager, detectCompactionRequest]
   - path: app/context-window.js
@@ -24,6 +28,10 @@ code:
   - path: utils/tool-loader.js
     symbols: [loadTools]
 tests:
+  - path: tests/message-queue.test.js
+    cases:
+      - "nextPrompt() injects the oldest queued message between turns, else asks"
+      - "nextPrompt() drains one message per turn, in order"
   - path: tests/conversation-manager.test.js
     cases:
       - processInput runs the tool loop, prints intents, and keeps them in context

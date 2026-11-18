@@ -20,6 +20,11 @@ fixes that surface; the implementation is linked below.
 - The TUI deliberately exposes a `createCLI()`-compatible question/exit surface, so
   the host loop is front-end agnostic: it asks `cli.question(...)` and reacts to the
   `exit` sentinel the same way either way.
+- **There is no queue bar here.** The pending-message queue
+  (`docs/interface/message-queue`) belongs to the TUI: readline buffers what is
+  typed while a turn runs and hands it to the next `question()`, and `nextPrompt()`
+  is called without a `dequeue`, so the front end is the only source of prompts.
+  The difference is stated, not hidden.
 - Choosing between them is a single decision at startup: a TTY gives the TUI,
   otherwise the line CLI. No other module needs to know which one is active.
 

@@ -24,6 +24,12 @@ loop's observability guarantees; the implementation is linked below.
 
 ## The conversation loop
 
+- **The prompt of each turn comes from `nextPrompt()`**, which drains the
+  pending-message queue and only asks the front end when the queue is empty. It is
+  called at the top of the loop — between two turns, never inside a tool chain —
+  so an injected message can never split an assistant `tool_calls` message from its
+  `tool` results, and the drained text enters the conversation as the ordinary user
+  prompt (`docs/interface/message-queue`).
 - One user input is appended as a `user` chunk, then the loop repeats until a
   final (tool-free) assistant message arrives or an error/abort ends the task.
 - The prompt is also announced through `onUserMessage` before the first model
@@ -81,5 +87,7 @@ loop's observability guarantees; the implementation is linked below.
 
 - Implementation: `main.js`, `app/conversation-manager.js`, `app/context-window.js`,
   `app/abort-manager.js`, `app/session-recorder.js`, `utils/tool-loader.js`
+- Spec of the prompt the loop drains: `docs/interface/message-queue`
 - Spec of the stored sessions: `docs/runtime/session-store`
-- Proof: `tests/conversation-manager.test.js`, `tests/session-store.test.js`
+- Proof: `tests/conversation-manager.test.js`, `tests/session-store.test.js`,
+  `tests/message-queue.test.js`

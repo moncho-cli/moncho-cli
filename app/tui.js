@@ -1,9 +1,13 @@
 import blessed from 'neo-blessed';
 import { describeModel } from '../config/constants.js';
 import { createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from './status-row.js';
-import { createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, INPUT_HEIGHT } from './tui-layout.js';
+import {
+  createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT,
+} from './tui-layout.js';
 import { createTranscriptView } from './transcript-view.js';
-import { chooseLabel } from './tui-modal.js';
+import { createChooser } from './tui-modal.js';
+import { createQueueBar, queueSurface } from './queue-bar.js';
+import { createPromptInput, normalizePrompt } from './prompt-input.js';
 import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
 import { bindKeys } from './tui-keys.js';
@@ -23,18 +27,18 @@ import {
 // The pure helpers live in ./tui-render.js, the transcript model in
 // ./transcript.js (bound to the widget by ./transcript-view.js), the region
 // layout in ./tui-layout.js, the status-row bookkeeping in ./status-row.js, the
-// paste table in ./paste-registry.js and the compaction notice in
-// ./compaction-notice.js. They are all re-exported here so app/tui.js stays the
-// single entry point every importer (and the specs) already use.
+// paste table in ./paste-registry.js, the compaction notice in
+// ./compaction-notice.js, the pending-message queue in ./message-queue.js (bound
+// to its region by ./queue-bar.js) and the input-box state machine in
+// ./prompt-input.js. They are all re-exported here so app/tui.js stays the single
+// entry point every importer (and the specs) already use.
 export { sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD };
 export { formatUserEcho, USER_ECHO_HEADER };
 export { SPINNER_FRAMES, SPINNER_INTERVAL_MS };
-export { TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, INPUT_HEIGHT };
-
-function normalizePrompt(prompt) {
-  const text = sanitize(prompt).replace(/\s+/g, ' ').trim();
-  return text || '>';
-}
+export { TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT };
+export { createQueueBar, queueSurface } from './queue-bar.js';
+export { createMessageQueue, formatQueueRows, formatQueueRow, previewMessage, queueRowAt, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER } from './message-queue.js';
+export { createPromptInput, normalizePrompt } from './prompt-input.js';
 
 /**
  * Build the TUI. Returns null when stdout is not a TTY (e.g. `./start.sh start`
@@ -67,13 +71,12 @@ export function createTui(options = {}) {
     ? options.modelLabel
     : describeModel().label;
 
-  const { transcript, statusBar, modelBar, inputBox } = createLayout({ screen, modelLabel });
+  const {
+    transcript, statusBar, modelBar, queueBar: queueRegion, inputBox, setQueueHeight,
+  } = createLayout({ screen, modelLabel });
 
-  let pending = null;
   const pastes = createPasteRegistry();
   let closed = false;
-  let labelText = ' > ';
-  inputBox.getLabel = () => labelText;
 
   const refresh = () => {
     if (!closed) screen.render();
@@ -82,6 +85,26 @@ export function createTui(options = {}) {
   // The transcript is a model + view pair: the model holds the entries (plain
   // lines and collapsible blocks), the view paints them and resolves clicks.
   const view = createTranscriptView({ widget: transcript, refresh });
+
+  // The queue bar is the pending-message region right above the input box: the
+  // model owns the order and the text, the bar paints the rows and resizes the
+  // region so everything above it shifts up by the queue height.
+  const queue = createQueueBar({
+    widget: queueRegion,
+    setHeight: setQueueHeight,
+    refresh,
+  });
+
+  // The input box has two states: an armed question between turns, and a
+  // capturing box while a request is in flight — where Enter queues the message
+  // instead of resolving a question nobody armed (app/prompt-input.js).
+  const promptInput = createPromptInput({
+    inputBox,
+    pastes,
+    queue: queue.queue,
+    log: (...args) => view.log(...args),
+    refresh,
+  });
 
   // The status bar carries two independent pieces of information on one row: the
   // logical status (or the spinner frame) on the left, and the context-window
@@ -123,36 +146,11 @@ export function createTui(options = {}) {
     compaction.notify(stats);
   };
 
-  const settle = (value) => {
-    const resolve = pending;
-    pending = null;
-    inputBox.clearValue();
-    if (typeof resolve === 'function') resolve(value);
-    refresh();
-  };
-
   inputBox.on('submit', (value) => {
-    const raw = typeof value === 'string' ? value : '';
-    const collapsed = pastes.collapse(raw);
-    if (collapsed.collapsed) {
-      log(`[pasted ${raw.split('\n').length} lines -> ${collapsed.text}]`);
-    }
-    settle(pastes.expand(collapsed.text));
+    promptInput.submit(value);
   });
 
-  const question = (prompt, callback) => {
-    labelText = ` ${normalizePrompt(prompt)} `;
-    inputBox.setLabel(labelText);
-    return new Promise((resolve) => {
-      pending = (value) => {
-        if (typeof callback === 'function') callback(value);
-        resolve(value);
-      };
-      inputBox.focus();
-      if (typeof inputBox.readInput === 'function') inputBox.readInput();
-      refresh();
-    });
-  };
+  const question = (prompt, callback) => promptInput.question(prompt, callback);
 
   // Scrolling must work even while the input box owns the focus. Both steps go
   // through the view, so the wheel and the keyboard move the same distances and
@@ -167,9 +165,13 @@ export function createTui(options = {}) {
   };
 
   // A click on the transcript toggles the tool-result block under the cursor
-  // (expand, then collapse again on the next click).
+  // (expand, then collapse again on the next click); a click on the queue bar
+  // deletes the message on that row and nothing else.
   transcript.on('click', (data) => {
     view.clickAt(data);
+  });
+  queueRegion.on('click', (data) => {
+    queue.clickAt(data);
   });
 
   // Escape / Ctrl+C and the scrolling keys (app/tui-keys.js): the interrupt is
@@ -187,8 +189,9 @@ export function createTui(options = {}) {
   });
 
   statusRow.render();
+  queue.paint();
 
-  return {
+  const tui = {
     // createCLI()-compatible surface
     rl: {
       question: (prompt, callback) => question(prompt, callback),
@@ -196,9 +199,7 @@ export function createTui(options = {}) {
     question,
     // Settle an armed question with the 'exit' sentinel the host loop understands.
     exit() {
-      if (typeof pending !== 'function') return false;
-      settle('exit');
-      return true;
+      return promptInput.exit();
     },
     /** Reload a whole conversation (a resumed session) into the transcript. */
     reload: (chunks) => {
@@ -210,7 +211,8 @@ export function createTui(options = {}) {
     close() {
       if (closed) return;
       closed = true;
-      pending = null;
+      promptInput.abandon();
+      queue.close();
       view.close();
       keys.dispose();
       statusRow.dispose();
@@ -222,8 +224,18 @@ export function createTui(options = {}) {
     setStatus,
     setTokens,
     notifyCompaction,
-    startSpinner: (label) => statusRow.startSpinner(label),
-    stopSpinner: () => statusRow.stopSpinner(),
+    /**
+     * Start the in-flight state: the spinner runs **and** the input box stays
+     * armed, so a message typed now is queued instead of going nowhere.
+     */
+    startSpinner(label) {
+      promptInput.startFlight();
+      return statusRow.startSpinner(label);
+    },
+    stopSpinner() {
+      promptInput.endFlight();
+      return statusRow.stopSpinner();
+    },
     isSpinning: () => statusRow.isSpinning(),
     // Transcript blocks: read, toggle, expand, collapse (used by main.js and tests)
     get transcriptModel() {
@@ -242,17 +254,7 @@ export function createTui(options = {}) {
      * Resolves with the index of the choice, or null when cancelled — the shape
      * the command registry's `choose(labels, { title })` expects.
      */
-    async choose(labels = [], { title = 'Select' } = {}) {
-      return chooseLabel({
-        screen,
-        labels,
-        title,
-        render: refresh,
-        onOpenChange: (open) => {
-          if (!open) inputBox.focus();
-        },
-      });
-    },
+    choose: createChooser({ screen, inputBox, render: refresh }),
     collapsePaste: (text) => pastes.collapse(text).text,
     expandPastes: (text) => pastes.expand(text),
     get pastes() {
@@ -268,7 +270,9 @@ export function createTui(options = {}) {
     transcript,
     statusBar,
     modelBar,
+    queueBar: queueRegion,
     inputBox,
+    setQueueHeight,
     get isClosed() {
       return closed;
     },
@@ -276,4 +280,10 @@ export function createTui(options = {}) {
       return modelLabel;
     },
   };
+
+  // The pending-message queue (task.md): queued while a request is in flight and
+  // drained by the host loop between turns. Defined rather than spread, so the
+  // `queuedCount`/`queued` accessors stay live.
+  queueSurface(queue, tui);
+  return tui;
 }

@@ -114,3 +114,25 @@ export async function chooseLabel({
   const index = items.indexOf(chosen);
   return index >= 0 ? index : null;
 }
+
+/**
+ * The `choose(labels, { title })` surface the command registry expects, bound to
+ * one screen and input box.
+ *
+ * Kept here rather than in app/tui.js so the orchestration module stays about the
+ * loop-facing surface, and so the focus hand-back (the modal closes, the box gets
+ * the focus and nothing else) lives next to the modal that took it away.
+ */
+export function createChooser({ screen, inputBox = null, render = null } = {}) {
+  return async function choose(labels = [], { title = 'Select' } = {}) {
+    return chooseLabel({
+      screen,
+      labels,
+      title,
+      render,
+      onOpenChange: (open) => {
+        if (!open && inputBox) inputBox.focus();
+      },
+    });
+  };
+}

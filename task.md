@@ -1,47 +1,52 @@
 status: done
 
-# Tool batches: up to five simultaneous calls, one signature-annotated envelope
+# Message queue: send at any moment, keep the queue above the input box, delete with ✕
 
 Taken from `task-backlog.md`:
 
-> tool calling should allow the model to ask with an array of tools, up to 5
-> simultaneous calls. the responses would be added in the context enclosed in
-> `<tool-multicall result><tool-call name=call-signature>...</tool-call></tool-multicall result>`
-> where call signature is a param type summary of how the tool was called.
-> example: `"name=string(5)"`.
+> able to send messages at any moment that are queued (kept right above the input
+> box) and injected when possible in the conversation. but while queued have an X
+> that you can delete them from the queue
 
-The model can already answer with a `tool_calls` array, but the loop runs every
-call one after another, each result landing as a plain `tool` chunk. Nothing caps
-a batch, nothing dispatches the calls together, and nothing records *how* a call
-was shaped, so the model cannot tell a 5-call simultaneous request from a chain.
+A turn can take minutes — tool chains, long provider calls — and the input box is
+*disarmed* while it runs: `question()` is only armed between turns, so a message
+typed during a turn goes nowhere. The user either loses what they typed or waits,
+idle, for the reply before typing the follow-up they already know they want.
 
-## What a batch must do
+The fix is a queue: typing during a turn stores the message, keeps it visible right
+above the input box with a `✕` that deletes it, and the host loop injects it as the
+next prompt as soon as the running turn finishes.
+
+## What the queue must do
 
 | Step | Behaviour |
 | ---- | --------- |
-| plan | the calls of one assistant message split at `MAX_PARALLEL_TOOL_CALLS` (5): the first five run, the rest are refused |
-| run | the accepted calls are dispatched together and awaited together, results collected in the model's **call order**, not completion order |
-| refuse | a call beyond the cap is answered with a `TOO_MANY_TOOL_CALLS` result asking for a smaller batch — the provider's id pairing stays complete |
-| store | one `tool` chunk per call, in call order, whose body is the result inside a `<tool-multicall result calls=N>` envelope holding one `<tool-call name="<signature>">` element |
-| signature | `read_file(path=string(11), intent=string(12))` — the tool name plus its parameter types, the summary the backlog asks for |
+| accept | while a request is in flight the input box stays armed; Enter **queues** the message instead of resolving a question nobody armed |
+| keep | the queue is FIFO and the text is kept **verbatim** (pastes expanded), so the bytes the model receives are the bytes the user typed |
+| show | the rows sit **right above the input box**; the status bar, model row and transcript shift up by the queue height, and the queue disappears when it is empty |
+| delete | every row carries a `✕`; a click on the row removes that message only, and the region shrinks back |
+| inject | the host loop drains the queue **between turns** — "when possible" — so a queued message becomes the next prompt without waiting for the user |
+| survive | a message queued while idle is not queued at all: the box resolves the armed question exactly as it does today |
 
 ## Constraints
 
-- The intent stays the **first line** of a result chunk (`docs/agent/tool-call-contract`),
-  so existing sessions and readers keep working; the envelope follows it.
-- `parseToolChunk()` accepts both shapes: an enveloped chunk unwraps to its exact
-  body, and a chunk written before this change keeps its current reading.
-- One call still gets one chunk: the provider's `tool_calls`/`tool_call_id`
-  pairing is untouched, and the token meter keeps announcing per chunk.
-- The batch orchestrator (`app/tool-batch.js`) is a new module rather than growth
-  in `app/conversation-manager.js` (297 lines): the manager delegates to it, and
-  every file stays under 300 lines.
-- A batch is dispatched simultaneously, so its calls must be independent — the
-  trade-off is stated in the spec, never hidden.
+- The queue model (`app/message-queue.js`) is **pure** — no neo-blessed, no screen —
+  so the order, the deletion and the row formatting are unit tested without a pty.
+- The widget binding lives in `app/queue-bar.js`, bound by `app/tui.js`, so the
+  screen wiring stays thin and every file stays under 300 lines.
+- Injection happens **between two turns**, never in the middle of a tool chain: an
+  injected message must not split an assistant `tool_calls` message from its `tool`
+  results.
+- The line CLI has no queue bar; typed input there is buffered by readline and
+  arrives at the next `question()`. That difference is stated, not hidden.
+- The queue never reaches the model context as a chunk of its own: the drained text
+  enters the conversation as the ordinary user prompt (`docs/interface/user-messages`).
 
-- [x] **signature and envelope for one tool call** — `app/tool-call-format.js` gains `formatCallSignature()` and the `<tool-multicall result calls=N>`/`<tool-call name="…">` grammar, and `formatToolResultChunk()`/`parseToolChunk()` round-trip it while still reading an un-enveloped chunk.
-- [x] **run the batch: five at a time, in call order** — `config/constants.js` gains `MAX_PARALLEL_TOOL_CALLS`/`TOO_MANY_TOOL_CALLS`, `app/tool-batch.js` holds `planToolBatch()`/`dispatchToolCalls()`/`handleToolCalls()`, and `ConversationManager#handleToolCalls` delegates to it.
-- [x] **document and prove the tool batch** — a `docs/agent/tool-multicall` spec (registered in `docs/index.yaml`) states the cap, the simultaneous dispatch, the envelope grammar and the signature; `tool-call-contract`, `session-replay` and `usage-refresh` are updated; `tests/tool-multicall.test.js` proves the signature, the envelope round-trip and the replay of an enveloped chunk, and `tests/tool-batch.test.js` proves the cap, the simultaneous dispatch in call order, the refusal and the chunks the loop stores.
+## Steps
+
+- [x] **the queue model and its rows** — `app/message-queue.js` gains `createMessageQueue()` (enqueue / dequeue / remove / clear / subscribe, verbatim text, FIFO), `nextPrompt()` (the between-turns drain rule), `formatQueueRows()`/`formatQueueRow()`/`previewMessage()` (one `✕` row per message, capped with a `+N more` tail) and `queueRowAt()` (the click geometry), proven by `tests/message-queue.test.js`.
+- [x] **the queue bar in the TUI, and the injection point** — `app/queue-bar.js` renders the rows in the new region right above the input box (`app/tui-layout.js#setQueueHeight`), deletes on a `✕` click, and `app/prompt-input.js` queues a submission while a request is in flight and re-arms the box; `app/tui.js` opens that in-flight state with the spinner and exposes `dequeue()`/`queuedCount`; `main.js` drains the queue between turns through `nextPrompt()`. Proven by `tests/message-queue-tui.test.js` and `tests/tui.test.js`.
+- [x] **document and prove the message queue** — a `docs/interface/message-queue` spec (registered in `docs/index.yaml`) states the accept/keep/show/delete/inject rules; `interface/tui`, `interface/line-cli` and `runtime/startup-wiring` are updated; the tests above are linked by their exact case names.
 
 ## Done when
 
@@ -49,4 +54,5 @@ was shaped, so the model cannot tell a 5-call simultaneous request from a chain.
 - `npm test` is green, `tests/docs-realm.test.js` included;
 - `node --check` passes on every file touched;
 - no file touched exceeds 300 lines;
-- a scratch probe under `agent/utils/` confirmed the batch shape and the concurrency before the tests were written, and is deleted afterwards.
+- a scratch probe under `agent/utils/` confirmed the row geometry and the click
+  mapping before the tests were written, and is deleted afterwards.
