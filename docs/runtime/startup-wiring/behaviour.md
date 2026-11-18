@@ -26,6 +26,8 @@ loop's observability guarantees; the implementation is linked below.
 
 - One user input is appended as a `user` chunk, then the loop repeats until a
   final (tool-free) assistant message arrives or an error/abort ends the task.
+- The prompt is also announced through `onUserMessage` before the first model
+  call, so the conversation view shows both sides (`docs/interface/user-messages`).
 - **Before every model call** the window is checked against the budget and
   compacted when needed, so the model is never called with an over-budget window.
 - A `null`/empty response is treated as transient: it is reported and retried

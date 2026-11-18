@@ -23,6 +23,9 @@ export class ConversationManager {
     this.getAbortSignal = getAbortSignal; // Function that returns the active task's AbortSignal
     this.log = options.log || ((message) => console.log(message));
     this.onContextChange = options.onContextChange || null;
+    // The user's own message is announced before the model is called, so both
+    // front ends can echo it: the transcript is otherwise one-sided.
+    this.onUserMessage = options.onUserMessage || null;
 
     this.contextWindow = options.contextWindow || new ContextWindow({
       maxTokens: options.maxTokens || CONTEXT_MAX_LENGTH,
@@ -87,6 +90,12 @@ export class ConversationManager {
 
   async processInput(userInput) {
     this.contextWindow.add({ role: "user", content: userInput });
+    // The chunk is what the model receives, verbatim; the hook is presentation
+    // only (app/tui-render.js#formatUserEcho renders it), and a hook that throws
+    // must never cost the user their prompt.
+    if (this.onUserMessage) {
+      try { this.onUserMessage(userInput); } catch { /* display only */ }
+    }
 
     while (true) {
       const signal = this.getAbortSignal();

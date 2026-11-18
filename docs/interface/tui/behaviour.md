@@ -45,6 +45,8 @@ Five regions, laid out relatively so blessed relayouts them on resize:
   result starts as one header line carrying its `X char response` size, and a click
   expands it (the next click collapses it) without touching the payload. The rules
   live in `docs/interface/transcript-blocks`.
+- The user's own message is part of the transcript too, echoed as a `You:` header
+  plus one quoted line per message line (`docs/interface/user-messages`).
 - The status bar is one row with two slots: the logical status text (or the
   spinner frame) starts at the left edge and the **context meter is pinned to the
   right edge** — the token usage string plus the configured-vs-real label the

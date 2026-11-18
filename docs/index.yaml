@@ -32,6 +32,7 @@ specs:
   - interface/tui
   - interface/transcript-blocks
   - interface/json-display
+  - interface/user-messages
   - interface/commands
   - interface/line-cli
   - runtime/provider-calls

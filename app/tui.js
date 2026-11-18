@@ -10,6 +10,8 @@ import {
   formatArg,
   formatTranscript,
   composeStatusRow,
+  formatUserEcho,
+  USER_ECHO_HEADER,
   collapsePaste,
   expandPastes,
   PASTE_THRESHOLD,
@@ -21,6 +23,7 @@ import {
 // They are all re-exported here so app/tui.js stays the single entry point every
 // importer (and the specs) already use.
 export { sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD };
+export { formatUserEcho, USER_ECHO_HEADER };
 export { SPINNER_FRAMES, SPINNER_INTERVAL_MS };
 export { TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, INPUT_HEIGHT };
 

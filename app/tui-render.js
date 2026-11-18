@@ -33,6 +33,8 @@ export function formatArg(value) {
 const FENCE_RE = /^\s*```\s*([\w+-]*)\s*$/;
 const HEADING_RE = /^\s*(#{1,6})\s+(.*)$/;
 const LIST_RE = /^(\s*)[-*+]\s+(.*)$/;
+/** A quoted line: what formatUserEcho() produces, and a markdown blockquote. */
+const QUOTE_RE = /^\s*>\s?(.*)$/;
 
 /** Delimiters emitted by the discovery/read tools (tools/*.js). */
 const FILE_TAG_RE = /^\s*<file\s+relative_path="([^"]*)"(?:\s+from=(\d+)\s+to=(\d+))?\s+lines=([^\s>]+)\s*>\s*$/;
@@ -142,6 +144,12 @@ export function formatTranscript(text) {
     }
 
     const line = escapeTags(raw);
+    const quote = line.match(QUOTE_RE);
+    if (quote) {
+      out.push(`{green-fg}│ ${inlineMarkup(quote[1])}{/green-fg}`);
+      continue;
+    }
+
     const heading = line.match(HEADING_RE);
     if (heading) {
       out.push(`{bold}{underline}${inlineMarkup(heading[2])}{/underline}{/bold}`);
@@ -161,6 +169,21 @@ export function formatTranscript(text) {
   return out.join('\n');
 }
 
+/** Header line introducing an echoed user message in the transcript. */
+export const USER_ECHO_HEADER = 'You:';
+
+/** Prefix quoting every line of an echoed user message. */
+export const USER_ECHO_PREFIX = '> ';
+
+/**
+ * Render the user's own message for the conversation view: a `You:` header plus
+ * every line quoted with `> `, which formatTranscript() paints as a coloured
+ * quote. Presentation only — the message the model receives is the chunk itself.
+ */
+export function formatUserEcho(text) {
+  const lines = sanitize(text).split('\n');
+  return [USER_ECHO_HEADER, ...lines.map((line) => `${USER_ECHO_PREFIX}${line}`)].join('\n');
+}
 /**
  * Lay out one status row: `left` (status text or spinner frame) starts at the
  * left edge, `right` (the context-window meter) is pinned to the right edge of

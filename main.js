@@ -6,6 +6,7 @@ import { AbortManager } from './app/abort-manager.js';
 import { createSessionRecorder } from './app/session-recorder.js';
 import { createDefaultCommands, parseCommand, runCommand } from './app/commands.js';
 import { prettyPrintJson, formatCommandResult } from './app/json-display.js';
+import { formatUserEcho } from './app/tui-render.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
@@ -76,6 +77,10 @@ async function main() {
     configuredTokens: contextSize.configuredTokens,
     realTokens: contextSize.realTokens,
     contextSizeSource: contextSize.source,
+    // The user's own message is echoed into the conversation view too, so the
+    // transcript reads as a dialogue; the chunk the model receives is untouched
+    // (app/tui-render.js#formatUserEcho is display only).
+    onUserMessage: (text) => log(formatUserEcho(text)),
     onContextChange: (stats) => {
       tui?.setTokens(stats.usage);
       tui?.notifyCompaction(stats);

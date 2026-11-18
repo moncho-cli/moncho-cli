@@ -29,6 +29,7 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `interrupt-controls.test.js` | ESC / Ctrl+C semantics on both front ends. |
 | `ollama-provider.test.js` | Provider calls: system prompt injection, response normalisation, abort. |
 | `conversation-manager.test.js` | The end-to-end loop against a stub provider. |
+| `user-echo.test.js` | The user's own message: announced by the loop, rendered as a quote, never altered in the context. |
 | `context-size.test.js` | Resolving the context size from config, provider or default. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the

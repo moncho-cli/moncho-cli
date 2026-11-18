@@ -1,12 +1,12 @@
 status: done
 
-# Backlog pick: "grep tool is missing the After and Before arguments to be able to return context lines"
+# Backlog pick: "conversation should include the messages from the user too"
 
-Source: `task-backlog.md` item 1. Work it one checkbox at a time with the
+Source: `task-backlog.md` item 2. Work it one checkbox at a time with the
 `update_task` loop (start → implement → verify → complete), and keep the three
-realms linked: code in `tools/grep.js`, proof in `tests/`, contract in `docs/`.
+realms linked: code in `app/` + `main.js`, proof in `tests/`, contract in `docs/`.
 
-- [x] grep accepts "before"/"after" arguments and returns the surrounding context lines
-- [x] tests in tests/grep-context.test.js prove context lines, overlap merging and caps
-- [x] docs/agent/project-discovery describes the context arguments and links the new cases
-- [x] full suite is green and the picked backlog item is marked done
+- [x] the user's message is echoed: ConversationManager announces it through onUserMessage and formatUserEcho() renders it
+- [x] tests/user-echo.test.js proves the echo, the quote colouring and the untouched chunk
+- [x] docs/interface/user-messages describes the behaviour and links the new cases
+- [x] full suite is green and the picked backlog item is marked done in task-backlog.md

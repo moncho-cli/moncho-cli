@@ -1,0 +1,27 @@
+id: interface/user-messages
+domain: interface
+title: The user's own messages in the conversation
+status: active
+summary: >
+  A turn used to be shown one-sided. ConversationManager.processInput() now
+  announces the user's prompt through an optional onUserMessage hook before the
+  first model call, and formatUserEcho() renders it as a "You:" header plus one
+  quoted line per message line. The echo is presentation only: the chunk stored in
+  the window and sent to the provider stays exactly { role: 'user', content },
+  and a missing or throwing hook never costs the user their prompt.
+code:
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/tui-render.js
+    symbols: [formatUserEcho, formatTranscript, USER_ECHO_HEADER, USER_ECHO_PREFIX]
+  - path: app/tui.js
+    symbols: [createTui, formatUserEcho, USER_ECHO_HEADER]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/user-echo.test.js
+    cases:
+      - "processInput announces the user message through onUserMessage, before the model call"
+      - "a manager without the hook, and a throwing hook, both keep the turn working"
+      - "formatUserEcho() labels the message and quotes every one of its lines"
+      - "the echoed message renders as a coloured quote, not as raw markdown"
