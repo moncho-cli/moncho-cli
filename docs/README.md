@@ -1,0 +1,65 @@
+# docs/ — the behavioural spec realm
+
+The project is made of **three realms** that must stay clear, factual and linked:
+
+| Realm | Location | Role |
+| --------- | --------------- | ------------------------------------------------------------------- |
+| Code | `app/`, `api/`, `config/`, `tools/`, `utils/`, `main.js` | The ultimate truth: what the agent actually does. |
+| Docs | `docs/` | What the code **must** do, and why. Behaviour, contracts, edge cases. |
+| Tests | `tests/` | Executable proof that the code honours the docs. |
+
+## The rules
+
+1. **Docs never duplicate code.** A spec names behaviour and *references* the
+   implementation as `path#symbol` (`utils/tool-schema.js#defineTool`). No copied
+   algorithms, no restated function bodies, no line numbers.
+2. **Code is the truth.** When a spec and the code disagree, one of them is a bug:
+   fix the code or fix the spec, never leave the contradiction.
+3. **Docs are the contract.** A new behaviour is not done until a spec describes it
+   and a test in `tests/` proves it.
+4. **Links are enforced, not promised.** `tests/docs-realm.test.js` fails when a
+   spec is missing, a code reference points at a non-existent file/symbol, a test
+   case named by a spec does not exist, or a source module is not covered by any
+   spec.
+
+## The path tree
+
+The tree is semantic: `docs/<domain>/<capability>/`. A capability directory holds
+exactly two files:
+
+```
+docs/<domain>/<capability>/
+  behaviour.md   # the human-readable spec
+  spec.yaml      # the machine-readable links (id, code refs, test refs)
+```
+
+Domains:
+
+- `agent/` — the agent's tool contract and its sandboxing rules.
+- `context/` — the context window: token accounting, compaction, size resolution.
+- `interface/` — what the user sees and presses: TUI, line CLI, interrupts.
+- `runtime/` — provider calls and startup wiring.
+
+## `spec.yaml` format
+
+The spec `id` **is** the path under `docs/` (`docs/<id>/`), so nothing is
+duplicated. Quote a case name in YAML when it contains a colon.
+
+```yaml
+id: agent/tool-call-contract
+domain: agent                    # first path segment of the id
+title: Short human title
+status: active                   # active | draft | deprecated
+summary: >
+  One paragraph: the behaviour this spec guarantees.
+code:                            # every reference is path#symbol, repo-relative
+  - path: utils/tool-schema.js
+    symbols: [defineTool, getIntent]
+tests:                           # test file + the exact case names that prove it
+  - path: tests/harness-tools.test.js
+    cases:
+      - "every auto-loaded tool declares the required intent parameter"
+```
+
+`docs/index.yaml` lists every spec id plus the three realm roots; the linking test
+compares that list against the spec directories actually present on disk.

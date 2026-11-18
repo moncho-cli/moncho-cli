@@ -1,0 +1,20 @@
+id: context/token-accounting
+domain: context
+title: Character-based token estimation and budget reporting
+status: active
+summary: >
+  Token use is estimated as ceil(chars / 4) plus fixed per-message and per-request
+  overhead, so the estimate is conservative. Estimates are additive, never
+  negative, accept both strings and chat messages (content, thinking, tool_calls,
+  nested chunks), and a non-positive budget means "no limit". Usage renders as
+  "<used> / <max> tokens (<pct>%)".
+code:
+  - path: utils/tokens.js
+    symbols: [CHARS_PER_TOKEN, MESSAGE_OVERHEAD_TOKENS, TOOL_SCHEMA_OVERHEAD_TOKENS, estimateTextTokens, estimateMessageTokens, estimateMessagesTokens, estimateRequestTokens, formatTokenCount, parseTokenBudget, remainingTokens, exceedsTokenBudget, formatUsage]
+  - path: config/constants.js
+    symbols: [CONTEXT_MAX_LENGTH]
+tests:
+  - path: tests/harness-tools.test.js
+    cases:
+      - token estimates are additive, rounded up and never negative
+      - budget helpers and formatting

@@ -5,6 +5,7 @@ import {
 } from '../config/constants.js';
 import { compactChunks, needsCompaction } from '../utils/compaction.js';
 import { estimateRequestTokens, formatUsage } from '../utils/tokens.js';
+import { formatContextLimit, CONTEXT_SIZE_SOURCE } from '../utils/context-size.js';
 
 /**
  * The conversation context modelled as an ordered array of chunks (task.md items
@@ -19,9 +20,20 @@ import { estimateRequestTokens, formatUsage } from '../utils/tokens.js';
 export class ContextWindow {
   #chunks = [];
 
-  constructor({ maxTokens = CONTEXT_MAX_LENGTH, tools = () => [] } = {}) {
+  constructor({
+    maxTokens = CONTEXT_MAX_LENGTH,
+    tools = () => [],
+    configuredTokens = null,
+    realTokens = null,
+    source = CONTEXT_SIZE_SOURCE.DEFAULT,
+  } = {}) {
     this.maxTokens = maxTokens;
     this.getTools = typeof tools === 'function' ? tools : () => tools || [];
+    // Where the limit came from (task.md item 3): a config override may differ
+    // from the real total reported by the provider, and the UI shows both.
+    this.configuredTokens = configuredTokens;
+    this.realTokens = realTokens;
+    this.source = source;
     /** Compaction history, newest last (surfaced by the status bar). */
     this.compactions = [];
   }
@@ -61,7 +73,14 @@ export class ContextWindow {
 
   /** Usage string such as "1.2k / 8.0k tokens (15%)". */
   usage() {
-    return formatUsage(this.#chunks, this.maxTokens, this.getTools());
+    const base = formatUsage(this.#chunks, this.maxTokens, this.getTools());
+    // When a config override differs from the real total reported by the
+    // provider, make that visible: "... [128k configured (total: 1.0M)]".
+    if (this.configuredTokens && this.realTokens && this.configuredTokens !== this.realTokens) {
+      const label = formatContextLimit(this);
+      return `${base} [${label}]`;
+    }
+    return base;
   }
 
   /** True when the window no longer fits CONTEXT_MAX_LENGTH. */
@@ -124,6 +143,10 @@ export class ContextWindow {
     return {
       chunks: this.#chunks.length,
       maxTokens: this.maxTokens,
+      configuredTokens: this.configuredTokens,
+      realTokens: this.realTokens,
+      source: this.source,
+      limit: formatContextLimit(this),
       estimatedTokens: this.estimatedTokens(),
       usage: this.usage(),
       needsCompaction: this.needsCompaction(),

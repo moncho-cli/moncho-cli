@@ -1,6 +1,5 @@
 import { callOllama } from '../api/ollama.js';
-import fs from 'fs';
-import { RESPONSE_FILE, CONTEXT_MAX_LENGTH } from '../config/constants.js';
+import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
 import { registerContextWindow } from '../utils/host.js';
 import { getIntentFromRaw } from '../utils/tool-schema.js';
@@ -27,6 +26,9 @@ export class ConversationManager {
 
     this.contextWindow = options.contextWindow || new ContextWindow({
       maxTokens: options.maxTokens || CONTEXT_MAX_LENGTH,
+      configuredTokens: options.configuredTokens ?? null,
+      realTokens: options.realTokens ?? null,
+      source: options.contextSizeSource,
       tools: () => this.getTools()
     });
     // Expose the live window to stateless tools (compact_context).
@@ -222,12 +224,9 @@ export class ConversationManager {
   async handleFinalResponse(content) {
     this.contextWindow.add({ role: "assistant", content });
 
-    fs.writeFileSync(RESPONSE_FILE, content);
-
     this.log("\n--- AI Response ---");
     this.log(content);
     this.log("----------------------");
-    this.log(`Response saved to ${RESPONSE_FILE}`);
     this.log(`[Context] ${this.contextWindow.usage()}\n`);
   }
 

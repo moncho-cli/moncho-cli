@@ -1,0 +1,34 @@
+# Registry of every behavioural spec (docs/index.yaml).
+#
+# The id IS the path under docs/ (`docs/<id>/behaviour.md` + `spec.yaml`), so the
+# registry carries no duplicated paths. Kept in sync with the spec files on disk by
+# tests/docs-realm.test.js: an entry without a spec directory (or a spec directory
+# missing here) fails the suite.
+version: 1
+
+# The three realms (docs/README.md).
+realms:
+  code:
+    - app
+    - api
+    - config
+    - tools
+    - utils
+    - main.js
+  docs: docs
+  tests: tests
+
+specs:
+  - agent/tool-call-contract
+  - agent/file-safety
+  - agent/patch-application
+  - agent/command-sandbox
+  - agent/task-tracking
+  - context/token-accounting
+  - context/compaction
+  - context/context-size
+  - interface/interrupt-controls
+  - interface/tui
+  - interface/line-cli
+  - runtime/provider-calls
+  - runtime/startup-wiring

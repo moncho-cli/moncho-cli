@@ -6,10 +6,13 @@
   "main": "main.js",
   "scripts": {
     "start": "node main.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"tests/**/*.test.js\""
   },
   "dependencies": {
     "diff": "^9.0.0",
     "neo-blessed": "^0.2.0"
+  },
+  "devDependencies": {
+    "js-yaml": "^5.5.0"
   }
 }

@@ -158,8 +158,11 @@ export class AbortManager {
   /** Ask the host to leave the application (only when no task is running). */
   requestExit() {
     if (!this.#onExit || this.#exiting) return false;
+    // The host returns false when it had nothing to settle (no question armed, as in
+    // the gap between two prompts). Latching #exiting then would leave ESC/Ctrl+C
+    // permanently dead, so only an exit the host really delivered is remembered.
+    if (this.#onExit() === false) return false;
     this.#exiting = true;
-    this.#onExit();
     return true;
   }
 

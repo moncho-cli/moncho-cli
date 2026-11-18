@@ -1,4 +1,4 @@
-import { MODEL, OLLAMA_URL } from './config/constants.js';
+import { MODEL, OLLAMA_URL } from '../../config/constants.js';
 
 // Function to create the request body for streaming
 function getRequestMessages() {

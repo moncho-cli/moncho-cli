@@ -1,0 +1,37 @@
+id: interface/interrupt-controls
+domain: interface
+title: ESC / Ctrl+C cancellation and exit semantics
+status: active
+summary: >
+  ESC and Ctrl+C share one entry point in AbortManager. While a task runs the
+  first interrupt arms a confirmation and a second cancels immediately; once
+  cancelled, further interrupts are ignored until the task ends; when idle the key
+  is a single exit request that is not latched when the host had nothing to settle.
+  The CLI confirms via a y/N prompt, the TUI via a second key press, and both
+  expose exit() which settles an armed question with the 'exit' sentinel.
+code:
+  - path: utils/keys.js
+    symbols: [ESCAPE_CHAR, CTRL_C_CHAR, isEscapeKey, isCtrlC, isInterruptKey]
+  - path: app/abort-manager.js
+    symbols: [AbortManager]
+  - path: app/cli.js
+    symbols: [createCLI]
+  - path: app/tui.js
+    symbols: [createTui]
+tests:
+  - path: tests/interrupt-controls.test.js
+    cases:
+      - "isInterruptKey recognises Escape/Ctrl+C in both decoder shapes"
+      - "AbortManager: no task means an interrupt is an exit request, exactly once"
+      - "AbortManager: no onExit means an idle interrupt is ignored, not a crash"
+      - "AbortManager: an exit the host could not deliver is not latched"
+      - "AbortManager (keys mode): first interrupt arms, second cancels"
+      - "AbortManager: a cancelled task swallows further interrupts until endTask"
+      - "AbortManager (prompt mode): the y/N question decides the cancellation"
+      - "AbortManager: ^C arrives as the readline SIGINT event, not a second keypress"
+      - "createCLI().exit() settles the pending question with the exit sentinel"
+      - "TUI: program-level Escape/Ctrl+C reach onInterrupt and leave the input box reading"
+      - "TUI: interrupts are forwarded while no question is armed (a task runs)"
+      - "TUI: without an onInterrupt hook the keys are still swallowed, never fatal"
+      - "TUI: exit() resolves an armed question with the exit sentinel"
+      - "TUI: scrolling keys still work next to the interrupt forwarding"

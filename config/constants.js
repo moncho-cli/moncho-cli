@@ -23,9 +23,8 @@ export const BASE_URL = RAW_BASE_URL;
 export const API_KEY = process.env.OPENAI_API_KEY || "";
 export const MODEL = process.env.OPENAI_MODEL || "qwen3.6:35b-a3b-q4_K_M";
 
-// Backwards-compatible alias used by older scripts/tests (e.g. stream-true-test.js).
+// Alias kept for the live smoke test (agent/utils/stream-smoke-test.js).
 export const OLLAMA_URL = BASE_URL;
-export const RESPONSE_FILE = "response.md";
 
 /**
  * Best-effort provider name for the status bar (task.md: "name of the model and
@@ -75,6 +74,9 @@ function toPositiveInt(value, fallback) {
 
 /** Token budget for the context window; exceeding it triggers a compaction. */
 export const CONTEXT_MAX_LENGTH = toPositiveInt(process.env.CONTEXT_MAX_LENGTH, 128000);
+/** The raw CONTEXT_MAX_LENGTH override, or null when the user did not set one. */
+/** (task.md item 3: without an override the real total comes from the provider.) */
+export const CONTEXT_MAX_LENGTH_OVERRIDE = toPositiveInt(process.env.CONTEXT_MAX_LENGTH, null);
 /** Older share of the window that is replaced by a single summary chunk. */
 export const COMPACTION_OLD_RATIO = 0.7;
 /** Newer share of the window that is kept verbatim. */

@@ -1,0 +1,23 @@
+id: runtime/provider-calls
+domain: runtime
+title: Single model entry point, normalised shapes, retries and abort
+status: active
+summary: >
+  callOllama() posts to the configured provider, injecting the agent system prompt
+  unless explicitly disabled, and normalises both the Ollama and OpenAI response
+  shapes (including tool calls) to one message object. Failures are retried up to
+  three times unless the abort signal is set, and the signal is passed to fetch.
+  detectProvider/describeModel derive the provider identity from the base URL.
+code:
+  - path: api/ollama.js
+    symbols: [callOllama]
+  - path: config/constants.js
+    symbols: [BASE_URL, API_KEY, MODEL, detectProvider, describeModel, PROVIDER]
+tests:
+  - path: tests/ollama-provider.test.js
+    cases:
+      - detectProvider maps common base URLs (task.md item 5)
+      - describeModel reports the configured provider and model
+      - a default call injects the agent system prompt and normalises the response
+      - systemPrompt:false omits the agent prompt (used by the context summariser)
+      - the abort signal is honoured

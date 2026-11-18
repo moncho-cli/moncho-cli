@@ -1,0 +1,29 @@
+id: context/context-size
+domain: context
+title: Resolving the context size from config, provider or default
+status: active
+summary: >
+  The working context budget is a config override when present, else the real
+  total reported by the provider over HTTP, else the 128k default. The provider
+  lookup derives its endpoint from the base URL, parses OpenRouter/OpenAI and
+  Ollama shapes tolerantly, is best-effort and never blocks startup. The label
+  shows "configured (total: real)" when an override differs from the real total.
+code:
+  - path: utils/context-size.js
+    symbols: [DEFAULT_CONTEXT_MAX_LENGTH, CONTEXT_SIZE_SOURCE, parseContextLength, contextLengthEndpoint, resolveContextSize, formatContextLimit]
+  - path: config/constants.js
+    symbols: [CONTEXT_MAX_LENGTH, CONTEXT_MAX_LENGTH_OVERRIDE]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+tests:
+  - path: tests/context-size.test.js
+    cases:
+      - parseContextLength reads the OpenRouter/OpenAI models list
+      - parseContextLength reads the Ollama /api/show shapes
+      - parseContextLength rejects junk and zero/negative values
+      - contextLengthEndpoint maps both provider base URLs
+      - resolveContextSize prefers a config override and still reports the real total
+      - resolveContextSize uses the API total when no override is configured
+      - resolveContextSize falls back to the default when the API is unreachable
+      - resolveContextSize tolerates a non-ok response and a null fetch
+      - formatContextLimit only spells out the override when it differs from the total

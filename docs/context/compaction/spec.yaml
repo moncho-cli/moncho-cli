@@ -1,0 +1,44 @@
+id: context/compaction
+domain: context
+title: 80/20 token-mass compaction with a neutral summariser
+status: active
+summary: >
+  An over-budget window is compacted by summarising the older 80% (by token mass)
+  into one marked summary chunk and keeping the newest 20% verbatim, never
+  evicting the newest chunk. The summariser runs without the agent system prompt.
+  An empty summary or a provider error leaves the window untouched. compact_context
+  reaches the live window via the host registry and defers the real call to the
+  host loop.
+code:
+  - path: utils/compaction.js
+    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, compactChunks, needsCompaction]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: tools/compact_context.js
+    symbols: [planCompaction, definition, execute]
+  - path: utils/host.js
+    symbols: [registerContextWindow, getContextWindow, clearContextWindow]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager, detectCompactionRequest]
+  - path: config/constants.js
+    symbols: [COMPACTION_OLD_RATIO, COMPACTION_KEEP_RATIO, COMPACTION_SUMMARY_PREFIX]
+tests:
+  - path: tests/harness-tools.test.js
+    cases:
+      - the older 80% / newest 20% split is driven by token mass
+      - a window of one chunk is never compacted away
+      - compactChunks replaces the old block with one summary chunk and keeps the tail verbatim
+      - compactChunks can report the split without calling the model
+      - compactChunks refuses to squash an empty older block
+      - an empty summary is rejected so the window is left unchanged
+      - buildSummaryChunk marks the compacted chunk
+      - ContextWindow reports usage and compacts in place when over budget
+      - ContextWindow compaction is skipped while inside the budget
+      - a failed summariser call leaves the window untouched
+      - compact_context reports within-budget windows and requests compaction when over
+  - path: tests/conversation-manager.test.js
+    cases:
+      - an over-budget window is compacted with a neutral summariser call
+      - maybeCompact keeps the newest chunks and evicts the rest
+      - a summariser failure never breaks the task loop
+      - detectCompactionRequest only fires on deferred compact_context results

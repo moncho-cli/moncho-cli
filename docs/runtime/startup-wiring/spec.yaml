@@ -1,0 +1,28 @@
+id: runtime/startup-wiring
+domain: runtime
+title: Startup wiring and the conversation loop contract
+status: active
+summary: >
+  main.js picks the front end (TUI with a pty, else the line CLI), loads the tools
+  with a result hook, resolves the context size once, and builds the
+  ConversationManager with an onContextChange hook. The loop checks the budget
+  before every call, stores tool calls as one assistant chunk plus one tool chunk
+  each (intent included), retries transient empty responses, and ends quietly on
+  abort; a failed compaction never breaks the task.
+code:
+  - path: main.js
+    symbols: [main]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager, detectCompactionRequest]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: utils/tool-loader.js
+    symbols: [loadTools]
+tests:
+  - path: tests/conversation-manager.test.js
+    cases:
+      - processInput runs the tool loop, prints intents, and keeps them in context
+      - an over-budget window is compacted with a neutral summariser call
+      - maybeCompact keeps the newest chunks and evicts the rest
+      - a summariser failure never breaks the task loop
+      - detectCompactionRequest only fires on deferred compact_context results

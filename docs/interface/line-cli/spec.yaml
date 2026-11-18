@@ -1,0 +1,19 @@
+id: interface/line-cli
+domain: interface
+title: Line-based CLI fallback and its exit() contract
+status: active
+summary: >
+  createCLI() exposes { rl, question, exit, close } on readline. question() arms a
+  single pending question; exit() settles it with the 'exit' sentinel (the same
+  value the host loop reads as the user typing exit) and reports false when nothing
+  is armed. The TUI mirrors this surface so the host loop is front-end agnostic.
+code:
+  - path: app/cli.js
+    symbols: [createCLI]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/interrupt-controls.test.js
+    cases:
+      - "createCLI().exit() settles the pending question with the exit sentinel"
+      - "TUI: exit() resolves an armed question with the exit sentinel"

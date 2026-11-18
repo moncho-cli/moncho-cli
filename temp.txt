@@ -1,6 +1,0 @@
-alpha bravo charlie
-INSERTED AFTER ALPHA
-delta echo foxtrot
-golf hotel INDIA
-juliet kilo lima
-mike november OSCAR

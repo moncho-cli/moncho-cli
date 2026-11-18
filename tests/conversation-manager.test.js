@@ -104,7 +104,6 @@ test('processInput runs the tool loop, prints intents, and keeps them in context
   // 4. the final assistant chunk is stored and the window ends with it
   assert.equal(manager.chunks.at(-1).role, 'assistant');
   assert.equal(manager.chunks.at(-1).content, 'all done');
-  assert.equal(fs.readFileSync('response.md', 'utf-8'), 'all done');
 
   // The live window is reachable by the stateless compact_context tool.
   assert.equal(getContextWindow(), manager.contextWindow);

@@ -1,6 +1,6 @@
-import fs from 'fs';
 import blessed from 'neo-blessed';
-import { RESPONSE_FILE, describeModel } from '../config/constants.js';
+import { describeModel } from '../config/constants.js';
+import { isInterruptKey } from '../utils/keys.js';
 
 // Screen regions (from the bottom up):
 //   input box : bottom 0, height 3 (border 'line')
@@ -155,12 +155,14 @@ export function formatTranscript(text) {
  * Build the TUI. Returns null when stdout is not a TTY (e.g. `./start.sh start`
  * runs detached, without a pty) so the caller can fall back to the line chat.
  *
- * The returned object mirrors createCLI() ({ rl, question, saveResponse, close })
- * and adds log()/setStatus() for rendering the conversation and the status bar.
+ * The returned object mirrors createCLI() ({ rl, question, exit, close }) and
+ * adds log()/setStatus() for rendering the conversation and the status bar.
  */
 export function createTui(options = {}) {
   const input = options.input || process.stdin;
   const output = options.output || process.stdout;
+  // Escape / Ctrl+C are forwarded to this hook (main.js wires it to the AbortManager).
+  const onInterrupt = typeof options.onInterrupt === 'function' ? options.onInterrupt : null;
 
   if (!output.isTTY) return null;
 
@@ -358,10 +360,29 @@ export function createTui(options = {}) {
     transcript.scroll(amount);
     refresh();
   };
+  // Escape / Ctrl+C must be taken before blessed dispatches them. While the input
+  // box is reading, screen-level listeners are skipped and textarea turns Escape
+  // into its own 'cancel' event: the box blurs and the armed question() promise is
+  // never resolved. Handling the key at the program level and locking key dispatch
+  // for that single event keeps the box reading while the host reacts.
+  const forwardInterrupt = (ch, key) => {
+    if (!isInterruptKey(ch, key)) return false;
+    screen.lockKeys = true;
+    queueMicrotask(() => {
+      screen.lockKeys = false;
+    });
+    if (onInterrupt) onInterrupt();
+    return true;
+  };
+  screen.program.prependListener('keypress', forwardInterrupt);
   // We listen for screen-level keypresses; screen.key() would bind on
   // screen.program instead, which a synthetic screen.emit('keypress') misses.
   screen.on('keypress', (ch, key) => {
     if (!key) return;
+    if (isInterruptKey(ch, key)) {
+      if (onInterrupt) onInterrupt();
+      return;
+    }
     const name = key.full || key.name;
     if (name === 'pageup' || name === 'S-up') {
       scrollBy(-1);
@@ -391,13 +412,17 @@ export function createTui(options = {}) {
       question: (prompt, callback) => question(prompt, callback),
     },
     question,
-    saveResponse(content) {
-      fs.writeFileSync(RESPONSE_FILE, content);
+    // Settle an armed question with the 'exit' sentinel the host loop understands.
+    exit() {
+      if (typeof pending !== 'function') return false;
+      settle('exit');
+      return true;
     },
     close() {
       if (closed) return;
       closed = true;
       pending = null;
+      screen.program.removeListener('keypress', forwardInterrupt);
       if (spinnerTimer) clearInterval(spinnerTimer);
       spinnerTimer = null;
       screen.destroy();
