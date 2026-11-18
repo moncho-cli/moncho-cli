@@ -1,64 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PassThrough } from 'node:stream';
 
-import { createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, SPINNER_INTERVAL_MS } from '../app/tui.js';
-
-/**
- * There is no pty helper in this image (no `script`, no `tput`), so we fabricate
- * a TTY-like stream: a PassThrough with isTTY/columns/rows, which is exactly what
- * neo-blessed reads (program.js: `this.cols = this.output.columns || 1`).
- */
-function fakeTty({ isTTY = true, columns = 80, rows = 24 } = {}) {
-  const stream = new PassThrough();
-  stream.isTTY = isTTY;
-  stream.columns = columns;
-  stream.rows = rows;
-  return stream;
-}
-
-const DEFAULT_MODEL_LABEL = 'openrouter · test/model';
-
-/**
- * neo-blessed paints through the VT100 alternate character set: spaces come out
- * as cursor-forward escapes (\x1b[<n>C) and '·' as the ACS '~' glyph. Normalise
- * a raw frame back to plain text so assertions can match readable strings.
- */
-// VT100 alternate character set -> Unicode, as neo-blessed paints box drawing.
-const ACS_MAP = {
-  j: '┘', k: '┐', l: '┌', m: '└', n: '┼',
-  q: '─', t: '├', u: '┤', v: '┴', w: '┬',
-  x: '│', '~': '·',
-};
-
-function plainText(frame) {
-  return frame
-    .replace(/\x1b\[(\d*)C/g, (_, n) => ' '.repeat(Number(n) || 1))
-    .replace(/\x1b\(0([\s\S]*?)\x1b\(B/g, (_, acs) => acs.replace(/[jklmnqtuvwx~]/g, (c) => ACS_MAP[c]))
-    .replace(/\x1b\][^\x07]*\x07/g, '')
-    .replace(/\x1b\[[\d;?]*[A-Za-z]/g, '')
-    .replace(/\x1b[()][0-9A-B]/g, '');
-}
-
-async function withTui(fn, ttyOptions = {}) {
-  const input = fakeTty(ttyOptions);
-  const output = fakeTty(ttyOptions);
-  const chunks = [];
-  output.on('data', (chunk) => chunks.push(chunk.toString()));
-
-  const tui = createTui({ input, output, modelLabel: ttyOptions.modelLabel ?? DEFAULT_MODEL_LABEL });
-  // neo-blessed buffers writes; flush the first paint before asserting.
-  await new Promise((resolve) => setImmediate(resolve));
-
-  try {
-    // painted is a live accessor so assertions always see the latest frame.
-    return await fn(tui, { input, output, chunks, painted: () => chunks.join('') });
-  } finally {
-    if (tui) tui.close();
-    input.destroy();
-    output.destroy();
-  }
-}
+import { createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes } from '../app/tui.js';
+import { fakeTty, plainText, withTui, visible } from './support/tui-harness.js';
 
 test('a pty gets the three-region TUI (transcript, status bar, input box)', async () => {
   await withTui((tui, { painted }) => {
@@ -130,12 +74,11 @@ test('a mid-session resize keeps the layout and repaints', async () => {
 
     assert.equal(tui.screen.width, 100);
     assert.equal(tui.screen.height, 30);
-    // relative layout => the three regions keep their anchors
+    // relative layout => the regions keep their anchors
     assert.equal(tui.transcript.bottom, 5);
     assert.equal(tui.statusBar.bottom, 3);
     assert.equal(tui.modelBar.bottom, 4);
     assert.equal(tui.inputBox.bottom, 0);
-    assert.ok(tui.statusBar.getContent().length >= 0);
     assert.ok(before >= 0);
   });
 });
@@ -143,17 +86,10 @@ test('a mid-session resize keeps the layout and repaints', async () => {
 test('log() sanitizes model output and keeps one line per row', async () => {
   await withTui((tui) => {
     tui.log('\x1b[31mred\x1b[0m\nsecond line');
-    const text = tui.transcript.getContent();
+    const text = visible(tui);
     assert.match(text, /red/);
     assert.doesNotMatch(text, /\x1b\[31m/);
     assert.match(text, /second line/);
-  });
-});
-
-test('setStatus() updates the status bar', async () => {
-  await withTui((tui) => {
-    tui.setStatus('1.2k / 8.0k tokens (15%)');
-    assert.equal(tui.statusBar.getContent(), '1.2k / 8.0k tokens (15%)');
   });
 });
 
@@ -227,7 +163,7 @@ test('assistant replies are rendered with markdown coloring', async () => {
     tui.log(reply);
     // getContent() returns the painted lines with the blessed tags already
     // resolved to ANSI escapes, so strip them and assert on the visible glyphs.
-    const content = tui.transcript.getContent().replace(/\x1b\[[\d;]*m/g, '');
+    const content = visible(tui);
     assert.match(content, /┌─ js ─/);
     assert.match(content, /bold/);
     assert.match(content, /•/);
@@ -261,65 +197,7 @@ test('a long paste collapses to a paste tag and expands back byte-for-byte', asy
     assert.equal(await answered, original);
     assert.deepEqual(tui.pastes, [original]);
     assert.equal(tui.expandPastes('[[paste:0]]'), original);
-    const content = tui.transcript.getContent().replace(/\x1b\[[\d;]*m/g, '');
-    assert.match(content, /pasted 5 lines/);
-  });
-});
-
-test('setTokens() renders the context-window usage meter', async () => {
-  await withTui((tui) => {
-    tui.setTokens('2.4k / 8.0k tokens (30%)');
-    const plain = tui.statusBar.getContent().replace(/\x1b\[[\d;]*m/g, '');
-    assert.equal(plain, '2.4k / 8.0k tokens (30%)');
-  });
-});
-
-test('setTokens() accepts the stats.usage string from onContextChange', async () => {
-  await withTui((tui) => {
-    const stats = { usage: '3.4k / 8.0k tokens (43%)' };
-    tui.setTokens(stats.usage);
-    const plain = tui.statusBar.getContent().replace(/\x1b\[[\d;]*m/g, '');
-    assert.equal(plain, '3.4k / 8.0k tokens (43%)');
-  });
-});
-
-test('startSpinner() paints a frame and reports the in-flight state', async () => {
-  await withTui((tui) => {
-    tui.setStatus('1.2k / 8.0k tokens (15%)');
-    tui.startSpinner();
-    assert.equal(tui.isSpinning(), true);
-    const plain = tui.statusBar.getContent().replace(/\x1b\[[\d;]*m/g, '');
-    assert.equal(plain, 'Thinking ⠋');
-  });
-});
-
-test('stopSpinner() stops the timer and restores the pre-spinner status', async () => {
-  await withTui((tui) => {
-    tui.setStatus('1.2k / 8.0k tokens (15%)');
-    tui.startSpinner();
-    tui.stopSpinner();
-    assert.equal(tui.isSpinning(), false);
-    const plain = tui.statusBar.getContent().replace(/\x1b\[[\d;]*m/g, '');
-    assert.equal(plain, '1.2k / 8.0k tokens (15%)');
-  });
-});
-
-test('an aborted request leaks no spinner frame after stopSpinner()', async () => {
-  await withTui(async (tui) => {
-    tui.setStatus('2.4k / 8.0k tokens (30%)');
-    tui.startSpinner();
-    try {
-      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
-    } catch {
-      // the abort is swallowed, exactly as in main.js
-    } finally {
-      tui.stopSpinner();
-    }
-    await new Promise((resolve) => setTimeout(resolve, 3 * SPINNER_INTERVAL_MS));
-    assert.equal(tui.isSpinning(), false);
-    const plain = tui.statusBar.getContent().replace(/\x1b\[[\d;]*m/g, '');
-    assert.equal(plain, '2.4k / 8.0k tokens (30%)');
-    assert.doesNotMatch(plain, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+    assert.match(visible(tui), /pasted 5 lines/);
   });
 });
 
@@ -332,7 +210,7 @@ test('the tool-call intent is echoed to the transcript, ahead of the result', as
     await new Promise((resolve) => setImmediate(resolve));
 
     // the intent survives into the transcript text ...
-    const content = tui.transcript.getContent().replace(/\x1b\[[\d;]*m/g, '');
+    const content = visible(tui);
     assert.match(content, /\[read_file Output\] \(intent: why the file is read\)/);
     // ... it is printed above the result payload ...
     assert.ok(
@@ -358,8 +236,7 @@ test('the read_file result tag renders as a header, not raw text', async () => {
   await withTui(async (tui, { painted }) => {
     tui.log(result);
     await new Promise((resolve) => setImmediate(resolve));
-    const content = tui.transcript.getContent().replace(/\x1b\[[\d;]*m/g, '');
-    assert.doesNotMatch(content, /<file relative_path/);
+    assert.doesNotMatch(visible(tui), /<file relative_path/);
     assert.match(plainText(painted()), /┌─ app\/tui\.js from=10 to=40 · lines=31/);
   });
 });
@@ -385,7 +262,7 @@ test('notifyCompaction() marks a compaction in the transcript, once per event', 
     tui.notifyCompaction(stats);
     // neo-blessed writes asynchronously; flush the repaint before reading the frame.
     await new Promise((resolve) => setImmediate(resolve));
-    const content = tui.transcript.getContent().replace(/\x1b\[[\d;]*m/g, '');
+    const content = visible(tui);
     assert.match(content, /\[Context\] compaction fired/);
     assert.match(content, /4 older chunk\(s\) -> summary, kept 1 newest chunk\(s\)/);
     assert.match(content, /\(7200 -> 1800 tokens\)/);
@@ -396,7 +273,7 @@ test('notifyCompaction() marks a compaction in the transcript, once per event', 
     tui.notifyCompaction(stats);
     tui.notifyCompaction({ ...stats });
     assert.equal(
-      tui.transcript.getContent().split('[Context] compaction fired').length - 1,
+      visible(tui).split('[Context] compaction fired').length - 1,
       1,
       'an unchanged compaction count must not mark the transcript again',
     );
@@ -407,9 +284,6 @@ test('notifyCompaction() marks a compaction in the transcript, once per event', 
       compactions: 2,
       lastCompaction: { ...stats.lastCompaction, olderChunks: 3, keptChunks: 2 },
     });
-    assert.equal(
-      tui.transcript.getContent().split('[Context] compaction fired').length - 1,
-      2,
-    );
+    assert.equal(visible(tui).split('[Context] compaction fired').length - 1, 2);
   });
 });

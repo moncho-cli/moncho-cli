@@ -5,7 +5,8 @@ status: active
 summary: >
   main.js picks the front end (TUI with a pty, else the line CLI), loads the tools
   with a result hook, resolves the context size once, and builds the
-  ConversationManager with an onContextChange hook. The loop checks the budget
+  ConversationManager with an onContextChange hook, then records the live
+  conversation to a dated session file after every turn. The loop checks the budget
   before every call, stores tool calls as one assistant chunk plus one tool chunk
   each (intent included), retries transient empty responses, and ends quietly on
   abort; a failed compaction never breaks the task.
@@ -16,6 +17,8 @@ code:
     symbols: [ConversationManager, detectCompactionRequest]
   - path: app/context-window.js
     symbols: [ContextWindow]
+  - path: app/session-recorder.js
+    symbols: [createSessionRecorder]
   - path: utils/tool-loader.js
     symbols: [loadTools]
 tests:

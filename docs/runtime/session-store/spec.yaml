@@ -1,0 +1,33 @@
+id: runtime/session-store
+domain: runtime
+title: Conversation sessions stored on disk
+status: active
+summary: >
+  The full context of a conversation is stored as a dated, versioned JSON file
+  under the gitignored agent/sessions/ directory. The store writes verified,
+  parses strictly (refusing junk and unsupported versions), lists summaries newest
+  first, and lets a session be loaded back for pickup; the host loop records the
+  live window after every turn.
+code:
+  - path: utils/session-store.js
+    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, serializeSession, countRoles, formatSession, parseSession, sessionChunks, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
+  - path: app/session-recorder.js
+    symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
+  - path: utils/file-io.js
+    symbols: [writeFileVerified]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/session-store.test.js
+    cases:
+      - "sessions live under the gitignored agent/ tree by default"
+      - "sessionId() derives a sortable, date-named id from a Date"
+      - "sessionPath() refuses ids that could escape the sessions directory"
+      - "serializeSession() records the metadata and the chunks verbatim"
+      - "the file on disk is pretty-printed JSON ending in a newline"
+      - "parseSession() rejects junk and unsupported versions instead of guessing"
+      - "writeSession()/loadSession() round-trip the full context byte-for-byte"
+      - "listSessions() reports the newest first and tolerates a broken file"
+      - "latestSession() returns the newest readable session"
+      - "the session recorder snapshots the live window under a dated name"
+      - "a recorded session can be replayed into a context window"

@@ -15,9 +15,12 @@ loop's observability guarantees; the implementation is linked below.
    afterwards, and a TTY means the manager must not install its own stdin listener
    (`captureKeys: false`) — see `docs/interface/interrupt-controls`.
 4. Load the tools with a result hook that echoes each result (and its intent) to
-   the screen.
+   the screen; in the TUI that echo is a collapsible block
+   (`docs/interface/transcript-blocks`).
 5. Create the `ConversationManager` with the resolved budget, the provider/model
    label and an `onContextChange` hook that paints the token meter.
+6. Create the session recorder (`docs/runtime/session-store`) and announce the
+   session file it writes, so the user knows where the conversation is kept.
 
 ## The conversation loop
 
@@ -36,6 +39,15 @@ loop's observability guarantees; the implementation is linked below.
   (marked `[error]`), so the model can react instead of the loop dying.
 - A `compact_context` result that requests a real compaction is detected by the
   loop, which then forces the compaction because it owns the provider connection.
+
+## Recording the conversation
+
+- After every completed turn — and once more when the user exits — the live window
+  is snapshotted to `agent/sessions/<date>.json` (see
+  `docs/runtime/session-store`), so the stored context matches what the model saw,
+  compaction included.
+- A failed save is reported as a line and never breaks the loop: losing the record
+  is bad, losing the conversation is worse.
 
 ## Cancellation
 
@@ -59,5 +71,6 @@ loop's observability guarantees; the implementation is linked below.
 ## See also
 
 - Implementation: `main.js`, `app/conversation-manager.js`, `app/context-window.js`,
-  `app/abort-manager.js`, `utils/tool-loader.js`
-- Proof: `tests/conversation-manager.test.js`
+  `app/abort-manager.js`, `app/session-recorder.js`, `utils/tool-loader.js`
+- Spec of the stored sessions: `docs/runtime/session-store`
+- Proof: `tests/conversation-manager.test.js`, `tests/session-store.test.js`

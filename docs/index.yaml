@@ -29,6 +29,10 @@ specs:
   - context/context-size
   - interface/interrupt-controls
   - interface/tui
+  - interface/transcript-blocks
+  - interface/json-display
+  - interface/commands
   - interface/line-cli
   - runtime/provider-calls
   - runtime/startup-wiring
+  - runtime/session-store

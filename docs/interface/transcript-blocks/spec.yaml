@@ -1,0 +1,29 @@
+id: interface/transcript-blocks
+domain: interface
+title: Collapsible tool output in the transcript
+status: active
+summary: >
+  The transcript is a model of plain lines and collapsible blocks. A tool result
+  starts collapsed as one header line carrying its "X char response" size, and a
+  click expands it, the next click collapses it; the payload is kept verbatim and
+  the scroll position survives the toggle.
+code:
+  - path: app/transcript.js
+    symbols: [TranscriptModel, COLLAPSE_THRESHOLD_CHARS, COLLAPSED_MARKER, EXPANDED_MARKER, formatCharCount, formatBlockHeader, blockLines, clickRow, blockAtClick]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: app/tui-render.js
+    symbols: [formatTranscript]
+tests:
+  - path: tests/transcript-blocks.test.js
+    cases:
+      - "the transcript model collapses long blocks and keeps the payload verbatim"
+      - "a short single-line result is not hidden behind a click"
+      - "plain lines and blocks keep their order and their line ranges"
+      - "clickRow() and blockAtClick() map a screen click onto a block"
+      - "a tool result is collapsed by default and says \"X char response\" inline"
+      - "clicking a collapsed tool result expands it, clicking again collapses it"
+      - "a click on a plain transcript line toggles nothing"
+      - "the collapsed header keeps the size label right after the intent"
+      - "expanding a block keeps the transcript scroll position"
+      - "formatBlockHeader()/blockLines() describe the header a block paints"

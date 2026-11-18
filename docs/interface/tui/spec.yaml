@@ -6,11 +6,20 @@ summary: >
   With a pty, createTui() builds a four-region blessed screen (input box, status
   bar, model row, scrollable transcript) and returns null without one so the line
   CLI is kept. Model text is sanitised and escaped before rendering, long pastes
-  collapse and expand byte-for-byte, the status bar doubles as the context meter
-  and spinner, and compactions are announced in the transcript exactly once.
+  collapse and expand byte-for-byte, the status bar carries the status or spinner
+  on the left and the context meter pinned to its right edge (always visible), and
+  compactions are announced in the transcript exactly once.
 code:
   - path: app/tui.js
     symbols: [createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, PASTE_THRESHOLD, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
+  - path: app/tui-render.js
+    symbols: [sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD]
+  - path: app/status-row.js
+    symbols: [createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
+  - path: app/tui-layout.js
+    symbols: [createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, INPUT_HEIGHT]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
   - path: config/constants.js
     symbols: [describeModel, detectProvider]
 tests:
@@ -20,17 +29,22 @@ tests:
       - "the transcript scrolls, including from the keyboard"
       - "a mid-session resize keeps the layout and repaints"
       - "log() sanitizes model output and keeps one line per row"
-      - "setStatus() updates the status bar"
       - "question() resolves through the input box, like createCLI().rl.question"
       - "without a pty createTui() returns null so the line chat is kept"
       - "sanitize() and formatArg() behave as documented"
       - "assistant replies are rendered with markdown coloring"
       - "a long paste collapses to a paste tag and expands back byte-for-byte"
-      - "setTokens() renders the context-window usage meter"
-      - "setTokens() accepts the stats.usage string from onContextChange"
-      - "startSpinner() paints a frame and reports the in-flight state"
-      - "stopSpinner() stops the timer and restores the pre-spinner status"
-      - "an aborted request leaks no spinner frame after stopSpinner()"
       - "the tool-call intent is echoed to the transcript, ahead of the result"
       - "the read_file result tag renders as a header, not raw text"
       - "notifyCompaction() marks a compaction in the transcript, once per event"
+  - path: tests/tui-status.test.js
+    cases:
+      - "composeStatusRow() right-aligns the meter and never drops it"
+      - "setStatus() updates the status bar"
+      - "setTokens() renders the context-window usage meter, right-aligned"
+      - "setTokens() accepts the stats.usage string from onContextChange"
+      - "startSpinner() paints a frame and reports the in-flight state"
+      - "the context meter stays visible while the spinner is running"
+      - "stopSpinner() stops the timer and restores the pre-spinner status"
+      - "an aborted request leaks no spinner frame after stopSpinner()"
+      - "createStatusRow() keeps the left slot derived from the in-flight state"

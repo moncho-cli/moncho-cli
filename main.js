@@ -3,6 +3,9 @@ import { ConversationManager } from './app/conversation-manager.js';
 import { createCLI } from './app/cli.js';
 import { createTui } from './app/tui.js';
 import { AbortManager } from './app/abort-manager.js';
+import { createSessionRecorder } from './app/session-recorder.js';
+import { createDefaultCommands, parseCommand, runCommand } from './app/commands.js';
+import { prettyPrintJson, formatCommandResult } from './app/json-display.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
@@ -36,8 +39,19 @@ async function main() {
   // Tool results are echoed to the screen (with the call's intent) and also
   // returned to the model.
   const onToolResult = (toolName, result, intent) => {
-    log(`\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''}`);
-    log(result);
+    // In the TUI a tool result is a collapsible block: one header line carrying
+    // the "X char response" size, expanded with a click. The line CLI has no
+    // widget, so it prints the header and the payload plainly.
+    // A JSON result is re-indented for display only (task.md item 5): the model
+    // still receives the raw bytes, and the session file keeps them verbatim.
+    const body = prettyPrintJson(result);
+    const header = `\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''}`;
+    if (tui) {
+      tui.logBlock({ header, body });
+      return;
+    }
+    log(header);
+    log(body);
     log();
   };
 
@@ -68,27 +82,72 @@ async function main() {
     },
   });
 
+  // The conversation is recorded under agent/sessions/<date>.json (task.md item
+  // 3): every chunk of the live window, verbatim, so it can be picked up later.
+  const sessions = createSessionRecorder({ model: label });
+  const saveSession = (reason) => {
+    try {
+      return sessions.save(manager.chunks, { reason, stats: manager.contextWindow.stats() });
+    } catch (error) {
+      log(`\n[Session] Could not save ${sessions.path}: ${error.message}`);
+      return null;
+    }
+  };
+
+  // Slash commands (task.md item 4): an iterable registry, so adding a command
+  // later needs no change in this loop. Anything that is not `/<name>` stays a
+  // prompt and goes to the model untouched.
+  const commands = createDefaultCommands();
+  const handleCommand = async (input) => {
+    const parsed = parseCommand(input);
+    if (!parsed) return false;
+    const result = await runCommand(commands, parsed.name, {
+      arg: parsed.arg,
+      log,
+      choose: typeof cli.choose === 'function' ? (labels, options) => cli.choose(labels, options) : null,
+      manager,
+      dir: sessions.dir,
+    });
+    if (result === null) {
+      log(`Unknown command /${parsed.name}. Try /help.`);
+      return true;
+    }
+    for (const line of formatCommandResult(result)) log(line);
+    if (result.ok && result.code === 'RESUMED') {
+      tui?.setTokens(manager.contextWindow.usage());
+      saveSession('resume');
+    }
+    return true;
+  };
+
   tui?.setTokens(manager.contextWindow.usage());
   log(`\nProvider/model: ${label}`);
+  log(`Session file: ${sessions.path} (saved after every turn)`);
   log(`Context window budget: ${formatContextLimit(contextSize)} tokens (compaction keeps the newest 20%)`);
 
   log("\nChat initialized. Type 'exit' to quit.");
   log("ESC or Ctrl+C cancels a running task (press twice to confirm) and quits when idle.");
+  log(`Commands: ${commands.list().map((command) => `/${command.name}`).join(', ')} (try /help)`);
 
   while (true) {
     const userInput = await cli.question(tui ? '> ' : '\n> ');
 
     if (userInput.toLowerCase() === 'exit') {
       log("Exiting...");
+      saveSession('exit');
       break;
     }
     if (!userInput.trim()) continue;
+
+    // A slash command is answered here and never sent to the model.
+    if (await handleCommand(userInput)) continue;
 
     abortManager.startTask();
     try {
       tui?.startSpinner();
       await manager.processInput(userInput);
       tui?.setTokens(manager.contextWindow.usage());
+      saveSession('turn');
     } catch (error) {
       if (
         error.name === 'AbortError' ||

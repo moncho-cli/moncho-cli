@@ -186,7 +186,7 @@ export async function compactChunks(chunks, options = {}) {
 
   return {
     chunks: nextChunks,
-    summary,
+    summary: `<compaction-result>\n${summary}\n</compaction-result>`,
     compacted: true,
     stats: { ...stats, afterTokens }
   };

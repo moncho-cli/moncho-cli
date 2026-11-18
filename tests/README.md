@@ -23,11 +23,16 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `docs-realm.test.js` | The three realms are linked: every spec exists, its code refs resolve to real symbols, its named cases exist, every source module is documented. |
 | `harness-tools.test.js` | The agent tool contract and the context machinery (tools, sandbox, token accounting, compaction, task protocol). |
 | `patch.test.js` | Unified-diff application, its error codes and all-or-nothing behaviour. |
-| `tui.test.js` | The blessed TUI layout, rendering, status bar and spinner. |
+| `tui.test.js` | The blessed TUI layout, transcript rendering and pastes. |
+| `tui-status.test.js` | The status row: right-aligned context meter and spinner. |
+| `transcript-blocks.test.js` | Collapsible tool output: the transcript model, clicks and toggles. |
 | `interrupt-controls.test.js` | ESC / Ctrl+C semantics on both front ends. |
 | `ollama-provider.test.js` | Provider calls: system prompt injection, response normalisation, abort. |
 | `conversation-manager.test.js` | The end-to-end loop against a stub provider. |
 | `context-size.test.js` | Resolving the context size from config, provider or default. |
+
+`tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the
+suites import; they are not test files themselves.
 
 ## Rules
 

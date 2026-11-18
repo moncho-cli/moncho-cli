@@ -1,0 +1,24 @@
+id: interface/json-display
+domain: interface
+title: Pretty-printed JSON results
+status: active
+summary: >
+  JSON results are re-indented for display only: an object or array is printed
+  with two spaces per level, a JSON scalar or plain prose is left untouched, and an
+  unparseable payload is returned unchanged. Command results print their lines and
+  message first, and only a payload-only result is printed as pretty JSON. The
+  model still receives the raw bytes and the session file keeps them verbatim.
+code:
+  - path: app/json-display.js
+    symbols: [looksLikeJson, prettyPrintJson, payloadOf, formatCommandResult]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/json-display.test.js
+    cases:
+      - "prettyPrintJson() re-indents a JSON object and leaves prose alone"
+      - "looksLikeJson() only accepts objects and arrays"
+      - "payloadOf() drops the presentation keys and keeps the data"
+      - "formatCommandResult() prints the lines and the message, pretty-printing JSON"
+      - "a command result with only a payload is printed as pretty JSON"
+      - "a tool result is pretty-printed for display, not for the model"

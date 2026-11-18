@@ -30,6 +30,25 @@ export function createCLI() {
     rl,
     question: ask,
     exit,
+    /**
+     * Pick one of `labels` by number: the line-CLI counterpart of the TUI modal.
+     *
+     * Resolves with the index of the choice, or null when the answer is empty, out
+     * of range, or `q` — the same contract the command registry expects, so a
+     * command does not care which front end asked.
+     */
+    async choose(labels = [], { title = 'Select' } = {}) {
+      const items = [...labels];
+      if (items.length === 0) return null;
+      console.log(`\n${title}:`);
+      items.forEach((label, index) => console.log(`  ${index + 1}) ${label}`));
+      const answer = String(await ask('Number (empty or q to cancel): ')).trim();
+      const lowered = answer.toLowerCase();
+      if (!answer || lowered === 'q' || lowered === 'exit') return null;
+      const index = Number.parseInt(answer, 10) - 1;
+      if (!Number.isInteger(index) || index < 0 || index >= items.length) return null;
+      return index;
+    },
     close() {
       rl.close();
     }

@@ -3,10 +3,12 @@ domain: interface
 title: Line-based CLI fallback and its exit() contract
 status: active
 summary: >
-  createCLI() exposes { rl, question, exit, close } on readline. question() arms a
-  single pending question; exit() settles it with the 'exit' sentinel (the same
-  value the host loop reads as the user typing exit) and reports false when nothing
-  is armed. The TUI mirrors this surface so the host loop is front-end agnostic.
+  createCLI() exposes { rl, question, exit, choose, close } on readline. question()
+  arms a single pending question; exit() settles it with the 'exit' sentinel (the
+  same value the host loop reads as the user typing exit) and reports false when
+  nothing is armed; choose() prints a numbered list and reads the number back, the
+  line-CLI counterpart of the TUI picker modal. The TUI mirrors this surface so the
+  host loop is front-end agnostic.
 code:
   - path: app/cli.js
     symbols: [createCLI]

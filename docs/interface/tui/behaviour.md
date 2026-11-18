@@ -11,14 +11,17 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 | Region | Position | Purpose |
 | ------------- | --------------------------- | ----------------------------------------- |
 | input box | bottom 0, height 3 | the prompt the user types into |
-| status bar | bottom 3, height 1 | status text, spinner, or the token meter |
+| status bar | bottom 3, height 1 | status text/spinner on the left, token meter on the right |
 | model row | bottom 4, height 1 | provider · model label, resolved at startup |
 | transcript | bottom 5 up to the top | scrollable, bordered conversation log |
 
 - **Without a TTY `createTui()` returns `null`** (e.g. the detached
   `start.sh start` run), and the host falls back to the line CLI. It must never
   throw when there is no pty.
-- A mid-session resize repaints and keeps the newest line in view.
+- A mid-session resize repaints the status row (re-pinning the meter to the new
+  right edge) and keeps the newest transcript line in view.
+- The region layout lives in `createLayout()` (`app/tui-layout.js`), so the
+  orchestration in `app/tui.js` stays about keys, questions and the public surface.
 
 ## Rendering
 
@@ -31,8 +34,15 @@ Five regions, laid out relatively so blessed relayouts them on resize:
   unit tested.
 - A long paste collapses into a single `[[paste:<id>]]` tag and expands back
   **byte-for-byte**, so collapsing never alters the bytes the model receives.
-- The status bar doubles as the context meter: the token usage string (and the
-  configured-vs-real label appended by the window) is painted there.
+- The transcript is a model of plain lines and **collapsible blocks**: a tool
+  result starts as one header line carrying its `X char response` size, and a click
+  expands it (the next click collapses it) without touching the payload. The rules
+  live in `docs/interface/transcript-blocks`.
+- The status bar is one row with two slots: the logical status text (or the
+  spinner frame) starts at the left edge and the **context meter is pinned to the
+  right edge** — the token usage string plus the configured-vs-real label the
+  window appends. `composeStatusRow()` lays the row out purely, and when the width
+  is too small the left text is truncated, never the meter.
 - A compaction that fires while the request is in flight is announced in the
   transcript — the status bar is owned by the spinner at that moment — exactly once
   per event.
@@ -40,10 +50,12 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 ## Status and feedback
 
 - While a request is in flight the status bar shows an animated spinner frame; the
-  last logical status text is restored when the reply lands, and stopping the
-  spinner never leaves a frame behind (including after an abort).
+  meter keeps painting alongside it, the last logical status text is restored when
+  the reply lands, and stopping the spinner never leaves a frame behind (including
+  after an abort).
 - `setTokens()` accepts the usage string the host passes from
-  `onContextChange`, so the meter is driven by real window stats.
+  `onContextChange`, so the meter is driven by real window stats; a mid-request
+  update repaints at once instead of being swallowed by the spinner.
 
 ## Scrolling
 
@@ -53,5 +65,9 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 
 ## See also
 
-- Implementation: `app/tui.js`, `config/constants.js`
-- Proof: `tests/tui.test.js`, `tests/interrupt-controls.test.js`
+- Implementation: `app/tui.js` (screen wiring), `app/tui-layout.js` (regions),
+  `app/tui-render.js` (pure text helpers), `app/status-row.js`
+  (status/spinner/meter bookkeeping), `config/constants.js`
+- Spec of the collapsible results: `docs/interface/transcript-blocks`
+- Proof: `tests/tui.test.js`, `tests/tui-status.test.js`,
+  `tests/transcript-blocks.test.js`, `tests/interrupt-controls.test.js`
