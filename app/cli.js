@@ -1,7 +1,6 @@
 import readline from 'readline';
-import process from 'process';
-import { RESPONSE_FILE } from '../config/constants.js';
 import fs from 'fs';
+import { RESPONSE_FILE } from '../config/constants.js';
 
 export function createCLI() {
   const rl = readline.createInterface({
@@ -10,7 +9,7 @@ export function createCLI() {
   });
 
   const question = (prompt) => new Promise((resolve) => rl.question(prompt, resolve));
-  
+
   return {
     rl,
     question,

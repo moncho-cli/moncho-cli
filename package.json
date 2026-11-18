@@ -3,5 +3,13 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Modular Ollama toolchain with auto-loaded tools",
-  "main": "main.js"
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "neo-blessed": "^0.2.0"
+  }
 }
