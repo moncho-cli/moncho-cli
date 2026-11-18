@@ -1,0 +1,35 @@
+id: context/usage-refresh
+domain: context
+title: Every window change and every call announces the usage
+status: active
+summary: >
+  The token meter is a view of the context window, so ConversationManager announces
+  the window's stats after every change — the user chunk, the assistant chunk
+  carrying tool calls, each tool result, the final reply and any compaction — plus
+  once right before every provider call, all through one guarded helper. A throwing
+  listener is swallowed, a missing listener is a no-op, and the count-based
+  compaction notifier still reports each compaction exactly once. The host loop
+  paints nothing itself, and the line CLI keeps one usage line per turn.
+code:
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager, detectCompactionRequest]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: app/compaction-notice.js
+    symbols: [createCompactionNotifier, formatCompactionNotice]
+  - path: app/status-row.js
+    symbols: [createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/context-usage-refresh.test.js
+    cases:
+      - "every chunk a turn adds is announced before the next provider call"
+      - "the meter is repainted right before each provider call, not only after the turn"
+      - "a throwing context listener never costs the user their turn"
+      - "a manager without a context hook runs the turn unchanged"
+      - "repeated announcements still mark a compaction exactly once"
+      - "the line CLI keeps one usage line per turn however many chunks the turn added"
+  - path: tests/tui-status.test.js
+    cases:
+      - "the context meter stays visible while the spinner is running"

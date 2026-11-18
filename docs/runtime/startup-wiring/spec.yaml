@@ -6,7 +6,9 @@ summary: >
   main.js picks the front end (TUI with a pty, else the line CLI), loads the tools
   with a result hook, resolves the context size once, and builds the
   ConversationManager with an onContextChange hook, then records the live
-  conversation to a dated session file after every turn. The loop checks the budget
+  conversation to a dated session file after every turn. The manager announces
+  every window change and every call (`docs/context/usage-refresh`), so the host
+  paints no usage itself. The loop checks the budget
   before every call, stores tool calls as one assistant chunk plus one tool chunk
   each (intent included), retries transient empty responses, and ends quietly on
   abort; a failed compaction never breaks the task.

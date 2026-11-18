@@ -30,6 +30,10 @@ loop's observability guarantees; the implementation is linked below.
   call, so the conversation view shows both sides (`docs/interface/user-messages`).
 - **Before every model call** the window is checked against the budget and
   compacted when needed, so the model is never called with an over-budget window.
+- **Every change to the window is announced** — the user chunk, the assistant
+  chunk carrying the calls, each tool result, the final reply and any compaction —
+  plus one announcement right before every provider call
+  (`docs/context/usage-refresh`). The host loop never repaints after a turn.
 - A `null`/empty response is treated as transient: it is reported and retried
   rather than ending the task.
 - When the model asks for tools, a single assistant chunk carrying **all** tool
@@ -69,6 +73,9 @@ loop's observability guarantees; the implementation is linked below.
 - The status bar / transcript receive every context change and compaction notice
   through `onContextChange`, keeping the UI a view of real state rather than a
   second source of truth.
+- Because the manager announces per change, the meter is current *during* a turn
+  instead of only after it, so the number on screen can be watched approaching the
+  budget (`docs/context/usage-refresh`).
 
 ## See also
 

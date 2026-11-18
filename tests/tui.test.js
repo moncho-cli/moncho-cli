@@ -304,7 +304,7 @@ test('notifyCompaction() marks a compaction in the transcript, once per event', 
     // the marker really reached the terminal frame, not only the buffer
     assert.match(plainText(painted()), /\[Context\] compaction fired/);
 
-    // onContextChange fires on every turn: the same report must not repeat
+    // onContextChange fires on every chunk: the same report must not repeat
     tui.notifyCompaction(stats);
     tui.notifyCompaction({ ...stats });
     assert.equal(

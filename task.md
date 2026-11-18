@@ -1,49 +1,52 @@
 status: done
 
-# Resuming a session reloads the conversation as it was left
+# The token meter refreshes on every call, not once per turn
 
-Picking up a stored conversation (`/sessions`, `docs/interface/commands`) today only
-restores the **context window**: `sessionsCommand()` calls
-`manager.contextWindow.replace(chunks)` and the host prints "Resumed <id> (N
-chunk(s))." The conversation *view* is left empty, so the user continues talking to
-a model that remembers everything while the transcript shows nothing. This task
-closes that gap: opening a session must put the conversation back on screen exactly
-as it was left, and continuing it must keep saving into the same session file.
+The status bar carries the context-window meter, and the host paints it from the
+`onContextChange` hook. Today that hook fires from **one** place: `maybeCompact()`,
+and only when a compaction actually happened
+(`app/conversation-manager.js#ConversationManager`). Everything else is painted by
+`main.js` *around* the turn — once after `processInput()` resolves, once at startup
+and once after a resume. So during a turn whose model answer costs four tool calls,
+the meter sits still while the window grows by five chunks, and it only catches up
+when the reply has already landed. The user cannot see a turn approach the budget;
+the number they see is stale by exactly one turn.
 
-## What "as it was left" means
+This task makes the meter a *live* view of the window: every change to it is
+announced, so the number on screen is the number the window holds right now.
 
-The session file holds every chunk verbatim (`docs/runtime/session-store`), so the
-replay is a *rendering* problem, not a storage one. Each chunk must reappear the
-way the live loop rendered it in the first place
-(`docs/runtime/startup-wiring`, `docs/interface/tui`):
+## What "on every single call" means
 
-| Chunk in the session | What the transcript shows on resume |
-| -------------------- | ----------------------------------- |
-| `user` | the `You:` echo + quoted lines (`docs/interface/user-messages`) |
-| `assistant` with `tool_calls` | one `-> Calling <name>(<args>)` line plus its `intent:` line per call |
-| `tool` | a collapsible block headed `[<tool> Output] (intent: …)` (`docs/interface/transcript-blocks`) |
-| `assistant` with `content` | the assistant prose |
-| `system` + `compacted: true` | a `[Context]` notice that this part was summarised |
+The window changes in these ways, and each one must reach the host:
 
-Replay is **presentation only**: nothing is re-sent to the model, the restored
-chunks stay byte-identical, and a resumed transcript never gains a chunk. The live
-loop and the replay must share one formatting path, otherwise the two drift and a
-resumed conversation looks different from the one that produced it.
+| Change | Where it happens today |
+| ------ | ---------------------- |
+| the user prompt becomes a chunk | `processInput()` |
+| an assistant chunk carrying `tool_calls` | `handleToolCalls()` |
+| each `tool` result chunk | `handleToolCalls()` |
+| the final assistant reply chunk | `handleFinalResponse()` |
+| the compaction rewriting the window | `maybeCompact()` |
+
+On top of those, the usage is announced **immediately before every provider call**,
+so the meter is already current when the request goes out — the moment the user
+actually cares about, because that is the call that can be rejected for being over
+budget.
 
 ## Constraints
 
-- One formatting path: the `-> Calling …` / `intent:` / `[<tool> Output]` shapes are
-  built by one shared helper used by both `ConversationManager` and the replay.
-- A tool chunk records only `tool_call_id` and its content, so the tool **name** is
-  recovered by matching the id against the preceding assistant `tool_calls`; an
-  unmatched chunk must still render, never throw.
-- Continuing a resumed conversation saves back into **the same** session file, so
-  the id is adopted by the recorder rather than a new file being started.
-- Replay must work in both front ends: collapsible blocks in the TUI, plain lines in
-  the line CLI (which never renders blessed tags).
+- One emission path: a single guarded helper on `ConversationManager` announces the
+  window's `stats()`, so no call site can forget the hook or bypass the guard.
+- The hook is **display only**: a listener that throws is swallowed, exactly like
+  `onUserMessage`, and never costs the user their turn.
+- More repaints must not resurrect the compaction marker: the notifier is
+  count-based (`app/compaction-notice.js#createCompactionNotifier`), so it still
+  announces each compaction exactly once no matter how often it is asked.
+- The line CLI keeps reporting usage per turn — a meter line after every chunk
+  would drown the transcript; only the TUI paints the hook's output.
 - Every file stays under the 300-line budget; extract rather than grow.
 
-- [x] **reload the conversation view when a session is resumed** — resuming restored the *context window* only, so the model remembered everything while the transcript stayed empty. `app/session-replay.js` rebuilds the display from the stored chunks: the `You:` echo, one `-> Calling …` + `intent:` line per call, a collapsible block per tool result (its tool name recovered by matching `tool_call_id` against the assistant chunk), the reply inside its delimiters, and a `[Context]` notice for a summarised chunk. `renderReplay()` drives either front end and `reloadConversation()` empties the view first; the TUI's `reload()` also resets the compaction notifier. `app/tool-call-format.js` builds every one of those shapes for **both** the live loop and the replay, so a reloaded conversation cannot drift from the one that produced it. The host reloads after `RESUMED` and the recorder `adopt()`s the resumed id, so the conversation keeps saving into the file it came from. Proven by `docs/interface/session-replay` and `tests/session-replay.test.js` (9 cases).
+- [x] **announce every window change to the host** — `ConversationManager` gains one guarded emission helper used by every mutation point (the prompt, the tool-call chunk, each tool result, the final reply, a compaction), plus one emission right before every provider call, so the meter (and the compaction marker) track the window live instead of once per turn.
+- [x] **document and prove the per-call usage refresh** — a `docs/context/usage-refresh` spec (registered in `docs/index.yaml`) states when the host is notified and what it must not do, and `tests/context-usage-refresh.test.js` proves the emission order, the pre-call refresh, the throwing-hook guard and the once-per-event compaction marker.
 
 ## Done when
 

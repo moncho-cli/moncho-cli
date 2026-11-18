@@ -72,6 +72,9 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 - `setTokens()` accepts the usage string the host passes from
   `onContextChange`, so the meter is driven by real window stats; a mid-request
   update repaints at once instead of being swallowed by the spinner.
+- The manager announces every window change (`docs/context/usage-refresh`), so the
+  meter climbs chunk by chunk during a tool chain instead of jumping when the turn
+  ends.
 
 ## Scrolling
 

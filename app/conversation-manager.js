@@ -49,6 +49,29 @@ export class ConversationManager {
   }
 
   /**
+   * Announce the window's current stats to the host.
+   *
+   * The token meter is a *view* of the window, so it must follow every change to
+   * it instead of being repainted once per turn by the host loop: the user has to
+   * see a turn approach the budget while it is still running. Every mutation of
+   * the window and every provider call goes through this one helper, so no call
+   * site can forget the hook.
+   *
+   * The hook is presentation only — a listener that throws must never cost the
+   * user their turn, exactly like `onUserMessage`.
+   */
+  notifyContextChange() {
+    if (!this.onContextChange) return null;
+    const stats = this.contextWindow.stats();
+    try {
+      this.onContextChange(stats);
+    } catch {
+      // display only: a broken meter must not break the conversation
+    }
+    return stats;
+  }
+
+  /**
    * Creates a simple string representation of the function arguments.
    * - If the argument is a short string, number, or boolean (length <= 20),
    *   it shows "paramName: value".
@@ -70,12 +93,20 @@ export class ConversationManager {
     if (this.onUserMessage) {
       try { this.onUserMessage(userInput); } catch { /* display only */ }
     }
+    // The prompt is a chunk too, so the meter moves before the first call is
+    // even sent instead of once the whole turn is over.
+    this.notifyContextChange();
 
     while (true) {
       const signal = this.getAbortSignal();
 
       // Task.md item 8: never call the model with an over-budget window.
       await this.maybeCompact(signal);
+
+      // Everything the window holds at this instant is about to be sent, so
+      // paint exactly that: the meter is current for the call that can still be
+      // rejected for being over budget.
+      this.notifyContextChange();
 
       try {
         const data = await callOllama(this.contextWindow.chunks, this.getTools(), false, signal);
@@ -128,7 +159,9 @@ export class ConversationManager {
       if (result.compacted) {
         this.log(`\n[Context] Compacted ${result.olderChunks} older chunk(s) into a summary (${result.olderTokens} -> ${result.afterTokens} tokens).`);
         this.log(`[Context] Window: ${result.usage}`);
-        if (this.onContextChange) this.onContextChange(this.contextWindow.stats());
+        // The window was rewritten underneath the chunks, so the meter has to
+        // be repainted with the smaller number straight away.
+        this.notifyContextChange();
       }
       return result;
     } catch (error) {
@@ -155,6 +188,9 @@ export class ConversationManager {
         },
       })),
     });
+
+    // The assistant chunk carrying the calls is a chunk like any other.
+    this.notifyContextChange();
 
     let compactionRequested = false;
 
@@ -187,6 +223,9 @@ export class ConversationManager {
         tool_call_id: callId,
         content: this.formatToolChunk({ functionName, intent, result, isError })
       });
+      // One tool result, one chunk: a long chain of calls then shows the usage
+      // climbing call by call instead of jumping once the turn ends.
+      this.notifyContextChange();
     }
 
     return compactionRequested;
@@ -201,6 +240,7 @@ export class ConversationManager {
 
   async handleFinalResponse(content) {
     this.contextWindow.add({ role: "assistant", content });
+    this.notifyContextChange();
 
     this.log("\n--- AI Response ---");
     this.log(content);

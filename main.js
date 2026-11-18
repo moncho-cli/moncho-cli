@@ -172,8 +172,10 @@ async function main() {
     abortManager.startTask();
     try {
       tui?.startSpinner();
+      // No repaint after the turn: the manager announces every chunk it adds
+      // (app/conversation-manager.js#ConversationManager), so the meter already
+      // holds the final number before the spinner stops.
       await manager.processInput(userInput);
-      tui?.setTokens(manager.contextWindow.usage());
       saveSession('turn');
     } catch (error) {
       if (
