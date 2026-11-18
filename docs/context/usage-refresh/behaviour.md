@@ -19,6 +19,11 @@ The host is told after **every change** to the window, through one guarded helpe
 | the final assistant chunk lands | the number on screen is the number the turn ended with |
 | a compaction rewrote the window | the meter must drop with the summary, not one turn later |
 
+An assistant message asking for several tools is one batch
+(`docs/agent/tool-multicall`), and the announcements stay **per chunk**: the
+assistant chunk is announced once, then each result as it is stored, so a batch
+of five climbs five times instead of jumping once per message.
+
 The host loop (`main.js`) therefore never repaints **after a turn**: it wires
 `onContextChange` to the front end and lets the announcements do the work. It sets
 the meter itself only where *it* replaces the window — at startup and after a

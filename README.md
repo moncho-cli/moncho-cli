@@ -27,6 +27,10 @@ to Ollama, chosen entirely through environment variables.
   the budget the older part of the conversation is summarised and the newest kept.
 - **Sessions you can resume.** Every turn is snapshotted to disk, and `/sessions`
   replays one back into the live context.
+- **Tool batches.** One message may ask for up to five independent tools at once;
+  they run simultaneously, their results land in call order inside a
+  `<tool-multicall result>` envelope naming how each call was shaped, and a call
+  beyond the cap is refused with a structured error instead of being dropped.
 - **Token usage accounted per model.** Every provider call is counted against the
   model that answered it, saved with the session, and reported by `/usage`.
 - **Both front ends.** A neo-blessed TUI on a pty, a plain line chat when there is
@@ -118,7 +122,7 @@ chunk, so the reason is both visible and part of the model's context.
 
 ```
 main.js                the host loop: front end, tools, sessions, commands
-├── app/               conversation loop, context window, TUI, commands, picker
+├── app/               conversation loop, tool batches, context window, TUI
 ├── api/               provider call (streaming, retries, normalised responses)
 ├── config/            provider + budget constants, read from the environment
 ├── tools/             the auto-loaded agent tools

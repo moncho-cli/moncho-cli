@@ -32,6 +32,10 @@ chunks back into the display the live loop produced for them
   role and a `null` entry are skipped instead of crashing the replay.
 - A tool result that failed keeps its `[error]` marker out of the body: the block
   shows the error text, the intent stays in the header.
+- A result stored by a **batch** arrives inside the `<tool-multicall result>`
+  envelope (`docs/agent/tool-multicall`); `parseToolChunk()` unwraps it, so the
+  block shows the tool's own output and the signature never reaches the
+  transcript.
 
 ## One formatting path
 

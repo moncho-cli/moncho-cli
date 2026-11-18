@@ -2,15 +2,10 @@ import { callOllama } from '../api/ollama.js';
 import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
 import { registerContextWindow } from '../utils/host.js';
-import { detectCompactionRequest } from './compaction-request.js';
 import { createUsageMeter, recordProviderCall } from '../utils/usage-stats.js';
 import { estimateMessagesTokens } from '../utils/tokens.js';
-import {
-  formatArgs as summarizeArgs,
-  formatCallLines,
-  formatToolResultChunk,
-  normalizeToolCall,
-} from './tool-call-format.js';
+import { formatArgs as summarizeArgs } from './tool-call-format.js';
+import { handleToolBatch } from './tool-batch.js';
 
 /**
  * The conversation loop.
@@ -23,6 +18,11 @@ import {
  * Task.md item 6 is enforced here too: every tool call's `intent` is printed to
  * the terminal *and* persisted in the chunk that carries the tool result, so the
  * reason for a call is both visible to the user and part of the model context.
+ *
+ * The tool calls of one message are a *batch*: `handleToolCalls` delegates to
+ * `app/tool-batch.js`, which caps the batch at `MAX_PARALLEL_TOOL_CALLS`, runs the
+ * accepted calls simultaneously and stores one chunk per call in call order
+ * (`docs/agent/tool-multicall`).
  */
 export class ConversationManager {
   constructor(toolFunctions, getTools, getAbortSignal = () => null, options = {}) {
@@ -38,6 +38,8 @@ export class ConversationManager {
     this.model = options.model || null;
     // Token accounting per model (utils/usage-stats.js).
     this.usage = createUsageMeter({ models: options.usage || {} });
+    // How many tool calls of one assistant message run at once.
+    this.maxParallelToolCalls = options.maxParallelToolCalls ?? null;
 
     this.contextWindow = options.contextWindow || new ContextWindow({
       maxTokens: options.maxTokens || CONTEXT_MAX_LENGTH,
@@ -204,71 +206,30 @@ export class ConversationManager {
     }
   }
 
+  /**
+   * Run the tool calls of one assistant message as a batch.
+   *
+   * The batch itself lives in `app/tool-batch.js`: the accepted calls are capped
+   * at `MAX_PARALLEL_TOOL_CALLS`, dispatched simultaneously, and stored one chunk
+   * per call in call order — each result inside the `<tool-multicall result>`
+   * envelope that carries the call's signature (`docs/agent/tool-multicall`).
+   * Passing the window, the log and the tool map in keeps this method the wiring
+   * only, and keeps the batch unit testable without a provider.
+   *
+   * @returns {Promise<boolean>} true when a tool asked for a deferred compaction.
+   */
   async handleToolCalls(toolCalls, signal) {
-    // Emit a single, OpenAI-compatible assistant chunk carrying all tool calls.
-    this.contextWindow.add({
-      role: "assistant",
-      content: null,
-      tool_calls: toolCalls.map((tc, i) => ({
-        id: tc.id || `call_${i}`,
-        type: tc.type || "function",
-        function: {
-          name: tc.function.name,
-          arguments:
-            typeof tc.function.arguments === "string"
-              ? tc.function.arguments
-              : JSON.stringify(tc.function.arguments ?? {}),
-        },
-      })),
+    const report = await handleToolBatch({
+      toolCalls,
+      signal,
+      window: this.contextWindow,
+      toolFunctions: this.toolFunctions,
+      log: (line) => this.log(line),
+      notify: () => this.notifyContextChange(),
+      ...(this.maxParallelToolCalls ? { max: this.maxParallelToolCalls } : {}),
     });
-
-    // The assistant chunk carrying the calls is a chunk like any other.
-    this.notifyContextChange();
-
-    let compactionRequested = false;
-
-    for (const toolCall of toolCalls) {
-      if (signal?.aborted) break;
-      // The call's shape (name, parsed args, intent) comes from the shared
-      // formatter, so the printed lines and the replay agree by construction.
-      const call = normalizeToolCall(toolCall, toolCalls.indexOf(toolCall));
-      const { name: functionName, rawArgs, intent } = call;
-      const callId = call.id;
-      for (const line of formatCallLines(call)) {
-        this.log(line);
-      }
-
-      let result;
-      let isError = false;
-      try {
-        result = await this.toolFunctions[functionName](rawArgs);
-      } catch (error) {
-        isError = true;
-        result = `Error executing ${functionName}: ${error.message}`;
-      }
-
-      if (detectCompactionRequest(result)) compactionRequested = true;
-
-      // The intent is part of the tool result chunk, so it stays in the model's
-      // context (task.md item 6) instead of only being printed to the terminal.
-      this.contextWindow.add({
-        role: "tool",
-        tool_call_id: callId,
-        content: this.formatToolChunk({ functionName, intent, result, isError })
-      });
-      // One tool result, one chunk: a long chain of calls then shows the usage
-      // climbing call by call instead of jumping once the turn ends.
-      this.notifyContextChange();
-    }
-
-    return compactionRequested;
-  }
-
-  /** Render a tool result chunk, prefixing it with the call's intent. */
-  formatToolChunk({ functionName, intent, result, isError }) {
-    // The shape lives in ./tool-call-format.js#formatToolResultChunk, so the
-    // session replay unwraps exactly what the loop stored.
-    return formatToolResultChunk({ intent, result, isError });
+    this.lastBatch = report;
+    return report.compactionRequested;
   }
 
   async handleFinalResponse(content) {

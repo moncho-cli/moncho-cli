@@ -77,6 +77,15 @@ tool-result chunk of the context window, and must never be omitted.
   (`;`, `|`, `>`, backticks, `$(`, newlines). Passing `node --check <file>` is the
   cheap syntax gate before running anything.
 
+#### 4.3 Tool batches: up to five simultaneous calls
+You may ask for several tools in one message (up to **5**); they run at the same
+time, so batch only calls that are **independent** — never two calls where one
+depends on the other's result. Each result comes back in a
+`<tool-multicall result calls=N>` envelope whose `<tool-call name="…">` element
+shows how that call was shaped (`read_file(path=string(11), intent=string(7))`).
+Ask for more than five and the extra calls are refused with a
+`TOO_MANY_TOOL_CALLS` error: wait for the results and ask again.
+
 ### 5. patch_file: exact unified diff format
 - Read the target file with `read_file` and `lineNumbers: false` immediately before patching. Never put line-number prefixes into patch context.
 - Every hunk body line MUST start with a prefix: a single space (` `) for unchanged context, `-` for a deletion, `+` for an addition. A blank context line is a single space, not an empty line.

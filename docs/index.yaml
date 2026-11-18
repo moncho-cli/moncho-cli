@@ -20,6 +20,7 @@ realms:
 
 specs:
   - agent/tool-call-contract
+  - agent/tool-multicall
   - agent/file-safety
   - agent/patch-application
   - agent/command-sandbox

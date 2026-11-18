@@ -4,8 +4,9 @@
 - [x] conversation jumps to the bottom when a message arrives, it should not
 - [x] converstaion needs colors to be easier to read
 - [x] token consumtion should be refreshed more frequently, on every single call
-- [ ] tool calling should allow the model to ask with an array of tools, up to 5 simoultaneous calls. the responses would be added in the context enclosed in <tool-multicall result><tool-call name=call-signature>...</tool-call></tool-multicall result> where call signature is a param type summary of how the tool was called. example: "name=string(5)"
+- [x] tool calling should allow the model to ask with an array of tools, up to 5 simoultaneous calls. the responses would be added in the context enclosed in <tool-multicall result><tool-call name=call-signature>...</tool-call></tool-multicall result> where call signature is a param type summary of how the tool was called. example: "name=string(5)"
 - [ ] able to send messages at any moment that are queued (kept right above the input box) and injected when possible in the conversation. but while queued have an X that you can delete them from the queue
 - [ ] if the input box is empty, it should have a grayed italic text saying "Last prompt: ......."
 - [x] within each session, we should be saving token usage by model so we can have stats on the performance of the models
 - [ ] the color of the intent text should be a brightish blue so is easier to find within the text, and bold
+- [ ] show the moncho.png logo on the top right of the conversation, colors inverted (flip black and white) never larger than 200x200 px but if the window is small it can remain at 20%

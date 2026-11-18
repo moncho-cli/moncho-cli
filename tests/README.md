@@ -22,6 +22,8 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | -------------------------------- | ----------------------------------------------------------- |
 | `docs-realm.test.js` | The three realms are linked: every spec exists, its code refs resolve to real symbols, its named cases exist, every source module is documented. |
 | `harness-tools.test.js` | The agent tool contract and the context machinery (tools, sandbox, token accounting, compaction, task protocol). |
+| `tool-multicall.test.js` | The multicall grammar: the call signature, the `<tool-multicall result>` envelope, the round-trip and the replay of an enveloped chunk. |
+| `tool-batch.test.js` | Running one batch: the five-call cap, the simultaneous dispatch in call order, the refusal, and the chunks the loop stores. |
 | `patch.test.js` | Unified-diff application, its error codes and all-or-nothing behaviour. |
 | `tui.test.js` | The blessed TUI layout, transcript rendering and pastes. |
 | `tui-status.test.js` | The status row: right-aligned context meter and spinner. |

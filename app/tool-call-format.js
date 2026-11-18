@@ -84,19 +84,127 @@ export function formatToolHeader(toolName, intent = '') {
   return `\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''}`;
 }
 
+// ---------------------------------------------------------------------------
+// The batch signature and the multicall envelope (docs/agent/tool-multicall)
+// ---------------------------------------------------------------------------
+// A batch is one assistant message asking for several tools at once. The
+// provider pairs every result with the id of the call it answers, so the chunk
+// stays one per call; the envelope is what the model reads to see the *shape* of
+// the call that produced it — `<tool-multicall result calls=1>` holding one
+// `<tool-call name="…">` element.
+// ---------------------------------------------------------------------------
+
+/** Type summary of one argument: `string(11)`, `number`, `boolean`, … */
+export function formatArgType(value) {
+  if (typeof value === 'string') return `string(${value.length})`;
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'object') return 'object';
+  return typeof value;
+}
+
+/**
+ * How a call was shaped: the tool name plus the type of every parameter it was
+ * called with, e.g. `read_file(path=string(11), intent=string(12))`.
+ *
+ * Lengths, never contents: the envelope describes the call while the payload
+ * travels in the result body, so a signature adds shape without repeating the
+ * output. A call whose arguments could not be parsed reports its raw size.
+ */
+export function formatCallSignature({ name = 'unknown_tool', args } = {}) {
+  if (typeof args === 'string') return `${name}(raw=string(${args.length}))`;
+  if (args === null || typeof args !== 'object') return `${name}()`;
+  const parts = Object.entries(args).map(([key, value]) => `${key}=${formatArgType(value)}`);
+  return `${name}(${parts.join(', ')})`;
+}
+
+/** The closing line of every envelope; the parser keys on it. */
+export const MULTICALL_FOOTER = '</tool-multicall result>';
+
+/** The opening line, carrying how many `<tool-call>` elements it holds. */
+export function formatMulticallHeader(calls = 1) {
+  return `<tool-multicall result calls=${Math.max(1, Number(calls) || 1)}>`;
+}
+
+/**
+ * Wrap one call's result in the envelope written into its `tool` chunk. `calls`
+ * is the size of the batch the assistant asked for, so the model can tell a lone
+ * call from one of five asked at the same time.
+ */
+export function formatMulticallEnvelope({ entries = [], calls = null } = {}) {
+  const list = Array.isArray(entries) ? entries : [];
+  const lines = [formatMulticallHeader(calls ?? list.length)];
+  for (const entry of list) {
+    lines.push(`<tool-call name="${entry?.signature ?? ''}">`, String(entry?.body ?? ''), '</tool-call>');
+  }
+  lines.push(MULTICALL_FOOTER);
+  return lines.join('\n');
+}
+
+/**
+ * The inverse of `formatMulticallEnvelope`: `{ calls, elements, entries }` where
+ * `calls` is the batch size the header declares and `entries` holds one
+ * `{ signature, body }` per `<tool-call>` element, or null when the text is not
+ * an envelope at all.
+ *
+ * The header's element count is what makes the parse unambiguous. A single
+ * element is read greedily to the *last* `</tool-call>`, so a body that itself
+ * quotes the envelope (a session file fetched by `read_file`) round-trips
+ * byte-for-byte; an envelope holding several is split on each closing line, so
+ * such a body must not carry one on a line of its own.
+ */
+export function parseMulticallEnvelope(text) {
+  const source = String(text ?? '');
+  const newline = source.indexOf('\n');
+  const header = newline === -1 ? source : source.slice(0, newline);
+  const head = header.match(/^<tool-multicall result(?:\s+calls=(\d+))?>\s*$/);
+  if (!head) return null;
+
+  const rest = newline === -1 ? '' : source.slice(newline + 1);
+  if (!rest.endsWith(MULTICALL_FOOTER)) return null;
+  const inner = rest.slice(0, rest.length - MULTICALL_FOOTER.length).replace(/\n$/, '');
+
+  const declared = head[1] ? Number(head[1]) : 1;
+  const entries = [];
+  const single = inner.match(/^<tool-call name="([^"]*)">\n([\s\S]*)\n<\/tool-call>$/);
+  if (declared <= 1 && single) {
+    entries.push({ signature: single[1], body: single[2] });
+  } else {
+    for (const element of inner.matchAll(/<tool-call name="([^"]*)">\n([\s\S]*?)\n<\/tool-call>/g)) {
+      entries.push({ signature: element[1], body: element[2] });
+    }
+  }
+  if (entries.length === 0) return null;
+  return { calls: declared, elements: entries.length, entries };
+}
+
 /**
  * The content stored in a `tool` chunk: the call's intent first, so the reason for
  * the call stays in the model's context, then the result (marked `[error]` when
  * the tool failed).
+ *
+ * A call made inside a batch also carries its signature, and its result is
+ * wrapped in the multicall envelope. Without a signature the chunk keeps its
+ * historical shape, so every session written before the envelope still reads
+ * back exactly (`parseToolChunk` below is the companion reader).
  */
-export function formatToolResultChunk({ intent, result, isError = false } = {}) {
+export function formatToolResultChunk({ intent, signature = null, result, isError = false, calls = 1 } = {}) {
   const body = typeof result === 'string' ? result : JSON.stringify(result);
-  return isError ? `intent: ${intent}\n[error] ${body}` : `intent: ${intent}\n${body}`;
+  const marked = isError ? `[error] ${body}` : body;
+  const head = `intent: ${intent}`;
+  if (!signature) return `${head}\n${marked}`;
+  return `${head}\n${formatMulticallEnvelope({ entries: [{ signature, body: marked }], calls })}`;
 }
 
 /**
  * The inverse of `formatToolResultChunk`, for the replay: a stored tool chunk is
  * `intent: <intent>` on its first line followed by the result body.
+ *
+ * A batched body arrives inside the multicall envelope; it is unwrapped before
+ * the error marker is looked for, so the replay shows the tool's own output and
+ * a chunk written before the envelope reads exactly as it did.
  *
  * The body follows the raw bytes, so a chunk that does not have the expected
  * shape is rendered as a body with no intent rather than throwing.
@@ -109,10 +217,15 @@ export function parseToolChunk(content) {
 
   const match = first.match(/^intent:\s*(.*)$/);
   const intent = match ? match[1] : '';
-  const body = match ? rest : text;
+  const raw = match ? rest : text;
+
+  const envelope = parseMulticallEnvelope(raw);
+  const body = envelope ? envelope.entries[0].body : raw;
   const isError = /^\[error\]/.test(body);
   return {
     intent,
+    signature: envelope ? envelope.entries[0].signature : '',
+    calls: envelope ? envelope.calls : 1,
     isError,
     body: isError ? body.replace(/^\[error\]\s?/, '') : body,
   };

@@ -42,6 +42,10 @@ at the bottom of this document.
   the conversation stores it in the tool result chunk, not only in the terminal.
 - The loader's best-effort extraction never throws — the hook receives `null` when
   the intent is unusable, and the caller decides how to render that.
+- The intent is the **first line** of every `tool` chunk, a batched one included:
+  the result of a simultaneous batch is wrapped in the multicall envelope
+  *underneath* it, so a session written before batches still reads back exactly
+  (`docs/agent/tool-multicall`).
 
 ## Failure behaviour
 
@@ -61,4 +65,5 @@ at the bottom of this document.
   `tools/run_bash.js`, `tools/run_npm.js`, `tools/compact_context.js`,
   `tools/update_task.js`, `tools/grep.js`, `tools/blob.js` (the last two are
   specified in `docs/agent/project-discovery`)
+- The batch a call may belong to: `docs/agent/tool-multicall`
 - Proof: `tests/harness-tools.test.js`
