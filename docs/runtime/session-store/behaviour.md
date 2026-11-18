@@ -27,6 +27,8 @@ Versioned, pretty-printed JSON (one key per line, trailing newline) holding:
 - `counts` — chunk count and the count per role, so a listing can describe a
   session without loading it;
 - `stats` — the context-window snapshot at save time (`usage`, …);
+- `usage` — the per-model token table (`docs/context/model-usage`); it is
+  **optional**, so a file written before it existed loads with an empty table;
 - `chunks` — **the full context, verbatim**: every message the `ContextWindow`
   holds, tool calls and tool results included.
 
@@ -52,7 +54,9 @@ its id, start time and model. The host loop calls `save(chunks)` after every
 completed turn and once more when the user exits, so the file always reflects the
 live window — including after a compaction, because the snapshot is the window as
 it stands. `saveIfUsed()` skips an untouched window, so a session that never
-exchanged a message leaves no file behind.
+exchanged a message leaves no file behind. `save(chunks, { stats, usage })` also
+stores the per-model token table, so what the conversation cost is part of the
+record (`docs/context/model-usage`).
 - `adopt(id, { createdAt, model })` points the recorder at an **existing** session,
   which is what resuming does: the conversation continues in the file it came from
   instead of forking a parallel one, and it keeps the original start date

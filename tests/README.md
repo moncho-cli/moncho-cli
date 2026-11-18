@@ -32,6 +32,7 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `user-echo.test.js` | The user's own message: announced by the loop, rendered as a quote, never altered in the context. |
 | `context-size.test.js` | Resolving the context size from config, provider or default. |
 | `context-usage-refresh.test.js` | The live token meter: every window change and every call announces the usage, a broken listener is swallowed, and the compaction marker stays once-per-event. |
+| `model-usage.test.js` | Token accounting per model: provider counters normalised from both shapes, the exact/estimated split, the session file's usage block, and `/usage`. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the
 suites import; they are not test files themselves.

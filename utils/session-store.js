@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { normalizeModelUsage } from './usage-stats.js';
 import { writeFileVerified } from './file-io.js';
 import { resolveProjectPath } from './path-safety.js';
 
@@ -58,6 +59,7 @@ export function serializeSession({
   cwd = null,
   chunks = [],
   stats = {},
+  usage = {},
 } = {}) {
   const created = createdAt instanceof Date ? createdAt.toISOString() : String(createdAt);
   const updated = updatedAt instanceof Date
@@ -80,6 +82,7 @@ export function serializeSession({
       roles: countRoles(chunks),
     },
     stats: { ...stats },
+    usage: normalizeModelUsage(usage),
     chunks: chunks.map((chunk) => ({ ...chunk })),
   };
 }
@@ -125,6 +128,10 @@ export function parseSession(text) {
     throw new SessionStoreError('INVALID_SESSION', 'Session file is missing its chunks array.');
   }
 
+  // The per-model usage table is optional: a session written before it existed
+  // loads with an empty one instead of being refused, so an old conversation
+  // stays resumable.
+  parsed.usage = normalizeModelUsage(parsed.usage);
   return parsed;
 }
 
@@ -132,6 +139,11 @@ export function parseSession(text) {
 export function sessionChunks(session) {
   const parsed = parseSession(formatSession(session));
   return parsed.chunks.map((chunk) => ({ ...chunk }));
+}
+
+/** The per-model token table of a session, ready to seed a usage meter. */
+export function sessionUsage(session) {
+  return normalizeModelUsage(parseSession(formatSession(session)).usage);
 }
 
 /** Write (or overwrite) a session file, verified byte-for-byte. */

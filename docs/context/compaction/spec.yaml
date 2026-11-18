@@ -20,6 +20,8 @@ code:
     symbols: [registerContextWindow, getContextWindow, clearContextWindow]
   - path: app/conversation-manager.js
     symbols: [ConversationManager, detectCompactionRequest]
+  - path: app/compaction-request.js
+    symbols: [COMPACTION_REQUEST_CODE, detectCompactionRequest]
   - path: config/constants.js
     symbols: [COMPACTION_OLD_RATIO, COMPACTION_KEEP_RATIO, COMPACTION_SUMMARY_PREFIX]
 tests:

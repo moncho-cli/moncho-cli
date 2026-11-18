@@ -74,6 +74,8 @@ async function main() {
   const getAbortSignal = () => abortManager.signal;
   const manager = new ConversationManager(toolFunctions, getTools, getAbortSignal, {
     log,
+    // The model label is the key the per-model usage table is kept under.
+    model: label,
     maxTokens: contextSize.maxTokens,
     configuredTokens: contextSize.configuredTokens,
     realTokens: contextSize.realTokens,
@@ -93,7 +95,13 @@ async function main() {
   const sessions = createSessionRecorder({ model: label });
   const saveSession = (reason) => {
     try {
-      return sessions.save(manager.chunks, { reason, stats: manager.contextWindow.stats() });
+      return sessions.save(manager.chunks, {
+        reason,
+        stats: manager.contextWindow.stats(),
+        // What each model consumed so far, so the session file is the accounting
+        // record and `/usage` survives a restart.
+        usage: manager.usageTable(),
+      });
     } catch (error) {
       log(`\n[Session] Could not save ${sessions.path}: ${error.message}`);
       return null;

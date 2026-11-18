@@ -36,6 +36,14 @@ registry and the commands that ship with it; the implementation is linked below.
   conversation view** from them and adopts the id, so the reloaded dialogue is on
   screen and later turns are saved into the same file
   (`docs/interface/session-replay`).
+- **`/usage`** — the per-model token breakdown of this session
+  (`docs/context/model-usage`): one line per model, **alphabetical** so two runs
+  compare line by line, with the request count, the exact/estimated split and the
+  prompt, completion and total tokens. A total line is added when more than one
+  model answered, and an explanatory line when the table is still empty. It reads
+  the live meter, so `/usage` works while the session is running and after it is
+  resumed. It does **not** replace the status bar: the meter shows how full the
+  window is right now, `/usage` shows what was spent.
 - **`/help`** — the command list, derived from the registry itself.
 
 ## The picker
@@ -62,6 +70,7 @@ Each front end renders it its own way:
 
 - Implementation: `app/commands.js`, `app/picker.js`, `app/tui-modal.js`,
   `app/cli.js`, `main.js`
+- Spec of the numbers `/usage` prints: `docs/context/model-usage`
 - Spec of the stored sessions: `docs/runtime/session-store`
 - Spec of the reload after a resume: `docs/interface/session-replay`
 - Proof: `tests/commands.test.js`, `tests/tui-modal.test.js`

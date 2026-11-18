@@ -29,6 +29,7 @@ specs:
   - context/compaction
   - context/context-size
   - context/usage-refresh
+  - context/model-usage
   - interface/interrupt-controls
   - interface/tui
   - interface/transcript-blocks

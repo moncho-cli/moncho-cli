@@ -60,7 +60,33 @@ function normalizeToolCalls(toolCalls) {
   }));
 }
 
+/**
+ * The token counters of one provider response, in one shape, or null.
+ *
+ * Providers spell usage differently — OpenAI-compatible APIs answer with
+ * `usage: { prompt_tokens, completion_tokens, total_tokens }`, Ollama with the
+ * flat `prompt_eval_count` / `eval_count` on the response root — so this is the
+ * only place that knows both. Returning **null** for a provider that reports
+ * nothing is deliberate: the accounting layer must be able to tell an exact
+ * count from its own estimate (`utils/usage-stats.js`).
+ */
+export function normalizeUsage(data) {
+  const usage = data?.usage || data?.message?.usage || null;
+  const prompt = usage?.prompt_tokens ?? data?.prompt_eval_count;
+  const completion = usage?.completion_tokens ?? data?.eval_count;
+  if (prompt == null && completion == null) return null;
+
+  const promptTokens = Number(prompt) || 0;
+  const completionTokens = Number(completion) || 0;
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: Number(usage?.total_tokens) || promptTokens + completionTokens,
+  };
+}
+
 function normalizeResponse(data) {
+  const usage = normalizeUsage(data);
   // Ollama shape: { message: { content, thinking, tool_calls } }
   if (data && data.message) {
     return {
@@ -68,6 +94,7 @@ function normalizeResponse(data) {
         content: data.message.content ?? "",
         tool_calls: normalizeToolCalls(data.message.tool_calls),
       },
+      usage,
     };
   }
   // OpenAI-compatible shape: { choices: [ { message: { content, tool_calls } } ] }
@@ -78,9 +105,10 @@ function normalizeResponse(data) {
         content: choice.content ?? "",
         tool_calls: normalizeToolCalls(choice.tool_calls),
       },
+      usage,
     };
   }
-  return { message: { content: "" } };
+  return { message: { content: "" }, usage };
 }
 
 /**

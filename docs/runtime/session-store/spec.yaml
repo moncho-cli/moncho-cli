@@ -7,10 +7,12 @@ summary: >
   under the gitignored agent/sessions/ directory. The store writes verified,
   parses strictly (refusing junk and unsupported versions), lists summaries newest
   first, and lets a session be loaded back for pickup; the host loop records the
-  live window after every turn.
+  live window after every turn, together with the per-model token table
+  (docs/context/model-usage), which an older file may lack without becoming
+  unreadable.
 code:
   - path: utils/session-store.js
-    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, serializeSession, countRoles, formatSession, parseSession, sessionChunks, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
+    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, serializeSession, countRoles, formatSession, parseSession, sessionChunks, sessionUsage, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
   - path: app/session-recorder.js
     symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
   - path: utils/file-io.js

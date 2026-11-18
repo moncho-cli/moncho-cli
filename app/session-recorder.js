@@ -97,6 +97,7 @@ export function createSessionRecorder({
           cwd,
           chunks,
           stats: extra.stats || {},
+          usage: extra.usage || {},
         }),
         { dir },
       );

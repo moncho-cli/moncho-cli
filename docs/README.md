@@ -36,7 +36,7 @@ docs/<domain>/<capability>/
 Domains:
 
 - `agent/` — the agent's tool contract and its sandboxing rules.
-- `context/` — the context window: token accounting, compaction, size resolution.
+- `context/` — the context window: token accounting (the live meter and the per-model totals), compaction, size resolution.
 - `interface/` — what the user sees and presses: TUI, line CLI, interrupts.
 - `runtime/` — provider calls and startup wiring.
 

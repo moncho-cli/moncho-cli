@@ -1,0 +1,43 @@
+id: context/model-usage
+domain: context
+title: Token usage accounted per model and stored with the session
+status: active
+summary: >
+  Every provider call is counted against the model that answered it, in a table
+  keyed by the model label and holding requests, prompt/completion/total tokens
+  and how many of those requests were reported by the provider (exact) versus
+  estimated from the bytes. normalizeUsage() reads both provider spellings and
+  returns null when nothing was reported, so an estimate is never passed off as a
+  reading. The table is normalised defensively, stored in the session file as an
+  optional usage block that older files may lack, seeded back into the live meter
+  when a session is resumed, and printed by /usage.
+code:
+  - path: api/ollama.js
+    symbols: [normalizeUsage, callOllama]
+  - path: utils/usage-stats.js
+    symbols: [UNKNOWN_MODEL, emptyModelUsage, normalizeModelUsage, applyCall, totalUsage, formatUsageRow, formatUsageRows, createUsageMeter, estimateCallUsage, recordProviderCall]
+  - path: utils/tokens.js
+    symbols: [estimateTextTokens]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/compaction-request.js
+    symbols: [COMPACTION_REQUEST_CODE, detectCompactionRequest]
+  - path: utils/session-store.js
+    symbols: [serializeSession, parseSession, sessionUsage]
+  - path: app/session-recorder.js
+    symbols: [createSessionRecorder]
+  - path: app/commands.js
+    symbols: [usageCommand, sessionsCommand, createDefaultCommands]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/model-usage.test.js
+    cases:
+      - "normalizeUsage reads the OpenAI and Ollama counters and reports absence as null"
+      - "applyCall counts a call as exact or estimated and normalizeModelUsage repairs junk"
+      - "the estimate fallback is used when the provider reports no counters"
+      - "createUsageMeter keys the table by model and replace() makes a stored table live"
+      - "formatUsageRow/formatUsageRows describe the breakdown and an empty table says so"
+      - "the session file stores the per-model table, and an older file without one still loads"
+      - "/usage prints the per-model breakdown, and resuming a session seeds the meter"
+      - "the conversation loop records every call under the model that answered it"

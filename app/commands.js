@@ -1,4 +1,5 @@
-import { listSessions, loadSession, describeSession, sessionChunks } from '../utils/session-store.js';
+import { listSessions, loadSession, describeSession, sessionChunks, sessionUsage } from '../utils/session-store.js';
+import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 
 /**
  * Slash commands: the iterable registry behind `/sessions` (task.md item 4).
@@ -65,8 +66,30 @@ export function parseCommand(input) {
 export function createDefaultCommands() {
   const registry = createCommandRegistry();
   registry.register(sessionsCommand());
+  registry.register(usageCommand());
   registry.register(helpCommand(registry));
   return registry;
+}
+
+/**
+ * `/usage` — what each model consumed in this session.
+ *
+ * The status bar shows how full the context window is *right now*; this answers
+ * the other question, "how many tokens did each model use", from the accounting
+ * table the loop keeps (`utils/usage-stats.js`) and the session file stores.
+ */
+export function usageCommand() {
+  return {
+    name: 'usage',
+    description: 'token usage per model in this session',
+    run(ctx = {}) {
+      const table = normalizeModelUsage(
+        ctx.usage
+        || (typeof ctx.manager?.usageTable === 'function' ? ctx.manager.usageTable() : {}),
+      );
+      return { ok: true, code: 'USAGE', lines: formatUsageRows(table), usage: table };
+    },
+  };
 }
 
 /** `/help` — list what is available, from the registry itself. */
@@ -120,11 +143,17 @@ export function sessionsCommand() {
         return { ok: false, code: 'NO_WINDOW', message: 'This front end cannot load a session.' };
       }
       manager.contextWindow.replace(chunks);
+      // The session file is the accounting record of the conversation, so its
+      // per-model table becomes the live one: resuming continues the counts
+      // instead of starting them again at zero.
+      const usage = sessionUsage(session);
+      if (typeof manager.usage?.replace === 'function') manager.usage.replace(usage);
       return {
         ok: true,
         code: 'RESUMED',
         id: session.id,
         chunks: chunks.length,
+        usage,
         // The host reloads the conversation view from these and keeps saving into
         // this same file, so resuming continues the conversation instead of
         // starting a parallel one (docs/interface/session-replay).

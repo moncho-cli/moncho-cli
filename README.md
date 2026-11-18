@@ -27,6 +27,8 @@ to Ollama, chosen entirely through environment variables.
   the budget the older part of the conversation is summarised and the newest kept.
 - **Sessions you can resume.** Every turn is snapshotted to disk, and `/sessions`
   replays one back into the live context.
+- **Token usage accounted per model.** Every provider call is counted against the
+  model that answered it, saved with the session, and reported by `/usage`.
 - **Both front ends.** A neo-blessed TUI on a pty, a plain line chat when there is
   none — with the same commands and the same interrupt keys.
 
@@ -84,6 +86,8 @@ Type a prompt and press Enter. A task runs until the model stops asking for tool
 - `exit` quits (and snapshots the session);
 - `/help` lists the commands; `/sessions` (alias `/resume`) lists the stored
   conversations and continues one, replaying its chunks into the live context;
+- `/usage` prints the token breakdown per model for the current session, so two
+  models can be compared after (or across) a run;
 - **ESC** or **Ctrl+C** cancels a running task — press twice to confirm — and quits
   when idle. Ctrl+C never kills a half-finished task by accident.
 
@@ -118,7 +122,7 @@ main.js                the host loop: front end, tools, sessions, commands
 ├── api/               provider call (streaming, retries, normalised responses)
 ├── config/            provider + budget constants, read from the environment
 ├── tools/             the auto-loaded agent tools
-├── utils/             token accounting, compaction, sandbox, patch, sessions
+├── utils/             token accountancy (meter + per-model totals), compaction, sandbox, patch, sessions
 ├── docs/              the behavioural contract (see below)
 └── tests/             executable proof that the code honours the docs
 ```

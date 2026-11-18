@@ -1,56 +1,48 @@
 status: done
 
-# The token meter refreshes on every call, not once per turn
+# Token usage is recorded per model and kept with the session
 
-The status bar carries the context-window meter, and the host paints it from the
-`onContextChange` hook. Today that hook fires from **one** place: `maybeCompact()`,
-and only when a compaction actually happened
-(`app/conversation-manager.js#ConversationManager`). Everything else is painted by
-`main.js` *around* the turn — once after `processInput()` resolves, once at startup
-and once after a resume. So during a turn whose model answer costs four tool calls,
-the meter sits still while the window grows by five chunks, and it only catches up
-when the reply has already landed. The user cannot see a turn approach the budget;
-the number they see is stale by exactly one turn.
+Token use is, today, only a *view*: the status bar shows how full the context
+window is, and the number dies with the process. Nothing on disk says **which
+model** consumed how many tokens, so the question the user actually asks —
+"is model A cheaper/faster per turn than model B?" — cannot be answered after a
+single run, and never across runs.
 
-This task makes the meter a *live* view of the window: every change to it is
-announced, so the number on screen is the number the window holds right now.
+This task makes usage an accounting record instead of a label: every provider
+call is counted against the model that answered it, the table is saved in the
+session file, and `/usage` reports it.
 
-## What "on every single call" means
+## Where the numbers come from
 
-The window changes in these ways, and each one must reach the host:
-
-| Change | Where it happens today |
-| ------ | ---------------------- |
-| the user prompt becomes a chunk | `processInput()` |
-| an assistant chunk carrying `tool_calls` | `handleToolCalls()` |
-| each `tool` result chunk | `handleToolCalls()` |
-| the final assistant reply chunk | `handleFinalResponse()` |
-| the compaction rewriting the window | `maybeCompact()` |
-
-On top of those, the usage is announced **immediately before every provider call**,
-so the meter is already current when the request goes out — the moment the user
-actually cares about, because that is the call that can be rejected for being over
-budget.
+| Source | What it gives us |
+| ------ | ---------------- |
+| the provider response | exact `prompt`/`completion` counters (OpenAI `usage.*`, Ollama `prompt_eval_count`/`eval_count`) |
+| the window estimate (`utils/tokens.js`) | a fallback for a provider that reports no usage, flagged as estimated |
+| the recording step | one entry per model: requests, prompt tokens, completion tokens, total tokens, how many of those were estimates |
 
 ## Constraints
 
-- One emission path: a single guarded helper on `ConversationManager` announces the
-  window's `stats()`, so no call site can forget the hook or bypass the guard.
-- The hook is **display only**: a listener that throws is swallowed, exactly like
-  `onUserMessage`, and never costs the user their turn.
-- More repaints must not resurrect the compaction marker: the notifier is
-  count-based (`app/compaction-notice.js#createCompactionNotifier`), so it still
-  announces each compaction exactly once no matter how often it is asked.
-- The line CLI keeps reporting usage per turn — a meter line after every chunk
-  would drown the transcript; only the TUI paints the hook's output.
+- One normalisation point: `normalizeUsage()` in the provider layer is the only
+  place that knows the provider's spelling; everything downstream sees
+  `{ promptTokens, completionTokens, totalTokens }`.
+- One accounting module (`utils/usage-stats.js`): the meter, the per-call event
+  and the table normaliser are pure functions, so the maths is unit testable
+  without a provider and the session store can validate the table it reads back.
+- Estimates never masquerade as exact: a call the provider did not report is
+  counted **and** flagged, so a comparison never silently mixes the two.
+- The session file stays readable by the existing readers: `usage` is optional,
+  an older file without it loads with an empty table.
+- `/usage` is a command, not a repaint: the status bar keeps showing the window,
+  and the per-model table is printed on demand.
 - Every file stays under the 300-line budget; extract rather than grow.
 
-- [x] **announce every window change to the host** — `ConversationManager` gains one guarded emission helper used by every mutation point (the prompt, the tool-call chunk, each tool result, the final reply, a compaction), plus one emission right before every provider call, so the meter (and the compaction marker) track the window live instead of once per turn.
-- [x] **document and prove the per-call usage refresh** — a `docs/context/usage-refresh` spec (registered in `docs/index.yaml`) states when the host is notified and what it must not do, and `tests/context-usage-refresh.test.js` proves the emission order, the pre-call refresh, the throwing-hook guard and the once-per-event compaction marker.
+- [x] **count and persist token usage per model** — `normalizeUsage()` surfaces the provider's counters (null when it reports none), `utils/usage-stats.js` holds the per-call event with its estimation fallback plus the per-model table, `ConversationManager` records every call it makes (the summariser included), the session file stores the table and reads it back, resuming seeds the meter, and `/usage` prints the breakdown.
+- [x] **document and prove the per-model usage accounting** — a `docs/context/model-usage` spec (registered in `docs/index.yaml`) states the recording rule, the estimate flag and the persistence, the session-store and commands specs are updated, and `tests/model-usage.test.js` proves normalisation from both provider shapes, the table maths, the estimate fallback, the round-trip through a session file and the `/usage` output.
 
 ## Done when
 
 - the spec exists, is registered, and names real `path#symbol` references and real test cases;
 - `npm test` is green, `tests/docs-realm.test.js` included;
 - `node --check` passes on every file touched;
-- no file touched exceeds 300 lines.
+- no file touched exceeds 300 lines;
+- a scratch probe under `agent/utils/` confirmed the numbers before the tests were written, and is deleted afterwards.

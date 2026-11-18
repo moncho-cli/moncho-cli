@@ -2,6 +2,9 @@ import { callOllama } from '../api/ollama.js';
 import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
 import { registerContextWindow } from '../utils/host.js';
+import { detectCompactionRequest } from './compaction-request.js';
+import { createUsageMeter, recordProviderCall } from '../utils/usage-stats.js';
+import { estimateMessagesTokens } from '../utils/tokens.js';
 import {
   formatArgs as summarizeArgs,
   formatCallLines,
@@ -31,6 +34,10 @@ export class ConversationManager {
     // The user's own message is announced before the model is called, so both
     // front ends can echo it: the transcript is otherwise one-sided.
     this.onUserMessage = options.onUserMessage || null;
+    // Which model answered: the key the usage table is kept under.
+    this.model = options.model || null;
+    // Token accounting per model (utils/usage-stats.js).
+    this.usage = createUsageMeter({ models: options.usage || {} });
 
     this.contextWindow = options.contextWindow || new ContextWindow({
       maxTokens: options.maxTokens || CONTEXT_MAX_LENGTH,
@@ -46,6 +53,24 @@ export class ConversationManager {
   /** Ordered array of context chunks (task.md items 3 & 8). */
   get chunks() {
     return this.contextWindow.chunks;
+  }
+
+  /** The per-model token table (a snapshot), for storage and `/usage`. */
+  usageTable() {
+    return this.usage.table();
+  }
+
+  /**
+   * Count one finished provider call against the model that answered it.
+   *
+   * The context window says how full the request is; this is the accounting
+   * record the session keeps (`utils/usage-stats.js`). The provider's own
+   * counters are used when it reports them, and the measured prompt plus the
+   * answered text are the fallback — flagged as an estimate, never passed off as
+   * exact.
+   */
+  recordUsage(response, promptTokens = 0) {
+    return recordProviderCall(this.usage, this.model, { response, promptTokens });
   }
 
   /**
@@ -109,6 +134,9 @@ export class ConversationManager {
       this.notifyContextChange();
 
       try {
+        // What the request is about to cost, measured before it is sent: used
+        // only when the provider answers without counters of its own.
+        const promptTokens = this.contextWindow.estimatedTokens();
         const data = await callOllama(this.contextWindow.chunks, this.getTools(), false, signal);
 
         // Treat null or empty response as an error and retry
@@ -116,6 +144,7 @@ export class ConversationManager {
           this.log("\nError: Received null/empty API response. Retrying...");
           continue;
         }
+        this.recordUsage(data, promptTokens);
 
         if (data.message.tool_calls) {
           const wantsCompaction = await this.handleToolCalls(data.message.tool_calls, signal);
@@ -151,7 +180,11 @@ export class ConversationManager {
         // callOllama resolves to the normalised response object, so unwrap the
         // summary text before handing it to the compactor.
         callModel: async (messages, ctx) => {
+          const promptTokens = estimateMessagesTokens(messages);
           const response = await callOllama(messages, [], false, ctx.signal, { systemPrompt: false });
+          // The summariser is a provider call like any other: it is billed, so it
+          // is counted against the same model.
+          this.recordUsage(response, promptTokens);
           return response?.message?.content ?? '';
         }
       });
@@ -258,13 +291,6 @@ export class ConversationManager {
   }
 }
 
-/** True when a compact_context result asks the host loop to run a compaction. */
-export function detectCompactionRequest(result) {
-  if (typeof result !== 'string') return false;
-  try {
-    const parsed = JSON.parse(result);
-    return parsed?.code === 'COMPACTION_REQUESTED' && parsed?.defer === true;
-  } catch {
-    return false;
-  }
-}
+// The marker itself lives in ./compaction-request.js (a pure string check);
+// re-exported here because this is the module the loop and the docs name.
+export { detectCompactionRequest } from './compaction-request.js';
