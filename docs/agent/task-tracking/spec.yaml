@@ -1,0 +1,23 @@
+id: agent/task-tracking
+domain: agent
+title: The task.md / implementation_plan.md bookkeeping protocol
+status: active
+summary: >
+  update_task parses the checkbox items of task.md, selects exactly one item by
+  index or unique substring, and drives the loop: list progress, start an item,
+  mark it done and reset implementation_plan.md for the next item. Ambiguous or
+  unknown selections are refused without touching either file, and both files are
+  written through verified atomic writes.
+code:
+  - path: tools/update_task.js
+    symbols: [parseTaskItems, readTaskStatus, findTaskItem, markItemDone, nextPendingItem, renderPlan, definition, execute]
+  - path: config/constants.js
+    symbols: [TASK_FILE, PLAN_FILE]
+tests:
+  - path: tests/harness-tools.test.js
+    cases:
+      - parseTaskItems/markItemDone handle the task.md checkbox syntax
+      - renderPlan produces a resetable implementation_plan.md body
+      - update_task marks an item done, advances, and resets the plan
+      - update_task refuses ambiguous or unknown items without touching the files
+      - update_task reports a done task when nothing is pending

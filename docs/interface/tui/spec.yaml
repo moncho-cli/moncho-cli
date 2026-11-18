@@ -36,6 +36,7 @@ tests:
       - "a long paste collapses to a paste tag and expands back byte-for-byte"
       - "the tool-call intent is echoed to the transcript, ahead of the result"
       - "the read_file result tag renders as a header, not raw text"
+      - "the grep and blob result tags render as headers, not raw text"
       - "notifyCompaction() marks a compaction in the transcript, once per event"
   - path: tests/tui-status.test.js
     cases:

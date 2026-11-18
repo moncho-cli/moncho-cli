@@ -24,6 +24,7 @@ specs:
   - agent/patch-application
   - agent/command-sandbox
   - agent/task-tracking
+  - agent/project-discovery
   - context/token-accounting
   - context/compaction
   - context/context-size

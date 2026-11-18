@@ -1,0 +1,24 @@
+id: agent/tool-call-contract
+domain: agent
+title: Tool declaration, loading and the mandatory intent
+status: active
+summary: >
+  Every tool is declared with defineTool() so it automatically carries the
+  mandatory intent parameter; loadTools() auto-discovers tools/ and refuses to
+  start when a tool breaks the contract (missing intent, duplicate name). The
+  intent is normalised, never empty, and is passed to the result hook so it can be
+  printed and stored in the model context.
+code:
+  - path: utils/tool-schema.js
+    symbols: [defineTool, withIntentParameter, hasIntentParameter, getIntent, getIntentFromRaw, parseToolArgs, normalizeIntent]
+  - path: utils/tool-loader.js
+    symbols: [loadTools]
+  - path: config/constants.js
+    symbols: [INTENT_PARAM_NAME, INTENT_PARAM_DESCRIPTION, MISSING_INTENT_PLACEHOLDER]
+tests:
+  - path: tests/harness-tools.test.js
+    cases:
+      - every auto-loaded tool declares the required intent parameter
+      - withIntentParameter keeps the original parameters and required list
+      - the loader passes the intent to the result hook
+      - missing intents are surfaced instead of silently dropped

@@ -49,7 +49,7 @@ function chunk(text, role = 'user') {
 
 test('every auto-loaded tool declares the required intent parameter', async () => {
   const { tools, toolFunctions } = await loadTools(() => {});
-  assert.ok(tools.length >= 7, `expected the harness toolset, got ${tools.length}`);
+  assert.ok(tools.length >= 9, `expected the harness toolset, got ${tools.length}`);
 
   for (const tool of tools) {
     assert.ok(hasIntentParameter(tool), `${tool.function.name} is missing "intent"`);
@@ -57,7 +57,7 @@ test('every auto-loaded tool declares the required intent parameter', async () =
   }
 
   const names = tools.map((t) => t.function.name);
-  for (const expected of ['read_file', 'write_file', 'patch_file', 'run_bash', 'run_npm', 'compact_context', 'update_task']) {
+  for (const expected of ['read_file', 'write_file', 'patch_file', 'run_bash', 'run_npm', 'compact_context', 'update_task', 'grep', 'blob']) {
     assert.ok(names.includes(expected), `missing tool ${expected}`);
   }
 });

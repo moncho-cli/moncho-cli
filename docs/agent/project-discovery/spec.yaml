@@ -1,0 +1,39 @@
+id: agent/project-discovery
+domain: agent
+title: Read-only project discovery with grep and blob
+status: active
+summary: >
+  grep and blob answer "where does this live?" and "what do these files contain?"
+  in one call each. Both enumerate the tree through listProjectFiles(), which
+  applies the path sandbox, prunes dependency/VCS/scratch directories and never
+  follows symlinks. Glob matching supports * / ** / ?, binary files are sniffed by
+  NUL byte and skipped, and every result is tagged (<grep …> / <blobs …> / <blob …>)
+  with counts and a truncation flag. Failures use the shared JSON error contract
+  with the codes INVALID_PATH, INVALID_PATTERN and NOT_FOUND.
+code:
+  - path: utils/project-scan.js
+    symbols: [DEFAULT_IGNORED_DIRS, DEFAULT_IGNORED_FILES, isProjectRootRequest, normalizeGlobs, matchGlob, matchesAny, normalizeGlobGroups, looksBinary, listProjectFiles, displayPath, readTextFile]
+  - path: tools/grep.js
+    symbols: [buildSearchRegExp, searchFile, definition, execute]
+  - path: tools/blob.js
+    symbols: [isGlobPattern, resolveBlobTargets, definition, execute]
+tests:
+  - path: tests/discovery-tools.test.js
+    cases:
+      - glob matching handles basenames, paths and recursive patterns
+      - normalizeGlobs accepts strings, comma-separated lists and arrays
+      - listProjectFiles prunes ignored directories and honours globs
+      - path helpers report the project root and refuse to escape it
+      - looksBinary detects NUL bytes and readTextFile skips binary files
+      - buildSearchRegExp honours literal and case-insensitive modes
+      - searchFile returns line numbers and skips binary files
+      - grep reports path:line matches wrapped in <grep> tags
+      - grep supports include, filesOnly, ignoreCase and fixedStrings
+      - grep caps results and reports truncation
+      - grep reports no-match and error results without throwing
+      - resolveBlobTargets treats globs and directories as file lists
+      - blob returns each file wrapped in <blob> tags
+      - blob marks binary files instead of failing
+      - blob caps the number of files and the bytes returned
+      - blob reports a structured error when nothing matches
+      - blob defaults to the project root

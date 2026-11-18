@@ -1,0 +1,41 @@
+id: agent/patch-application
+domain: agent
+title: Unified-diff patching with all-or-nothing verification
+status: active
+summary: >
+  patch_file applies one unified diff to one project file. It rejects malformed
+  headers, wrong hunk counts and mismatching context with stable error codes, is
+  all-or-nothing across hunks, and verifies the written result byte-for-byte. It
+  tolerates line-number drift inside a fuzz window and preserves CRLF and
+  no-newline-at-EOF.
+code:
+  - path: utils/patch_lib.js
+    symbols: [PatchError, applyPatch, applyPatchToString, parsePatch, PATCH_FUZZ_FACTOR, FUZZ_WINDOW]
+  - path: tools/patch_file.js
+    symbols: [definition, execute]
+tests:
+  - path: tests/patch.test.js
+    cases:
+      - consecutive added lines keep their order (regression)
+      - multiple hunks are applied in file order
+      - blank context line without a leading space is accepted
+      - a new file can be created from /dev/null
+      - a hunk can append at end of file
+      - deletion-only hunk
+      - CRLF line endings are preserved
+      - no-newline-at-EOF marker is honored
+      - line-number drift is handled within the fuzzy window
+      - hunk count mismatch is rejected and the file is unchanged
+      - context mismatch is reported with the first mismatching line and leaves the file unchanged
+      - a failing later hunk prevents any earlier hunk from being written
+      - path traversal is rejected
+      - a +++ header that disagrees with the path argument is rejected
+      - patches touching multiple files are rejected
+      - patch_file tool returns a structured success/error JSON contract
+      - applyPatchToString applies a patch without touching the filesystem
+      - wrong-context patch is rejected with HUNK_MISMATCH and leaves the file unchanged
+      - a git-style multi-file patch is rejected with MULTIPLE_FILES
+      - a patch missing the +++ header is rejected as INVALID_PATCH
+  - path: tests/harness-tools.test.js
+    cases:
+      - patch_file still reports the structured success/error contract

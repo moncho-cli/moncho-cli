@@ -33,8 +33,16 @@ export function formatArg(value) {
 const FENCE_RE = /^\s*```\s*([\w+-]*)\s*$/;
 const HEADING_RE = /^\s*(#{1,6})\s+(.*)$/;
 const LIST_RE = /^(\s*)[-*+]\s+(.*)$/;
+
+/** Delimiters emitted by the discovery/read tools (tools/*.js). */
 const FILE_TAG_RE = /^\s*<file\s+relative_path="([^"]*)"(?:\s+from=(\d+)\s+to=(\d+))?\s+lines=([^\s>]+)\s*>\s*$/;
 const FILE_END_RE = /^\s*<\/file>\s*$/;
+const GREP_TAG_RE = /^\s*<grep\s+pattern="([^"]*)"\s+path="([^"]*)"\s+matches=(\d+)\s+files=(\d+)/;
+const GREP_END_RE = /^\s*<\/grep>\s*$/;
+const BLOBS_TAG_RE = /^\s*<blobs\s+path="([^"]*)"\s+count=(\d+)\s+bytes=(\d+)/;
+const BLOBS_END_RE = /^\s*<\/blobs>\s*$/;
+const BLOB_TAG_RE = /^\s*<blob\s+path="([^"]*)"(?:\s+bytes=(\d+)\s+lines=(\d+)|\s+skipped="([^"]*)")?/;
+const BLOB_END_RE = /^\s*<\/blob>\s*$/;
 
 /** Blessed parses `{...}` as tags, so braces in untrusted text must be escaped. */
 function escapeTags(text) {
@@ -48,9 +56,57 @@ function inlineMarkup(text) {
     .replace(/`([^`]+)`/g, '{cyan-fg}$1{/cyan-fg}');
 }
 
+/** A `truncated=true` attribute on a tool tag becomes a short suffix. */
+function truncationSuffix(raw) {
+  return /truncated=true/.test(raw) ? ' · truncated' : '';
+}
+
 /**
- * Minimal markdown-ish renderer for the conversation: fenced code blocks,
- * headings, lists, bold and inline code become neo-blessed tags.
+ * Render one tool-result delimiter line as a header, or null when the line is not
+ * a delimiter. Keeps the tag vocabulary in one place so read_file, grep and blob
+ * all look the same in the transcript.
+ */
+function renderDelimiter(raw) {
+  const file = raw.match(FILE_TAG_RE);
+  if (file) {
+    const [, filePath, from, to, lines] = file;
+    const range = from && to ? ` from=${from} to=${to}` : '';
+    return `{cyan-fg}┌─ ${escapeTags(filePath)}${range} · lines=${escapeTags(lines)}{/cyan-fg}`;
+  }
+  if (FILE_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+
+  const grep = raw.match(GREP_TAG_RE);
+  if (grep) {
+    const [, pattern, grepPath, matches, files] = grep;
+    return `{cyan-fg}┌─ grep /${escapeTags(pattern)}/ in ${escapeTags(grepPath)}`
+      + ` · ${matches} matches in ${files} files${truncationSuffix(raw)}{/cyan-fg}`;
+  }
+  if (GREP_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+
+  const blobs = raw.match(BLOBS_TAG_RE);
+  if (blobs) {
+    const [, blobsPath, count, bytes] = blobs;
+    return `{cyan-fg}┌─ blobs ${escapeTags(blobsPath)} · ${count} files · ${bytes} bytes`
+      + `${truncationSuffix(raw)}{/cyan-fg}`;
+  }
+  if (BLOBS_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+
+  const blob = raw.match(BLOB_TAG_RE);
+  if (blob) {
+    const [, blobPath, bytes, lines, skipped] = blob;
+    const label = skipped
+      ? `skipped (${escapeTags(skipped)})`
+      : `${lines} lines · ${bytes} bytes${truncationSuffix(raw)}`;
+    return `{cyan-fg}├─ ${escapeTags(blobPath)} · ${label}{/cyan-fg}`;
+  }
+  if (BLOB_END_RE.test(raw)) return null;
+
+  return null;
+}
+
+/**
+ * Minimal markdown-ish renderer for the conversation: fenced code blocks, tool
+ * delimiters, headings, lists, bold and inline code become neo-blessed tags.
  *
  * Pure (no screen needed) so it can be unit tested without a terminal. It
  * sanitizes first, so raw model output can neither break rendering nor inject
@@ -79,15 +135,9 @@ export function formatTranscript(text) {
       continue;
     }
 
-    const file = raw.match(FILE_TAG_RE);
-    if (file) {
-      const [, filePath, from, to, lines] = file;
-      const range = from && to ? ` from=${from} to=${to}` : '';
-      out.push(`{cyan-fg}┌─ ${escapeTags(filePath)}${range} · lines=${escapeTags(lines)}{/cyan-fg}`);
-      continue;
-    }
-    if (FILE_END_RE.test(raw)) {
-      out.push('{cyan-fg}└─────{/cyan-fg}');
+    const delimiter = renderDelimiter(raw);
+    if (delimiter !== null) {
+      out.push(delimiter);
       continue;
     }
 

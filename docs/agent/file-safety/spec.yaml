@@ -1,0 +1,28 @@
+id: agent/file-safety
+domain: agent
+title: Project-scoped path sandbox and byte-verified writes
+status: active
+summary: >
+  All file access is resolved through resolveProjectPath(), which rejects absolute
+  paths, traversal and escaping symlinks. Writes go through writeFileVerified(),
+  which stages, verifies, renames and re-verifies, so write_file never reports
+  success unless the bytes on disk match. read_file reports a POSIX-relative path
+  in its <file> delimiter.
+code:
+  - path: utils/path-safety.js
+    symbols: [PathSafetyError, resolveProjectPath, projectRelativePath]
+  - path: utils/file-io.js
+    symbols: [FileIOError, writeFileVerified, readFileIfExists]
+  - path: tools/write_file.js
+    symbols: [definition, execute]
+  - path: tools/read_file.js
+    symbols: [fileTag, wrapFileContent, lineNumberAtOffset]
+tests:
+  - path: tests/harness-tools.test.js
+    cases:
+      - write_file reports verified success and rejects unsafe paths
+      - read_file wraps output in <file relative_path=...> tags
+      - read_file reports the paged line range and total
+      - read_file keeps line numbers on by default
+      - read_file supports a negative offset (from the end)
+      - wrapFileContent is a pure, testable formatter

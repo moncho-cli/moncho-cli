@@ -29,9 +29,12 @@ Five regions, laid out relatively so blessed relayouts them on resize:
   control characters are stripped so raw model output cannot break rendering, and
   braces are escaped because blessed reads `{…}` as tags.
 - `log()` splits multi-line text and writes one transcript row per line.
-- A small markdown-ish renderer colours fenced code blocks, `<file …>` delimiters,
+- A small markdown-ish renderer colours fenced code blocks, tool delimiters,
   headings, lists, bold and inline code. It is pure (no screen needed) so it can be
-  unit tested.
+  unit tested. Every discovery/read tool has a delimiter branch: `<file …>` (path +
+  line range), `<grep …>` (pattern, path, match/file counts), `<blobs …>` / `<blob …>`
+  (path, byte and line counts, `skipped` markers), and each carries its `truncated`
+  flag into the header instead of printing the raw tag.
 - A long paste collapses into a single `[[paste:<id>]]` tag and expands back
   **byte-for-byte**, so collapsing never alters the bytes the model receives.
 - The transcript is a model of plain lines and **collapsible blocks**: a tool

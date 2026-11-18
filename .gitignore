@@ -5,4 +5,4 @@ node_modules/
 # Agent scratch space (task.md): ad-hoc scripts written to accomplish a task.
 # Everything here is disposable by default; only keep what stays factually
 # reusable, and never let it leak into a commit.
-agent/
+/agent/

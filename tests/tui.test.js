@@ -241,6 +241,41 @@ test('the read_file result tag renders as a header, not raw text', async () => {
   });
 });
 
+test('the grep and blob result tags render as headers, not raw text', async () => {
+  const grepResult = [
+    '<grep pattern="needle" path="." matches=2 files=2 truncated=true>',
+    'app/alpha.js:2: // needle here',
+    '</grep>'
+  ].join('\n');
+  const blobResult = [
+    '<blobs path="utils" count=2 bytes=120 truncated=true>',
+    '<blob path="utils/a.js" bytes=60 lines=4>',
+    'const a = 1;',
+    '</blob>',
+    '<blob path="utils/bin.dat" skipped="binary-or-too-large" />',
+    '</blobs>'
+  ].join('\n');
+
+  const renderedGrep = formatTranscript(grepResult).split('\n');
+  assert.equal(renderedGrep[0], '{cyan-fg}┌─ grep /needle/ in . · 2 matches in 2 files · truncated{/cyan-fg}');
+  assert.equal(renderedGrep[2], '{cyan-fg}└─────{/cyan-fg}');
+  assert.doesNotMatch(formatTranscript(grepResult), /<grep /);
+
+  const renderedBlob = formatTranscript(blobResult).split('\n');
+  assert.equal(renderedBlob[0], '{cyan-fg}┌─ blobs utils · 2 files · 120 bytes · truncated{/cyan-fg}');
+  assert.equal(renderedBlob[1], '{cyan-fg}├─ utils/a.js · 4 lines · 60 bytes{/cyan-fg}');
+  assert.equal(renderedBlob[4], '{cyan-fg}├─ utils/bin.dat · skipped (binary-or-too-large){/cyan-fg}');
+  assert.doesNotMatch(formatTranscript(blobResult), /<blobs |<blob /);
+
+  await withTui(async (tui, { painted }) => {
+    tui.log(grepResult);
+    tui.log(blobResult);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.doesNotMatch(visible(tui), /<grep |<blobs |<blob /);
+    assert.match(plainText(painted()), /┌─ grep \/needle\/ in \./);
+  });
+});
+
 test('notifyCompaction() marks a compaction in the transcript, once per event', async () => {
   await withTui(async (tui, { painted }) => {
     // ConversationManager hands onContextChange the stats() snapshot from
