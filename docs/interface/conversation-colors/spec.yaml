@@ -1,0 +1,30 @@
+id: interface/conversation-colors
+domain: interface
+title: One colour per kind of conversation row
+status: active
+summary: >
+  app/theme.js names one blessed colour per kind of transcript row (the echoed
+  prompt, tool calls and results, context notices, errors, low-key chrome) and
+  classifyLine()/colorizeLine() apply it at the end of formatTranscript(). A line
+  the markdown renderer already coloured is left untouched, prose gets no colour,
+  the palette only wraps lines so the visible glyphs and the block-click row math
+  are unchanged, and colour stays presentation only: the model and the session
+  file never see a tag and the line CLI never renders one.
+code:
+  - path: app/theme.js
+    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, isTagged, classifyLine, colorizeLine, colorizeLines]
+  - path: app/tui-render.js
+    symbols: [formatTranscript, formatUserEcho, USER_ECHO_HEADER, USER_ECHO_PREFIX]
+  - path: app/transcript.js
+    symbols: [TranscriptModel, formatBlockHeader, blockLines]
+tests:
+  - path: tests/conversation-colors.test.js
+    cases:
+      - "the palette names one colour per kind of conversation row"
+      - "classifyLine() tells the parts of a turn apart and leaves prose alone"
+      - "a line the markdown renderer already coloured is left untouched"
+      - "colorizeLine()/colorizeLines() wrap a line without rewriting it"
+      - "formatTranscript() colours the parts of a turn and keeps the markdown colours"
+      - "the colour reaches the terminal, and the visible glyphs are unchanged"
+      - "a coloured block header still toggles on the same row"
+      - "colour is presentation only: the model text carries no tag"

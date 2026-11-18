@@ -3,17 +3,25 @@ domain: interface
 title: Full-screen TUI layout, rendering and feedback
 status: active
 summary: >
-  With a pty, createTui() builds a four-region blessed screen (input box, status
+  With a pty, createTui() builds a five-region blessed screen (input box, status
   bar, model row, scrollable transcript) and returns null without one so the line
   CLI is kept. Model text is sanitised and escaped before rendering, long pastes
-  collapse and expand byte-for-byte, the status bar carries the status or spinner
-  on the left and the context meter pinned to its right edge (always visible), and
-  compactions are announced in the transcript exactly once.
+  collapse and expand byte-for-byte through a paste table, the status bar carries
+  the status or spinner on the left and the context meter pinned to its right edge
+  (always visible), compactions are announced in the transcript exactly once, and
+  the keys are bound apart from the screen wiring (interrupts on the program,
+  scrolling on the screen).
 code:
   - path: app/tui.js
     symbols: [createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, PASTE_THRESHOLD, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
   - path: app/tui-render.js
     symbols: [sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD]
+  - path: app/tui-keys.js
+    symbols: [bindKeys]
+  - path: app/paste-registry.js
+    symbols: [createPasteRegistry]
+  - path: app/compaction-notice.js
+    symbols: [formatCompactionNotice, createCompactionNotifier]
   - path: app/status-row.js
     symbols: [createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
   - path: app/tui-layout.js
@@ -38,6 +46,13 @@ tests:
       - "the read_file result tag renders as a header, not raw text"
       - "the grep and blob result tags render as headers, not raw text"
       - "notifyCompaction() marks a compaction in the transcript, once per event"
+  - path: tests/tui-modules.test.js
+    cases:
+      - "createPasteRegistry() collapses a long paste and restores it byte-for-byte"
+      - "formatCompactionNotice() describes the split, tokens only when known"
+      - "createCompactionNotifier() announces each compaction exactly once"
+      - "bindKeys() forwards interrupts from the program and scrolls from the screen"
+      - "bindKeys() without a screen is a harmless no-op"
   - path: tests/tui-status.test.js
     cases:
       - "composeStatusRow() right-aligns the meter and never drops it"

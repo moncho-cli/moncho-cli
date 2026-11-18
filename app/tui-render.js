@@ -1,3 +1,5 @@
+import { colorizeLines, USER_ECHO_HEADER } from './theme.js';
+
 /**
  * Pure text helpers for the TUI: sanitising, the markdown-ish transcript
  * renderer, paste collapsing and the status-row layout.
@@ -166,11 +168,13 @@ export function formatTranscript(text) {
   }
 
   if (inFence) out.push('{cyan-fg}└─────{/cyan-fg}');
-  return out.join('\n');
+  // The conversation palette (app/theme.js) paints the *kind* of each row — the
+  // user's echo, tool calls and results, context notices, errors — while leaving
+  // every line this renderer already coloured exactly as it is.
+  return colorizeLines(out).join('\n');
 }
 
-/** Header line introducing an echoed user message in the transcript. */
-export const USER_ECHO_HEADER = 'You:';
+export { USER_ECHO_HEADER };
 
 /** Prefix quoting every line of an echoed user message. */
 export const USER_ECHO_PREFIX = '> ';

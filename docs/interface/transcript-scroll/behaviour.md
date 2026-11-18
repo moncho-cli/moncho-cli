@@ -50,11 +50,13 @@ crash.
 
 Holding the offset never breaks the bindings: page-up/page-down, home and end keep
 working while the input box has focus, and starting a scroll after a held append
-moves the view from where the reader left it.
+moves the view from where the reader left it. How far each gesture moves is fixed
+by `docs/interface/transcript-smooth-scroll`.
 
 ## See also
 
 - Implementation: `app/transcript-view.js`
 - The transcript widget it binds: `docs/interface/transcript-blocks`
+- The wheel and page steps: `docs/interface/transcript-smooth-scroll`
 - Spec of the surrounding screen: `docs/interface/tui`
 - Proof: `tests/transcript-scroll.test.js`

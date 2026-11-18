@@ -32,6 +32,9 @@ same branch that renders a markdown blockquote coming from the model. The raw
 marker never reaches the screen, and inline markup inside the quoted text
 (`**bold**`, `` `code` ``) is rendered as usual.
 
+The `You:` header itself is painted in the palette's user colour
+(`docs/interface/conversation-colors`), so a prompt is recognisable at a glance.
+
 The host (`main.js`) wires the hook to the front end's own logger, so both front
 ends echo the message without knowing how it is formatted:
 
@@ -43,5 +46,6 @@ ends echo the message without knowing how it is formatted:
 
 - Implementation: `app/conversation-manager.js`, `app/tui-render.js`, `main.js`
 - Spec of the surrounding screen: `docs/interface/tui`
+- Spec of the row colours: `docs/interface/conversation-colors`
 - Spec of the loop that stores the chunk: `docs/runtime/startup-wiring`
 - Proof: `tests/user-echo.test.js`

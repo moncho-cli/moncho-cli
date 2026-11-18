@@ -1,0 +1,24 @@
+id: interface/transcript-smooth-scroll
+domain: interface
+title: Wheel and page steps for scrolling the conversation
+status: active
+summary: >
+  The transcript is scrolled in whole rows: a mouse wheel notch moves
+  WHEEL_STEP_ROWS (3) rows and page-up/page-down move a screenful minus one, so
+  pages overlap by a row. Both steps are pure arithmetic, clamp at the first and
+  last row through blessed, and only move the viewport — a scroll never re-sets
+  the content, which is what made the old one-row steps stutter. The follow/hold
+  rule for arriving output is unaffected.
+code:
+  - path: app/transcript-view.js
+    symbols: [FOLLOW_BOTTOM_PERCENT, WHEEL_STEP_ROWS, pageStepRows, isFollowingScroll, createTranscriptView]
+  - path: app/tui.js
+    symbols: [createTui]
+tests:
+  - path: tests/transcript-smooth-scroll.test.js
+    cases:
+      - "pageStepRows() steps one row short of a screenful, and never zero"
+      - "a wheel notch over the transcript nudges it a few rows"
+      - "page-up and page-down move a whole screenful and clamp at the ends"
+      - "a scroll moves the viewport without rebuilding the transcript content"
+      - "scrolling keeps the follow/hold rule intact"

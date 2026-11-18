@@ -1,10 +1,12 @@
 import blessed from 'neo-blessed';
 import { describeModel } from '../config/constants.js';
-import { isInterruptKey } from '../utils/keys.js';
 import { createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from './status-row.js';
 import { createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, INPUT_HEIGHT } from './tui-layout.js';
 import { createTranscriptView } from './transcript-view.js';
 import { chooseLabel } from './tui-modal.js';
+import { createPasteRegistry } from './paste-registry.js';
+import { createCompactionNotifier } from './compaction-notice.js';
+import { bindKeys } from './tui-keys.js';
 import {
   sanitize,
   formatArg,
@@ -19,9 +21,10 @@ import {
 
 // The pure helpers live in ./tui-render.js, the transcript model in
 // ./transcript.js (bound to the widget by ./transcript-view.js), the region
-// layout in ./tui-layout.js and the status-row bookkeeping in ./status-row.js.
-// They are all re-exported here so app/tui.js stays the single entry point every
-// importer (and the specs) already use.
+// layout in ./tui-layout.js, the status-row bookkeeping in ./status-row.js, the
+// paste table in ./paste-registry.js and the compaction notice in
+// ./compaction-notice.js. They are all re-exported here so app/tui.js stays the
+// single entry point every importer (and the specs) already use.
 export { sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD };
 export { formatUserEcho, USER_ECHO_HEADER };
 export { SPINNER_FRAMES, SPINNER_INTERVAL_MS };
@@ -66,7 +69,7 @@ export function createTui(options = {}) {
   const { transcript, statusBar, modelBar, inputBox } = createLayout({ screen, modelLabel });
 
   let pending = null;
-  let pasteRegistry = [];
+  const pastes = createPasteRegistry();
   let closed = false;
   let labelText = ' > ';
   inputBox.getLabel = () => labelText;
@@ -111,24 +114,12 @@ export function createTui(options = {}) {
   const setTokens = (text) => statusRow.setMeter(text);
 
   // Compaction fires while a request is in flight, i.e. exactly when the status
-  // bar's left slot is owned by the spinner, so the marker has to go to the
-  // transcript to be visible right away.
-  let compactionMarks = 0;
+  // bar's left slot is owned by the spinner, so the marker goes to the transcript
+  // to be visible right away — once per event (app/compaction-notice.js).
+  const compaction = createCompactionNotifier({ log });
   const notifyCompaction = (stats) => {
     if (closed) return;
-    const count = Number(stats?.compactions) || 0;
-    if (count <= compactionMarks) return;
-    compactionMarks = count;
-    const last = { ...(stats?.lastCompaction || {}) };
-    const older = Number(last.olderChunks) || 0;
-    const kept = Number(last.keptChunks) || 0;
-    const tokens =
-      last.olderTokens != null && last.afterTokens != null
-        ? ` (${last.olderTokens} -> ${last.afterTokens} tokens)`
-        : '';
-    log(
-      `[Context] compaction fired: ${older} older chunk(s) -> summary, kept ${kept} newest chunk(s)${tokens}.`,
-    );
+    compaction.notify(stats);
   };
 
   const settle = (value) => {
@@ -141,12 +132,11 @@ export function createTui(options = {}) {
 
   inputBox.on('submit', (value) => {
     const raw = typeof value === 'string' ? value : '';
-    const collapsed = collapsePaste(raw, PASTE_THRESHOLD, pasteRegistry);
-    if (collapsed.pastes.length !== pasteRegistry.length) {
-      pasteRegistry = collapsed.pastes;
+    const collapsed = pastes.collapse(raw);
+    if (collapsed.collapsed) {
       log(`[pasted ${raw.split('\n').length} lines -> ${collapsed.text}]`);
     }
-    settle(expandPastes(collapsed.text, pasteRegistry));
+    settle(pastes.expand(collapsed.text));
   });
 
   const question = (prompt, callback) => {
@@ -163,10 +153,16 @@ export function createTui(options = {}) {
     });
   };
 
-  // Scrolling must work even while the input box owns the focus.
+  // Scrolling must work even while the input box owns the focus. Both steps go
+  // through the view, so the wheel and the keyboard move the same distances and
+  // a scroll only moves the viewport instead of rebuilding the whole content.
   const scrollBy = (amount) => {
-    transcript.scroll(amount);
-    refresh();
+    view.scrollRows(amount);
+  };
+
+  /** Page towards the bottom (`direction < 0` pages up), one screenful minus one. */
+  const scrollPage = (direction) => {
+    view.scrollPage(direction);
   };
 
   // A click on the transcript toggles the tool-result block under the cursor
@@ -175,42 +171,11 @@ export function createTui(options = {}) {
     view.clickAt(data);
   });
 
-  // Escape / Ctrl+C must be taken before blessed dispatches them. While the input
-  // box is reading, screen-level listeners are skipped and textarea turns Escape
-  // into its own 'cancel' event: the box blurs and the armed question() promise is
-  // never resolved. Handling the key at the program level and locking key dispatch
-  // for that single event keeps the box reading while the host reacts.
-  const forwardInterrupt = (ch, key) => {
-    if (!isInterruptKey(ch, key)) return false;
-    screen.lockKeys = true;
-    queueMicrotask(() => {
-      screen.lockKeys = false;
-    });
-    if (onInterrupt) onInterrupt();
-    return true;
-  };
-  screen.program.prependListener('keypress', forwardInterrupt);
-  // We listen for screen-level keypresses; screen.key() would bind on
-  // screen.program instead, which a synthetic screen.emit('keypress') misses.
-  screen.on('keypress', (ch, key) => {
-    if (!key) return;
-    if (isInterruptKey(ch, key)) {
-      if (onInterrupt) onInterrupt();
-      return;
-    }
-    const name = key.full || key.name;
-    if (name === 'pageup' || name === 'S-up') {
-      scrollBy(-1);
-    } else if (name === 'pagedown' || name === 'S-down') {
-      scrollBy(1);
-    } else if (name === 'home') {
-      transcript.setScrollPerc(0);
-      refresh();
-    } else if (name === 'end') {
-      transcript.setScrollPerc(100);
-      refresh();
-    }
-  });
+  // Escape / Ctrl+C and the scrolling keys (app/tui-keys.js): the interrupt is
+  // taken on the program so blessed cannot turn Escape into the textarea's own
+  // 'cancel', and the scrolling keys are taken on the screen so a synthetic
+  // `screen.emit('keypress', …)` reaches them.
+  const keys = bindKeys({ screen, onInterrupt, scrollPage, transcript, refresh });
 
   // Regions are laid out relatively, so blessed relayouts them on resize; we only
   // have to repaint the status row (whose width changed) and keep the newest line
@@ -239,7 +204,7 @@ export function createTui(options = {}) {
       closed = true;
       pending = null;
       view.close();
-      screen.program.removeListener('keypress', forwardInterrupt);
+      keys.dispose();
       statusRow.dispose();
       screen.destroy();
     },
@@ -280,19 +245,17 @@ export function createTui(options = {}) {
         },
       });
     },
-    collapsePaste(text) {
-      const collapsed = collapsePaste(text, PASTE_THRESHOLD, pasteRegistry);
-      pasteRegistry = collapsed.pastes;
-      return collapsed.text;
-    },
-    expandPastes(text) {
-      return expandPastes(text, pasteRegistry);
-    },
+    collapsePaste: (text) => pastes.collapse(text).text,
+    expandPastes: (text) => pastes.expand(text),
     get pastes() {
-      return pasteRegistry;
+      return pastes.all;
     },
     refresh,
     scrollBy,
+    scrollPage,
+    get transcriptView() {
+      return view;
+    },
     screen,
     transcript,
     statusBar,

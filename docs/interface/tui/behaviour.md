@@ -55,6 +55,10 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 - A compaction that fires while the request is in flight is announced in the
   transcript — the status bar is owned by the spinner at that moment — exactly once
   per event.
+- The **kind** of each row is coloured too: the echoed prompt, tool calls and
+  results, context notices and errors each get their own colour, while a line the
+  markdown renderer already coloured is left as it is and prose keeps the terminal
+  default. The palette and its rules live in `docs/interface/conversation-colors`.
 
 ## Status and feedback
 
@@ -69,8 +73,10 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 ## Scrolling
 
 - The transcript scrolls even while the input box owns focus: page-up/page-down
-  (and shift-up/down), home and end work from the keyboard, and a direct
-  `scrollBy()` is exposed for tests.
+  (and shift-up/down), home and end work from the keyboard, a mouse wheel notch
+  over the transcript nudges it a few rows, and a direct `scrollBy()` is exposed
+  for tests. How far each gesture moves is fixed by
+  `docs/interface/transcript-smooth-scroll`.
 - Arriving output only scrolls the view when the reader is parked at the bottom; a
   reader who scrolled up keeps the offset they chose. The rule and the geometry it
   reads are fixed by `docs/interface/transcript-scroll`.
@@ -78,10 +84,15 @@ Five regions, laid out relatively so blessed relayouts them on resize:
 ## See also
 
 - Implementation: `app/tui.js` (screen wiring), `app/tui-layout.js` (regions),
-  `app/tui-render.js` (pure text helpers), `app/status-row.js`
-  (status/spinner/meter bookkeeping), `config/constants.js`
+  `app/tui-render.js` (pure text helpers), `app/tui-keys.js` (key bindings),
+  `app/paste-registry.js` (the paste table), `app/compaction-notice.js` (the
+  once-per-event compaction line), `app/status-row.js` (status/spinner/meter
+  bookkeeping), `config/constants.js`
 - Spec of the scroll position while output arrives: `docs/interface/transcript-scroll`
+- Spec of the wheel and page steps: `docs/interface/transcript-smooth-scroll`
+- Spec of the conversation palette: `docs/interface/conversation-colors`
 - Spec of the collapsible results: `docs/interface/transcript-blocks`
 - Proof: `tests/tui.test.js`, `tests/tui-status.test.js`,
+  `tests/tui-modules.test.js`,
   `tests/transcript-blocks.test.js`, `tests/transcript-scroll.test.js`,
-  `tests/interrupt-controls.test.js`
+  `tests/transcript-smooth-scroll.test.js`, `tests/interrupt-controls.test.js`

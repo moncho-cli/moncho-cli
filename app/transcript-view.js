@@ -9,6 +9,27 @@ import { formatArg, formatTranscript } from './tui-render.js';
 export const FOLLOW_BOTTOM_PERCENT = 99.5;
 
 /**
+ * Rows one mouse-wheel notch moves the transcript.
+ *
+ * Deliberately smaller than a page: a wheel notch is a nudge, so a reader can
+ * follow the text line by line instead of jumping a screenful at a time.
+ */
+export const WHEEL_STEP_ROWS = 3;
+
+/**
+ * Rows one page-up / page-down moves: a whole screenful minus one row, so the
+ * row that was at the top of the screen is still the last row on the next page
+ * and the reader never loses their place between two pages.
+ *
+ * Pure, so the step is unit tested without a terminal. A widget that has not
+ * been laid out yet (no measured height) still steps one row rather than none.
+ */
+export function pageStepRows(visibleHeight = 0) {
+  const visible = Number(visibleHeight) || 0;
+  return visible > 1 ? Math.floor(visible) - 1 : 1;
+}
+
+/**
  * The follow/hold rule, as pure arithmetic: may an arriving message scroll the
  * transcript to the bottom?
  *
@@ -122,6 +143,52 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
     return true;
   };
 
+  /**
+   * Move the view by `delta` rows (positive = towards the bottom), clamped to
+   * the content. Returns true when the view actually moved.
+   *
+   * A scroll is **not** a repaint: the content is untouched, so blessed only
+   * has to move the viewport instead of re-parsing every line. Rebuilding the
+   * content on every step is what makes a wheel notch feel like a stutter, so
+   * the scroll path never calls `setContent()`.
+   */
+  const scrollRows = (delta) => {
+    if (closed || !widget || typeof widget.scroll !== 'function') return false;
+    const step = Math.trunc(Number(delta) || 0);
+    if (step === 0) return false;
+    const before = Number(widget.childBase) || 0;
+    // blessed clamps at both ends itself, so the view can never be scrolled
+    // past the first or the last row.
+    widget.scroll(step);
+    const moved = (Number(widget.childBase) || 0) !== before;
+    if (moved) refresh();
+    return moved;
+  };
+
+  /**
+   * Move a whole screenful: `direction > 0` pages towards the bottom.
+   *
+   * The step is `pageStepRows()`, one row short of the screenful, so the last
+   * row of the previous page is the first row of the next one and a reader
+   * paging through a long result never skips a line.
+   */
+  const scrollPage = (direction = 1) => {
+    const sign = Number(direction) < 0 ? -1 : 1;
+    return scrollRows(sign * pageStepRows(visibleHeight()));
+  };
+
+  // The mouse wheel nudges the view a few rows per notch. The handlers are
+  // ours rather than blessed's `mouse: true` ones: that option also installs
+  // a half-screen wheel step and scrollbar dragging, and this widget's click
+  // is already taken by the block toggle.
+  const wheelUp = () => { scrollRows(-WHEEL_STEP_ROWS); };
+  const wheelDown = () => { scrollRows(WHEEL_STEP_ROWS); };
+  const canListen = typeof widget?.on === 'function' && typeof widget?.removeListener === 'function';
+  if (canListen) {
+    widget.on('wheelup', wheelUp);
+    widget.on('wheeldown', wheelDown);
+  }
+
   /** Append plain text (prose, notices, tool call headers). */
   const log = (...args) => {
     const text = args.map(formatArg).join(' ');
@@ -192,10 +259,16 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
     collapseBlock,
     clickAt,
     paint,
+    scrollRows,
+    scrollPage,
     /** True while new output follows the bottom of the transcript. */
     isFollowing: following,
     close() {
       closed = true;
+      if (canListen) {
+        widget.removeListener('wheelup', wheelUp);
+        widget.removeListener('wheeldown', wheelDown);
+      }
     },
     get content() {
       return model.content;
