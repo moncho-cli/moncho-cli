@@ -113,9 +113,9 @@ chunk, so the reason is both visible and part of the model's context.
 | `patch_file` | Applies a unified diff, cross-checked before writing |
 | `blob` | Fetches several files at once (path, directory or glob) |
 | `grep` | Searches contents with optional context lines and globs |
-| `run_bash` | One allow-listed command (`ls`, `node`, `git`, …), no shell |
+| `run_bash` | One allow-listed command (`ls`, `node`, `git`, …), no shell; a YAML header + stdout, with `head`/`tail` windowing |
 | `run_npm` | Allow-listed npm subcommands inside the project |
-| `update_task` | Marks a `task.md` item done and resets the plan |
+| `update_task` | Marks a `task.md` item done, ticks a verified plan step, resets the plan |
 | `compact_context` | Reports the window, or requests a compaction |
 
 ## How it fits together

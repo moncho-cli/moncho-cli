@@ -42,4 +42,4 @@ reporting format; the implementation is linked below.
 
 - Implementation: `utils/tokens.js`, `config/constants.js`
 - Used by: `app/context-window.js`, `utils/compaction.js`, `tools/compact_context.js`
-- Proof: `tests/harness-tools.test.js`
+- Proof: `tests/context-window.test.js`

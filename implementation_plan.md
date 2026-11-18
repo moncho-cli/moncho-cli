@@ -1,51 +1,50 @@
-# Interface polish — all three items done and verified
+# Frequent plan updates, and bash output you can truncate — both items done and verified
 
-status: done — `npm test` 280 tests, 280 pass, 0 fail
+status: done — `npm test` 307 tests, 307 pass, 0 fail
 
 ## Items
 
-- [x] **bright blue, bold intent text** — `app/theme.js` gained an `intent` kind
-  (`bright-blue` + `bold`); the standalone `intent: …` row and the `(intent: …)` span of
-  a tool header are painted with it. Proven by
-  `tests/conversation-colors.test.js` ("the intent gets its own bright-blue, bold style",
-  "the intent is bright blue and bold inside the row that carries it").
-- [x] **the last-prompt hint in an empty box** — `app/input-hint.js` remembers the prompt
-  the box settled and paints `Last prompt: …` (grey, sanitised, **content only, never the
-  value**) over an empty box, reacting to the box's own `set content` event. Proven by
-  `tests/input-hint.test.js` (5 cases).
-- [x] **transient notices in a self-hiding overlay** — `app/notice-overlay.js` (pure
-  model: kinds, TTL, dedupe, cap, injectable clock), `app/notice-bar.js` (the blessed
-  overlay at `top: 1`, hidden while empty, one timer armed for the earliest expiry),
-  surfaced by `app/tui-surface.js`; `api/ollama.js` reports a retried attempt through an
-  injected `onRetry` hook; `app/conversation-manager.js` routes a recovered failure to
-  `onNotice` instead of the transcript and keeps a transcript line only for the failure
-  that ends the task; `main.js` binds the hook and dismisses the retry notice the moment
-  the turn lands. Proven by `tests/notice-overlay.test.js` (9 cases),
-  `tests/conversation-manager.test.js` ("a recovered provider failure becomes a notice,
-  never a transcript line") and `tests/ollama-provider.test.js` (the two retry cases).
+- [x] **plan steps tick as they are verified** — `utils/plan-file.js` (pure: the checkbox
+  parsing, the strict selection, the in-place tick, `planProgress`, the plan rendering)
+  and the new `step` action of `tools/update_task.js` (`step`/`stepIndex`); the task list is
+  never rewritten (`taskWritten: false`), the plan's own `status:` becomes
+  `done — every step verified` on the last tick, and refusals are `STEP_NOT_FOUND` /
+  `ALREADY_DONE` / `PLAN_FILE_NOT_FOUND`. Proven by `tests/task-plan-progress.test.js`
+  (13 cases) plus the five existing task cases.
+- [x] **a YAML header and head/tail for run_bash** — `utils/command-output.js` (pure:
+  `resolveWindow`, `windowLines`, `yamlScalar`, `renderYamlHeader`, `renderCommandOutput`)
+  and `tools/run_bash.js` now answer a **success** as a YAML header + `---` + stdout, window
+  that stdout with `head`/`tail`, refuse both at once with `INVALID_RANGE`, and keep the
+  structured `COMMAND_FAILED`/`TIMEOUT` envelope with a windowed stdout for a failure.
+  Proven by `tests/command-output-window.test.js` (14 cases) and the sandbox cases in
+  `tests/command-sandbox.test.js`.
 
 ## Steps
 
-- [x] Write app/notice-overlay.js: a pure, terminal-free model of transient notices
-  (kinds, TTL, expiry, dedupe, cap) plus the row formatting an overlay paints.
-- [x] Write app/notice-bar.js: the blessed overlay near the top of the screen, driven by
-  the overlay model and an injectable clock, auto-hiding after the TTL.
-- [x] Wire it in app/tui.js through the extracted app/tui-surface.js: create the overlay
-  and expose `notice()`/`dismissNotice()`/`notices()` on the TUI surface, every file
-  under 300 lines.
-- [x] Route provider failures through an injected hook (api/ollama.js `onRetry`,
-  app/conversation-manager.js `onNotice` instead of the transcript, main.js binding) so a
-  recovered 502 clears instead of lingering.
-- [x] Add docs/interface/notice-overlay (behaviour.md + spec.yaml), register it in
-  docs/index.yaml, and add tests/notice-overlay.test.js covering every named case.
-- [x] Run `node --check` on every touched file, `npm test` green, delete the agent/utils
-  probes, tick the backlog line.
+- [x] Write `utils/plan-file.js`: `parseCheckboxItems`/`parsePlanSteps`, `findCheckboxItem`/
+  `findPlanStep`, `markCheckboxItem`/`markPlanStepDone`, `readStatusLine`/`replaceStatusLine`,
+  `planProgress`, `renderPlan` — no `fs`, no terminal.
+- [x] Rework `tools/update_task.js` on top of it, add the `step` action and report
+  `planProgress` on `list`, keeping `renderPlan` re-exported.
+- [x] Write `utils/command-output.js` and rework `tools/run_bash.js` to answer a document,
+  with `head`/`tail` in the tool schema and a windowed failure envelope.
+- [x] Extend `docs/agent/task-tracking` and `docs/agent/command-sandbox` (behaviour.md +
+  spec.yaml) and register the new suites in `tests/README.md`.
+- [x] Add the three new suites and re-point every case a spec names; split the 500-line
+  `tests/harness-tools.test.js` by capability (harness-tools, command-sandbox,
+  command-output-window, context-window, task-plan-progress).
+- [x] Run `node --check` on every touched file and `npm test`; tick both backlog lines,
+  update `README.md`/`prompt.md`, leave no scratch file behind.
 
 ## Verified
 
-- `npm test` → **280 tests, 280 pass, 0 fail**, `tests/docs-realm.test.js` included.
-- `node --check` clean on every touched file.
-- Largest touched file: `tests/conversation-colors.test.js` at 299 lines — all under the
-  300-line budget.
-- The one-off probes and patch scripts written for this pass are deleted; only the
-  pre-existing `agent/utils/` scripts remain.
+- `npm test` → **307 tests, 307 pass, 0 fail**, `tests/docs-realm.test.js` included.
+- `node --check` clean on every touched file (`tools/run_bash.js`, `tools/update_task.js`,
+  `utils/command-output.js`, `utils/plan-file.js`, the suites).
+- End-to-end smoke: `run_bash({ command: 'ls app', head: 3 })` answers
+  `status: success … lines: 30 shown: 3 truncated: true mode: head`, then `---`, then the
+  three lines.
+- Every file touched is **under 300 lines**; the largest is `tests/command-output-window.test.js`
+  at 255 (the 500-line suite is gone; nothing grows past 300).
+- No scratch probe was written, so none is left behind: `git status` lists only the two
+  new modules and the new suites.

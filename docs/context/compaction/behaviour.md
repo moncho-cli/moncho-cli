@@ -57,4 +57,4 @@ implementation is linked below.
 
 - Implementation: `utils/compaction.js`, `app/context-window.js`,
   `tools/compact_context.js`, `utils/host.js`, `app/conversation-manager.js`
-- Proof: `tests/harness-tools.test.js`, `tests/conversation-manager.test.js`
+- Proof: `tests/context-window.test.js`, `tests/conversation-manager.test.js`

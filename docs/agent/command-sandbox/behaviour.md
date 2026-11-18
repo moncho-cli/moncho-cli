@@ -2,7 +2,7 @@
 
 The agent can run commands, but only a small, explicitly allow-listed palette and
 never through a shell. This spec fixes what is runnable, what is rejected, and how
-failures are reported.
+results are reported.
 
 ## run_bash
 
@@ -17,10 +17,32 @@ failures are reported.
   is `UNBALANCED_QUOTE`, and an empty command is `EMPTY_COMMAND`.
 - `cwd` is resolved through the same path sandbox as every other file operation,
   so a command cannot be pointed outside the project.
-- A non-zero exit is reported as JSON `status: "error"` with `code`
-  `COMMAND_FAILED` plus the captured `stdout`/`stderr`; a timeout is `TIMEOUT`
-  with the partial output. Success returns the trimmed stdout, or `(no output)`.
 - The default timeout is 60s; `timeoutMs` overrides it.
+
+## The output document
+
+A **successful** command answers as a *document*: a YAML header, a `---` delimiter
+line, then the stdout verbatim. The header is a small, stable set of plain
+`key: value` lines — `status`, `command`, `cwd`, `exit_code`, `lines`, `shown`,
+`truncated`, `mode` and the requested window — so the payload can be read without
+parsing JSON. A value YAML would read as something else (a number, a keyword, a
+colon, an empty string) is double-quoted; a plain word or path stays plain. An
+empty stdout is reported as `(no output)` after the delimiter.
+
+- **`head` / `tail` window the stdout** so a long listing can be read from either
+  end without a pipe: `head: 3` shows the first three lines, `tail: 2` the last
+  two. `mode` is `all`, `head` or `tail`; `lines` is the total and `shown` how many
+  are in the payload, so a truncated document is never mistaken for a complete one.
+- The two are **mutually exclusive**: asking for both is `INVALID_RANGE`, and so is
+  a count that is not a whole number of at least one line. The command is not run
+  in that case.
+
+A **failing** command keeps the JSON diagnostic envelope, because a stable
+machine-readable `code` matters more than a pretty one: a non-zero exit is
+`COMMAND_FAILED` and a timeout is `TIMEOUT`, both `status: "error"` with the
+captured `stdout`/`stderr` attached. Its stdout is windowed by the same `head`/`tail`
+rule and reports `stdoutLines`/`stdoutShown`/`stdoutTruncated`/`mode`, so a long
+failing output is still readable end-first.
 
 ## run_npm
 
@@ -38,5 +60,6 @@ failures are reported.
 
 ## See also
 
-- Implementation: `tools/run_bash.js`, `tools/run_npm.js`, `config/constants.js`
-- Proof: `tests/harness-tools.test.js`
+- Implementation: `tools/run_bash.js`, `tools/run_npm.js`, `utils/command-output.js`,
+  `config/constants.js`
+- Proof: `tests/harness-tools.test.js`, `tests/command-output-window.test.js`

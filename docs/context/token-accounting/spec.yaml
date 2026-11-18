@@ -14,7 +14,7 @@ code:
   - path: config/constants.js
     symbols: [CONTEXT_MAX_LENGTH]
 tests:
-  - path: tests/harness-tools.test.js
+  - path: tests/context-window.test.js
     cases:
       - token estimates are additive, rounded up and never negative
       - budget helpers and formatting

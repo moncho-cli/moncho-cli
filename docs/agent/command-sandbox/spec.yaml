@@ -5,21 +5,42 @@ status: active
 summary: >
   run_bash tokenises a single command line and executes it with execFileSync
   (no shell), rejecting shell metacharacters and any binary outside the
-  allow-list, while keeping quoted globs usable. run_npm allows only a fixed set
-  of npm subcommands, rejects global/prefix flags, and reports failures as
-  structured JSON. Both resolve cwd through the project path sandbox.
+  allow-list, while keeping quoted globs usable. A successful command answers a
+  YAML header, a --- delimiter and then the stdout, which head/tail can window
+  from either end without a pipe; a failing command keeps a structured JSON
+  envelope with a windowed stdout. run_npm allows only a fixed set of npm
+  subcommands, rejects global/prefix flags, and reports failures as structured
+  JSON. Both resolve cwd through the project path sandbox.
 code:
   - path: tools/run_bash.js
-    symbols: [CommandError, tokenizeCommand, validateCommand, definition, execute]
+    symbols: [CommandError, tokenizeCommand, validateCommand, displayCwd, definition, execute]
+  - path: utils/command-output.js
+    symbols: [OutputRangeError, resolveWindow, splitOutputLines, windowLines, yamlScalar, renderYamlHeader, renderCommandOutput, OUTPUT_DELIMITER, EMPTY_OUTPUT]
   - path: tools/run_npm.js
     symbols: [NpmError, validateNpmArgs, splitNpmArgs, definition, execute]
   - path: config/constants.js
     symbols: [ALLOWED_COMMANDS, NPM_ALLOWED_SUBCOMMANDS, NPM_DEFAULT_TIMEOUT_MS, NPM_MAX_TIMEOUT_MS]
 tests:
-  - path: tests/harness-tools.test.js
+  - path: tests/command-sandbox.test.js
     cases:
       - run_bash rejects shell metacharacters and non-approved binaries
       - run_bash keeps quoted glob patterns usable
       - run_bash executes an approved command and reports failures structurally
       - run_npm validates subcommands, shell metacharacters and global installs
       - run_npm reports a structured failure for an unknown package
+  - path: tests/command-output-window.test.js
+    cases:
+      - resolveWindow selects the whole output, a head or a tail
+      - resolveWindow never reports a truncation it did not make
+      - resolveWindow refuses both ends at once and a nonsense count
+      - windowLines slices the text, ignoring a single trailing newline
+      - yamlScalar leaves plain values plain and quotes the ambiguous ones
+      - renderYamlHeader is one key per line, in the order given
+      - renderCommandOutput lays out the header, the delimiter and the stdout
+      - run_bash answers a success as a YAML header and the stdout after it
+      - run_bash head/tail window the stdout without a pipe
+      - run_bash refuses head and tail together, and never runs the command
+      - run_bash reports an empty output as (no output) inside the document
+      - a failing command keeps its structured envelope, with a windowed stdout
+      - run_bash keeps its shell-free refusal codes and its timeout contract
+      - run_bash runs an approved command from a relative cwd and reports it

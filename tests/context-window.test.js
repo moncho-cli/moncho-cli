@@ -1,0 +1,209 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { ContextWindow } from '../app/context-window.js';
+import { detectCompactionRequest } from '../app/conversation-manager.js';
+import { execute as compactExecute, planCompaction } from '../tools/compact_context.js';
+import { registerContextWindow, clearContextWindow } from '../utils/host.js';
+import {
+  estimateMessageTokens,
+  estimateMessagesTokens,
+  estimateRequestTokens,
+  exceedsTokenBudget,
+  formatTokenCount,
+  formatUsage
+} from '../utils/tokens.js';
+import { splitByTokenBudget, compactChunks, buildSummaryChunk } from '../utils/compaction.js';
+import { COMPACTION_SUMMARY_PREFIX } from '../config/constants.js';
+
+/**
+ * The context machinery (docs/context/token-accounting, docs/context/compaction): the
+ * token estimate, the 80/20 compaction, the live window and the compact_context tool.
+ *
+ * Split out of tests/harness-tools.test.js so each suite stays small and named after the
+ * capability it proves (tests/README.md); that suite keeps the tool contract and the file
+ * tools.
+ */
+
+function chunk(text, role = 'user') {
+  return { role, content: text };
+}
+
+// ---------------------------------------------------------------------------
+// Tokens
+// ---------------------------------------------------------------------------
+
+test('token estimates are additive, rounded up and never negative', () => {
+  assert.equal(estimateMessageTokens('abcd'), 1);
+  assert.equal(estimateMessageTokens('abcde'), 2);
+  assert.equal(estimateMessagesTokens(['abcd', 'abcd']), 2);
+  assert.equal(estimateMessageTokens(null), 0);
+  assert.ok(estimateMessageTokens({ role: 'user', content: 'x'.repeat(100) }) > 100 / 4);
+  assert.ok(estimateRequestTokens([{ role: 'user', content: 'hi' }], [{ type: 'function' }]) > 0);
+});
+
+test('budget helpers and formatting', () => {
+  const messages = [{ role: 'user', content: 'x'.repeat(400) }];
+  assert.equal(exceedsTokenBudget(messages, 1000), false);
+  assert.equal(exceedsTokenBudget(messages, 10), true);
+  assert.equal(exceedsTokenBudget(messages, 0), false); // 0 = no limit
+  assert.equal(formatTokenCount(1500), '1.50k');
+  assert.match(formatUsage(messages, 1000), /tokens \(\d+%\)$/);
+  assert.match(formatUsage(messages, 0), /\(no limit\)$/);
+});
+
+// ---------------------------------------------------------------------------
+// Compaction
+// ---------------------------------------------------------------------------
+
+test('the older 80% / newest 20% split is driven by token mass', () => {
+  const chunks = Array.from({ length: 5 }, (_, i) => chunk('x'.repeat(400), `m${i}`));
+  const split = splitByTokenBudget(chunks);
+
+  assert.equal(split.totalTokens, split.olderTokens + split.keptTokens);
+  assert.ok(split.older.length > 0, 'something must be compacted');
+  assert.ok(split.kept.length > 0, 'the newest chunks must survive');
+  assert.ok(split.keptTokens >= split.totalTokens * 0.2 * 0.9, 'kept block should be ~20%');
+  assert.ok(split.olderTokens >= split.keptTokens, 'the evicted block carries the bulk of the mass');
+  assert.equal(split.older.at(-1), chunks[split.older.length - 1]);
+  assert.equal(split.kept[0], chunks[split.older.length]);
+});
+
+test('a window of one chunk is never compacted away', () => {
+  const split = splitByTokenBudget([chunk('only')]);
+  assert.equal(split.older.length, 0);
+  assert.equal(split.kept.length, 1);
+});
+
+test('compactChunks replaces the old block with one summary chunk and keeps the tail verbatim', async () => {
+  const chunks = [
+    chunk('AAAA'.repeat(100)),
+    chunk('BBBB'.repeat(100)),
+    chunk('recent-1'),
+    chunk('recent-2')
+  ];
+  const { older, kept } = splitByTokenBudget(chunks);
+
+  const result = await compactChunks(chunks, {
+    callModel: async (messages) => {
+      assert.equal(messages[0].role, 'system');
+      assert.match(messages[1].content, /AAAA/); // the evicted text is what gets summarised
+      assert.ok(!/recent-2/.test(messages[1].content), 'kept chunks must not be summarised');
+      return 'SUMMARY: intent, done, pending';
+    }
+  });
+
+  assert.equal(result.compacted, true);
+  assert.equal(result.chunks[0].content, `${COMPACTION_SUMMARY_PREFIX}\nSUMMARY: intent, done, pending`);
+  assert.equal(result.chunks[0].compacted, true);
+  assert.equal(result.chunks[0].summarized_chunks, older.length);
+  assert.deepEqual(result.chunks.slice(1), kept);
+  assert.ok(result.stats.afterTokens < result.stats.totalTokens, 'compaction must shrink the window');
+  assert.ok(result.summary.includes('SUMMARY'));
+});
+
+test('compactChunks can report the split without calling the model', async () => {
+  const chunks = [chunk('x'.repeat(400)), chunk('y'.repeat(400)), chunk('tail')];
+  const result = await compactChunks(chunks, { dryRun: true });
+  assert.equal(result.compacted, false);
+  assert.equal(result.dryRun, true);
+  assert.ok(result.stats.olderChunks > 0);
+});
+
+test('compactChunks refuses to squash an empty older block', async () => {
+  const result = await compactChunks([chunk('only')], { callModel: async () => 'nope' });
+  assert.equal(result.compacted, false);
+  assert.equal(result.reason, 'nothing_to_compact');
+});
+
+test('an empty summary is rejected so the window is left unchanged', async () => {
+  const chunks = [chunk('a'.repeat(400)), chunk('b'.repeat(400)), chunk('c')];
+  await assert.rejects(
+    () => compactChunks(chunks, { callModel: async () => '   ' }),
+    /empty summary/
+  );
+});
+
+test('buildSummaryChunk marks the compacted chunk', () => {
+  const built = buildSummaryChunk(' body ', { summarizedChunks: 3 });
+  assert.equal(built.compacted, true);
+  assert.equal(built.summarized_chunks, 3);
+  assert.ok(built.content.startsWith(COMPACTION_SUMMARY_PREFIX));
+  assert.ok(built.content.endsWith('body'));
+});
+
+// ---------------------------------------------------------------------------
+// ContextWindow wiring
+// ---------------------------------------------------------------------------
+
+test('ContextWindow reports usage and compacts in place when over budget', async () => {
+  const window = new ContextWindow({ maxTokens: 200 });
+  window.addMany([
+    chunk('x'.repeat(2000), 'user'),
+    chunk('y'.repeat(2000), 'assistant'),
+    chunk('recent-1'),
+    chunk('recent-2')
+  ]);
+
+  assert.equal(window.needsCompaction(), true);
+  assert.match(window.usage(), /\/ 200 tokens/);
+  assert.ok(window.estimatedTokens() > 200);
+
+  const before = window.estimatedTokens();
+  const report = await window.compact({ callModel: async () => 'condensed history' });
+
+  assert.equal(report.compacted, true);
+  assert.equal(window.chunks[0].compacted, true);
+  assert.equal(window.chunks.at(-1).content, 'recent-2');
+  assert.ok(window.estimatedTokens() < before, 'the window must shrink');
+  assert.equal(window.stats().compactions, 1);
+  assert.equal(window.stats().lastCompaction.reason, 'over-budget');
+});
+
+test('ContextWindow compaction is skipped while inside the budget', async () => {
+  const window = new ContextWindow({ maxTokens: 100000 });
+  window.add(chunk('small'));
+  const report = await window.compact({ callModel: async () => { throw new Error('must not be called'); } });
+  assert.equal(report.compacted, false);
+  assert.equal(report.reason, 'within-budget');
+});
+
+test('a failed summariser call leaves the window untouched', async () => {
+  const window = new ContextWindow({ maxTokens: 50 });
+  window.addMany([chunk('x'.repeat(4000)), chunk('y'.repeat(4000)), chunk('tail')]);
+  const before = window.chunks.slice();
+
+  await assert.rejects(() => window.compact({ callModel: async () => { throw new Error('provider down'); } }), /provider down/);
+  assert.deepEqual(window.chunks, before);
+});
+
+// ---------------------------------------------------------------------------
+// compact_context tool
+// ---------------------------------------------------------------------------
+
+test('compact_context reports within-budget windows and requests compaction when over', async () => {
+  const window = new ContextWindow({ maxTokens: 100 });
+  registerContextWindow(window);
+
+  const within = JSON.parse(await compactExecute({ intent: 'check window' }));
+  assert.equal(within.status, 'skipped');
+  assert.equal(within.code, 'WITHIN_BUDGET');
+
+  window.addMany([chunk('z'.repeat(4000)), chunk('tail')]);
+  const plan = planCompaction(window);
+  assert.equal(plan.required, true);
+
+  const requested = JSON.parse(await compactExecute({ intent: 'shrink window' }));
+  assert.equal(requested.status, 'requested');
+  assert.equal(requested.code, 'COMPACTION_REQUESTED');
+  assert.equal(requested.defer, false, 'dryRun defaults to true, so the host loop is not deferred');
+  assert.equal(detectCompactionRequest(JSON.stringify(requested)), false);
+
+  const deferred = JSON.parse(await compactExecute({ intent: 'shrink window', dryRun: false }));
+  assert.equal(deferred.defer, true);
+  assert.equal(detectCompactionRequest(JSON.stringify(deferred)), true);
+
+  clearContextWindow();
+  const orphan = JSON.parse(await compactExecute({ intent: 'no window' }));
+  assert.equal(orphan.code, 'NO_CONTEXT_WINDOW');
+});

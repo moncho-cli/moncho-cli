@@ -1,6 +1,11 @@
 import { execFileSync } from 'child_process';
 import { ALLOWED_COMMANDS } from '../config/constants.js';
 import { defineTool } from '../utils/tool-schema.js';
+import {
+  windowLines,
+  renderCommandOutput,
+  OutputRangeError
+} from '../utils/command-output.js';
 
 /**
  * Execute an allow-listed command from a small CLI palette.
@@ -11,6 +16,13 @@ import { defineTool } from '../utils/tool-schema.js';
  * rejected outright, and only the first token is checked against the allow-list.
  * That combination is what makes the previous "ls; rm -rf /" style bypass
  * impossible while keeping normal exploration commands working.
+ *
+ * A **successful** command answers as a document (utils/command-output.js): a YAML
+ * header, a `---` delimiter, then the stdout. `head`/`tail` window that stdout, so
+ * a long listing can be read from either end without a pipe. A **failing** command
+ * keeps its JSON diagnostic envelope with a stable `code`, because a machine-
+ * readable failure reason matters more than a pretty one; its stdout is windowed
+ * the same way.
  */
 
 export class CommandError extends Error {
@@ -99,9 +111,16 @@ export function validateCommand(command, allowList = ALLOWED_COMMANDS) {
   return argv;
 }
 
+/** The cwd as the header shows it: `.` when the command ran at the project root. */
+export function displayCwd(cwd) {
+  const text = String(cwd ?? '');
+  return text === process.cwd() ? '.' : text;
+}
+
 const { definition, execute } = defineTool({
   name: 'run_bash',
-  description: 'Execute a single allow-listed command (no shell: pipes, chaining and redirection are rejected).',
+  description:
+    'Execute a single allow-listed command (no shell: pipes, chaining and redirection are rejected). A successful command answers a YAML header, a "---" delimiter and then the stdout; use "head" or "tail" to window that stdout instead of piping it.',
   parameters: {
     properties: {
       command: {
@@ -115,6 +134,14 @@ const { definition, execute } = defineTool({
       timeoutMs: {
         type: 'integer',
         description: 'Optional timeout in milliseconds (default 60000).'
+      },
+      head: {
+        type: 'integer',
+        description: 'Show only the first N lines of the output. Mutually exclusive with "tail".'
+      },
+      tail: {
+        type: 'integer',
+        description: 'Show only the last N lines of the output. Mutually exclusive with "head".'
       }
     },
     required: ['command']
@@ -129,6 +156,16 @@ const { definition, execute } = defineTool({
       return JSON.stringify({ status: 'error', code: error.code, message: error.message });
     }
 
+    const window = { head: args.head, tail: args.tail };
+    try {
+      windowLines('', window);
+    } catch (error) {
+      if (error instanceof OutputRangeError) {
+        return JSON.stringify({ status: 'error', code: error.code, message: error.message });
+      }
+      throw error;
+    }
+
     const cwd = args.cwd ? resolveProjectPath(args.cwd) : process.cwd();
     const timeout = Number.isInteger(args.timeoutMs) && args.timeoutMs > 0 ? args.timeoutMs : 60000;
 
@@ -141,22 +178,66 @@ const { definition, execute } = defineTool({
         stdio: ['ignore', 'pipe', 'pipe']
       });
       const output = typeof stdout === 'string' ? stdout : String(stdout ?? '');
-      return output.trimEnd() || '(no output)';
+      return renderSuccess({ command: args.command, cwd, output, window });
     } catch (error) {
-      const stderr = error.stderr ? String(error.stderr).trimEnd() : '';
-      const stdout = error.stdout ? String(error.stdout).trimEnd() : '';
-      if (error.code === 'ETIMEDOUT' || error.signal === 'SIGTERM') {
-        return JSON.stringify({ status: 'error', code: 'TIMEOUT', message: `Command timed out after ${timeout}ms.`, partialOutput: stdout });
-      }
-      return JSON.stringify({
-        status: 'error',
-        code: 'COMMAND_FAILED',
-        message: `Command failed with exit code ${error.status ?? 'unknown'}.`,
-        stdout,
-        stderr
-      });
+      return renderFailure({ error, cwd, window, timeout });
     }
   }
 });
+
+/** A successful command: the header, the delimiter, and the stdout window. */
+function renderSuccess({ command, cwd, output, window }) {
+  const trimmed = output.trimEnd();
+  const selected = windowLines(trimmed, window);
+  return renderCommandOutput({
+    command,
+    cwd: displayCwd(cwd),
+    exitCode: 0,
+    stdout: selected.text,
+    total: selected.total,
+    shown: selected.shown,
+    truncated: selected.truncated,
+    mode: selected.mode,
+    head: window.head,
+    tail: window.tail
+  });
+}
+
+/**
+ * A failing command: the structured envelope the harness relies on, with its stdout
+ * windowed so a long failing output is still readable end-first.
+ */
+function renderFailure({ error, cwd, window, timeout }) {
+  const stdout = error.stdout ? String(error.stdout).trimEnd() : '';
+  const stderr = error.stderr ? String(error.stderr).trimEnd() : '';
+  const selected = windowLines(stdout, window);
+
+  if (error.code === 'ETIMEDOUT' || error.signal === 'SIGTERM') {
+    return JSON.stringify({
+      status: 'error',
+      code: 'TIMEOUT',
+      message: `Command timed out after ${timeout}ms.`,
+      cwd: displayCwd(cwd),
+      partialOutput: selected.text,
+      stdoutLines: selected.total,
+      stdoutShown: selected.shown,
+      stdoutTruncated: selected.truncated,
+      mode: selected.mode
+    });
+  }
+
+  return JSON.stringify({
+    status: 'error',
+    code: 'COMMAND_FAILED',
+    message: `Command failed with exit code ${error.status ?? 'unknown'}.`,
+    cwd: displayCwd(cwd),
+    stdout: selected.text,
+    stderr,
+    stdoutLines: selected.total,
+    stdoutShown: selected.shown,
+    stdoutTruncated: selected.truncated,
+    mode: selected.mode
+  });
+}
 
 export { definition, execute };

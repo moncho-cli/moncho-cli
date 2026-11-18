@@ -21,7 +21,11 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | Suite | Proves |
 | -------------------------------- | ----------------------------------------------------------- |
 | `docs-realm.test.js` | The three realms are linked: every spec exists, its code refs resolve to real symbols, its named cases exist, every source module is documented. |
-| `harness-tools.test.js` | The agent tool contract and the context machinery (tools, sandbox, token accounting, compaction, task protocol). |
+| `harness-tools.test.js` | The tool contract (`intent`), the read_file delimiters, the verified writes and the task.md protocol. |
+| `context-window.test.js` | The context machinery: token estimation, the 80/20 compaction, the live window and the `compact_context` tool. |
+| `command-sandbox.test.js` | The sandbox rules: the allow-list, the shell-free refusals, and the structured npm failures. |
+| `command-output-window.test.js` | A command result as a document: the YAML header, the `---` delimiter, the `head`/`tail` window, and the structured failure envelope. |
+| `task-plan-progress.test.js` | `implementation_plan.md` moving as steps are verified: the step parsing, the strict selection, the in-place tick and the `step` action. |
 | `tool-multicall.test.js` | The multicall grammar: the call signature, the `<tool-multicall result>` envelope, the round-trip and the replay of an enveloped chunk. |
 | `tool-batch.test.js` | Running one batch: the five-call cap, the simultaneous dispatch in call order, the refusal, and the chunks the loop stores. |
 | `patch.test.js` | Unified-diff application, its error codes and all-or-nothing behaviour. |
