@@ -1,6 +1,6 @@
-# Harness work
+# make sure the intent string is not being repeated many times with exact same content, both in conversation and actual context sent to the model
 
-status: done — 26/26 items and all six acceptance criteria verified, plus the Chat claim corrected to "no writing tool is offered or may run" (the session record the host writes in every mode is not a tool); 413/413 green
+status: done
 
 ## Steps
 

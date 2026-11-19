@@ -152,7 +152,7 @@ export function formatBatchLine({ accepted = 0, refused = 0, max = MAX_PARALLEL_
  */
 function batchChunk({ call, result, isError, calls }) {
   return formatToolResultChunk({
-    intent: call.intent,
+    intent: call.storedIntent !== undefined ? call.storedIntent : call.intent,
     signature: formatCallSignature({ name: call.name, args: call.args }),
     result,
     isError,
@@ -183,6 +183,8 @@ export async function handleToolBatch({
 } = {}) {
   const plan = planToolBatch(toolCalls, { max });
   const notifyChange = typeof notify === 'function' ? notify : () => {};
+  let lastStoredIntent = null;
+  let lastLoggedIntent = null;
 
   // Emit a single, OpenAI-compatible assistant chunk carrying all tool calls.
   window?.add({
@@ -209,7 +211,14 @@ export async function handleToolBatch({
   // batch as a chain. The call's shape (name, parsed args, intent) comes from the
   // shared formatter, so the printed lines and the replay agree by construction.
   for (const { call } of plan.accepted) {
-    for (const line of formatCallLines(call)) log(line);
+    const callLines = formatCallLines(call);
+    // Deduplicate intent: skip the intent line if it matches the previous call's intent
+    if (call.intent === lastLoggedIntent) {
+      log(callLines[0]); // Only log the "-> Calling ..." line
+    } else {
+      for (const line of callLines) log(line);
+      lastLoggedIntent = call.intent;
+    }
   }
 
   // The accepted calls are dispatched together and awaited together, so their
@@ -223,16 +232,19 @@ export async function handleToolBatch({
 
     // The intent is part of the tool result chunk, so it stays in the model's
     // context (task.md item 6) instead of only being printed to the terminal.
+    // Deduplicate: if intent matches previously stored intent, store with empty intent to avoid repetition
+    const storedIntent = outcome.intent === lastStoredIntent ? '' : outcome.intent;
     window?.add({
       role: 'tool',
       tool_call_id: outcome.id,
       content: batchChunk({
-        call: outcome,
+        call: { ...outcome, storedIntent },
         result: outcome.result,
         isError: outcome.isError,
         calls: plan.total,
       }),
     });
+    lastStoredIntent = outcome.intent;
     // One tool result, one chunk: a long chain of calls then shows the usage
     // climbing call by call instead of jumping once the turn ends.
     notifyChange();
@@ -242,6 +254,8 @@ export async function handleToolBatch({
   // A call beyond the cap is answered, never dropped: the provider pairs one
   // result per call id, so a missing chunk would leave the message unbalanced.
   for (const { call } of plan.refused) {
+    lastLoggedIntent = null;
+    lastStoredIntent = null; // Reset for refused calls
     log(`\n  -> Refused ${call.name} (beyond the batch of ${plan.max})`);
     window?.add({
       role: 'tool',
