@@ -170,8 +170,9 @@ test('ticking the last step marks the plan status done', async () => {
 
   const last = JSON.parse(await updateTaskExecute({ action: 'step', step: 'c', intent: 'tick the last step' }));
   assert.equal(last.planProgress.pending, 0);
-  assert.equal(last.planStatus, 'done — every step verified');
-  assert.ok(read('implementation_plan.md').includes('status: done — every step verified'));
+  // `done` is one of the three canonical states (utils/tracking-format.js).
+  assert.equal(last.planStatus, 'done');
+  assert.ok(read('implementation_plan.md').includes('status: done'));
 });
 
 test('ticking a step refuses an unknown, ambiguous or already-ticked step', async () => {

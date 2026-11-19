@@ -1,7 +1,6 @@
 import { TASK_FILE } from '../config/constants.js';
-import { readFileIfExists } from '../utils/file-io.js';
 import { parseCheckboxItems } from '../utils/plan-file.js';
-import { getSession, getSessionTaskContent } from '../utils/host.js';
+import { readTaskContent } from '../utils/tracking-store.js';
 
 /**
  * `/work on` and `/work off`: the execution lock, reached from the command line.
@@ -23,21 +22,15 @@ import { getSession, getSessionTaskContent } from '../utils/host.js';
 
 /**
  * Read the items of `task.md` from session or file.
+ *
+ * The file wins when it is there and the session copy answers otherwise — the same
+ * rule `update_task` follows (utils/tracking-store.js).
+ *
  * @param {Function} [readFile] the file reader (defaults to the project one)
  * @returns {object[]|null} the checkbox items, or `null` when the file is missing
  */
-export function readTaskItems(readFile = readFileIfExists) {
-  // Try to get from session first
-  const session = getSession();
-  if (session) {
-    const taskContent = getSessionTaskContent();
-    if (taskContent !== null) {
-      return parseCheckboxItems(taskContent);
-    }
-  }
-  
-  // Fall back to file
-  const content = readFile(TASK_FILE);
+export function readTaskItems(readFile = undefined) {
+  const content = readTaskContent(readFile);
   if (typeof content !== 'string') return null;
   return parseCheckboxItems(content);
 }
@@ -64,7 +57,7 @@ export function workCommand() {
     name: 'work',
     description: 'turn the execution lock on or off (/work on, /work off)',
     run(ctx = {}) {
-      const { arg = '', mode = null, readTask = readFileIfExists } = ctx;
+      const { arg = '', mode = null, readTask = undefined } = ctx;
       const action = String(arg).trim().toLowerCase();
 
       if (!mode || typeof mode.setWork !== 'function' || typeof mode.describe !== 'function') {

@@ -1,0 +1,37 @@
+id: interface/tracking-notice
+domain: interface
+title: The [Tracking] row announcing a task.md / implementation_plan.md update
+status: active
+summary: >
+  app/tracking-notice.js turns one update_task write into the transcript rows the user
+  sees: the checklist line first ("item one" done, working on "item two", a status edit)
+  and the plan line after it (a step ticked, the plan reset), with counts and the model
+  text quoted onto a single row. The rows are painted in the palette's own contrasting
+  bright-green + bold (app/theme.js: tracking/TRACKING_COLOR/TRACKING_BOLD,
+  colorizeTracking(), recognised by classifyLine() through TRACKING_NOTICE_PREFIX), so a
+  milestone never reads as a tool result or a context notice. The announcement is
+  optional wiring through the utils/host.js registry (notifyTrackingUpdate()), the tool
+  reports what it announced as trackingLines, and the row is presentation only: not a
+  chunk, never in a session file, and a no-op with no front end registered.
+code:
+  - path: app/tracking-notice.js
+    symbols: [TRACKING_NOTICE_PREFIX, formatTrackingUpdate, createTrackingNotifier]
+  - path: app/theme.js
+    symbols: [CONVERSATION_COLORS, TRACKING_COLOR, TRACKING_BOLD, colorizeTracking, classifyLine, colorizeLine]
+  - path: utils/host.js
+    symbols: [registerTrackingNotifier, notifyTrackingUpdate, clearTrackingNotifier]
+  - path: tools/update_task.js
+    symbols: [definition, execute]
+  - path: utils/tracking-step.js
+    symbols: [refusal, completeStep]
+tests:
+  - path: tests/tracking-notice.test.js
+    cases:
+      - a tracking update becomes its own contrasting [Tracking] row
+      - formatTrackingUpdate() says what changed, in the file that changed
+      - a completed item and a ticked step really reach the transcript
+      - "the announcement is presentation only: no chunk, no file, no front end needed"
+      - the tracking row is painted bright green on the real screen
+  - path: tests/conversation-colors.test.js
+    cases:
+      - the palette names one colour per kind of conversation row

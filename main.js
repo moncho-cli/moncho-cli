@@ -12,10 +12,12 @@ import { prettyPrintJson } from './app/json-display.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
-import { registerSession } from './utils/host.js';
+import { registerSession, registerTrackingNotifier } from './utils/host.js';
+import { createTrackingNotifier } from './app/tracking-notice.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
+import { ensureTrackingFiles } from './utils/tracking-store.js';
 import { resolveContextSize, formatContextLimit } from './utils/context-size.js';
 
 /**
@@ -157,10 +159,20 @@ async function main() {
   // with the conversation and a resumed session opens in the state it was left in
   // (docs/interface/modes).
   const sessions = createSessionRecorder({ model: label, stateOf: () => sessionMode.toJSON() });
-  
-  // Register the new session with the host so task/plan content is available
+
+  // Register the session, then give its folder the two tracking files it owns
+  // (agent/sessions/<id>/task.md and implementation_plan.md, docs/agent/task-tracking).
+  // A fresh session inherits a root `task.md` when there is one, so an operator with a
+  // checklist in the tree keeps working; the bytes written are canonical.
   registerSession(sessions);
-  
+  ensureTrackingFiles();
+
+  // A tracking update is announced in the transcript, in the palette's own contrasting
+  // colour (app/tracking-notice.js), so the user sees "item X done" / "plan reset for Y"
+  // instead of having to open the two files. Registered against the front end's logger,
+  // and the tool reports the update through utils/host.js.
+  registerTrackingNotifier(createTrackingNotifier({ log }));
+
   const saveSession = (reason) => {
     try {
       return sessions.save(manager.chunks, {

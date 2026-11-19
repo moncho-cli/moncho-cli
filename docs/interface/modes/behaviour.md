@@ -31,6 +31,9 @@ nothing it cannot describe.
 - `design` may write **only** the two tracking files, `task.md` and
   `implementation_plan.md`: it is the mode that turns a discussion into a backlog,
   never the mode that turns the backlog into code.
+- Those two files live **in the session folder** (`agent/sessions/<id>/`, see
+  `docs/agent/task-tracking`), so `design` may write them there as well as at the
+  project root — one folder deep, and only under those two names.
 - `work` executes the backlog. On its own it is a *mode* like the others; it is the
   `work:on` **lock** that makes it run without being asked.
 
@@ -65,6 +68,9 @@ gate read the live session mode, so a `Tab` mid-turn tightens the very next call
 - `design` writes its two files through `write_file` / `patch_file`, whose target is
   checked after `normalizeTargetPath()`: `./task.md`, `/task.md` and `a/../task.md`
   are the same file, and a path that walks out of the project is never writable.
+- A per-session target is accepted only in its exact shape,
+  `agent/sessions/<id>/task.md` (or `…/implementation_plan.md`): the folder and the
+  file name are both fixed, and no deeper nesting is writable.
 
 Anything that is not one of the three names is `chat`. `normalizeMode()` is the single
 place that says so, so a corrupt session file, an environment variable or a typo falls

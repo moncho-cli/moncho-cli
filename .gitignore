@@ -2,10 +2,11 @@
 vendor/*
 node_modules/
 
-# Agent scratch space (task.md): ad-hoc scripts written to accomplish a task.
+# Agent scratch space: ad-hoc scripts and the operator's own local state.
 # Everything here is disposable by default; only keep what stays factually
 # reusable, and never let it leak into a commit.
 # The leading slash is required: a bare `agent/` would also hide docs/agent/.
+#
+# `agent/task-backlog.md` is the operator's personal backlog: it is a local
+# notebook of what to pick up next, never part of the application.
 /agent/
-
-task-backlog.md

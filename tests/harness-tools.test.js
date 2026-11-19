@@ -171,7 +171,9 @@ test('parseTaskItems/markItemDone handle the task.md checkbox syntax', () => {
 
   const updated = markItemDone(content, items[0], true);
   assert.ok(updated.includes('- [x] first item'));
-  assert.equal(updated.split('\n').length, content.split('\n').length);
+  assert.ok(updated.includes('- [x] done item'), 'the other entry keeps its state');
+  // The tick re-renders the canonical document (utils/tracking-format.js).
+  assert.ok(updated.startsWith('# Task list\n'), 'the result is a canonical checklist');
 });
 
 test('renderPlan produces a resetable implementation_plan.md body', () => {

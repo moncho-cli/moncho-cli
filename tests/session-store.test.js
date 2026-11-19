@@ -9,6 +9,7 @@ import {
   SessionStoreError,
   sessionId,
   sessionPath,
+  sessionDir,
   serializeSession,
   formatSession,
   parseSession,
@@ -69,6 +70,26 @@ test('sessionPath() refuses ids that could escape the sessions directory', () =>
     );
   }
   assert.equal(sessionPath('ok', { dir: 'agent/sessions/' }), 'agent/sessions/ok.json');
+});
+
+test('sessionDir() names the folder of one session, next to its file', () => {
+  assert.equal(sessionDir('2026-02-14T10-30-00-000Z'), 'agent/sessions/2026-02-14T10-30-00-000Z');
+  // The folder is the file name without the extension, so the two never drift apart.
+  assert.equal(
+    sessionDir('s1'),
+    sessionPath('s1').replace(/\.json$/, ''),
+    'the folder is the session file without its extension',
+  );
+  assert.equal(sessionDir('ok', { dir: 'agent/sessions/' }), 'agent/sessions/ok');
+
+  // The same validation as sessionPath(): a folder can never become a traversal either.
+  for (const bad of ['', '  ', '../escape', 'a/b', 'a\\b', null, undefined]) {
+    assert.throws(
+      () => sessionDir(bad),
+      (error) => error instanceof SessionStoreError && error.code === 'INVALID_ID',
+      `expected ${JSON.stringify(bad)} to be rejected`,
+    );
+  }
 });
 
 test('serializeSession() records the metadata and the chunks verbatim', () => {

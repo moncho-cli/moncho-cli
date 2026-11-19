@@ -36,7 +36,7 @@ const flush = async (rounds = 3) => {
 
 test('the palette names one colour per kind of conversation row', () => {
   assert.deepEqual(Object.keys(CONVERSATION_COLORS).sort(), [
-    'context', 'error', 'intent', 'notice', 'tool', 'user',
+    'context', 'error', 'intent', 'notice', 'tool', 'tracking', 'user',
   ]);
   for (const [kind, color] of Object.entries(CONVERSATION_COLORS)) {
     // blessed tag colours are hyphenated names ('bright-blue'), never hex

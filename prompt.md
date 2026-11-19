@@ -203,6 +203,55 @@ When `task.md` holds a list of unchecked items:
 4. Set the context to the updated `task.md` before starting the next item, and only
    advance once the current item is completed and verified.
 
+#### The exact shape of both files (the template, not a suggestion)
+
+`task.md` and `implementation_plan.md` live in your **session folder**
+(`agent/sessions/<id>/`) and are written by `update_task` alone. The harness
+**re-renders** whatever is written into the canonical document, so a draft that does not
+look like this is normalised, never stored:
+
+```markdown
+# Task list
+
+status: <pending | in progress: <item> | done>
+
+## Items
+
+- [ ] <one item>
+- [x] <a finished item>
+
+## Notes
+
+- <an optional human note>
+```
+
+`implementation_plan.md` is the same skeleton with `## Steps`, titled with the item the
+plan is for:
+
+```markdown
+# <the item this plan is for>
+
+status: <pending | in progress: <item> | done>
+
+## Steps
+
+- [ ] <one step>
+- [x] <a finished step>
+
+## Notes
+
+- <an optional human note>
+```
+
+The rules the renderer enforces: one `- [ ]`/`- [x]` entry per line **at column 0**,
+`status:` one of the three forms above, and a title, so a file is never a bare list.
+Never author either file with `write_file` (the draft is normalised) or `patch_file`
+(refused with `TRACKING_FILE_TOOL_OWNED`): `update_task` owns them.
+
+Every write that means something is also **shown to the user** as a green `[Tracking]`
+row in the conversation, so completing an item, starting the next one, moving the
+`status:` line or ticking a step is visible without opening the files. You do not need
+to announce it in your reply — the harness already did.
 ### 9. Lock in a plan instead of looping over research
 
 The host still counts your model calls against a hard limit (`PULSE_LIMIT`, **30**

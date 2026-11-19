@@ -3,6 +3,7 @@ import { parseCommand, runCommand } from './commands.js';
 import { formatCommandResult } from './json-display.js';
 import { reloadConversation } from './session-replay.js';
 import { registerSession } from '../utils/host.js';
+import { ensureTrackingFiles } from '../utils/tracking-store.js';
 
 /**
  * The host turn loop, kept out of `main.js` so startup stays wiring.
@@ -115,6 +116,9 @@ export async function handleCommand(input, {
       if (result.taskContent !== undefined || result.planContent !== undefined) {
         registerSession(sessions, result.taskContent, result.planContent);
       }
+      // Then give the resumed conversation its own pair of tracking files, re-seeded
+      // from the record it just carried (utils/tracking-store.js).
+      ensureTrackingFiles();
     }
     for (const line of formatCommandResult(result)) log(line);
     if (result.resumed?.id) {

@@ -16,6 +16,13 @@ linked below.
   and readable at a glance.
 - `sessionPath()` refuses any id that could escape the directory (slashes, `..`,
   empty), so a session id can never become a path traversal.
+- **`sessionDir()`** is the same id under the same rule, without the extension:
+  `agent/sessions/<id>/`. It is the folder of *that* conversation, where the files
+  that belong to it live — its checklist (`task.md`) and its plan
+  (`implementation_plan.md`), see `docs/agent/task-tracking`. The id is validated by
+  the same rule as `sessionPath()`, so a folder can never become a path traversal
+  either, and the two can never drift apart: the folder is the session file without
+  its `.json`.
 
 ## The file format
 

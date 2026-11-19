@@ -50,6 +50,22 @@ export function sessionPath(id, { dir = SESSION_DIR } = {}) {
   return `${dir.replace(/\/+$/, '')}/${name}.json`;
 }
 
+/**
+ * Project-relative **folder** of one session, where the files that belong to that
+ * conversation live: its checklist (`task.md`) and its plan
+ * (`implementation_plan.md`), see utils/tracking-store.js.
+ *
+ * The id is validated by the same rule as `sessionPath()`, so a folder can never
+ * become a path traversal either.
+ */
+export function sessionDir(id, { dir = SESSION_DIR } = {}) {
+  const name = String(id ?? '').trim();
+  if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+    throw new SessionStoreError('INVALID_ID', `Unsafe session id: ${id}`);
+  }
+  return `${dir.replace(/\/+$/, '')}/${name}`;
+}
+
 /** Normalise the caller's data into the on-disk shape. */
 export function serializeSession({
   id,

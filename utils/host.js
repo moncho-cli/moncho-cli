@@ -56,15 +56,55 @@ export function clearTaskPulse() {
   taskPulse = null;
 }
 
+// ---------------------------------------------------------------------------
+// Tracking announcements (app/tracking-notice.js)
+// ---------------------------------------------------------------------------
+// `update_task` rewrites the two tracking files from inside a tool call, so the one
+// place that can turn that write into a transcript line is this registry: main.js
+// registers a sink bound to the front end, and the tool reports the update. With no
+// sink registered (a bare tool call, the tool-level tests) the report is a no-op.
+
+let trackingNotifier = null;
+
+/** Register the sink that announces a tracking update (called by main.js). */
+export function registerTrackingNotifier(notifier) {
+  trackingNotifier = notifier;
+  return trackingNotifier;
+}
+
+/**
+ * Announce one tracking update to the transcript.
+ * @returns {string[]} the lines shown, empty when nothing is registered
+ */
+export function notifyTrackingUpdate(update) {
+  if (!trackingNotifier || typeof trackingNotifier.notify !== 'function') return [];
+  return trackingNotifier.notify(update) || [];
+}
+
+export function clearTrackingNotifier() {
+  trackingNotifier = null;
+}
+
 
 // ---------------------------------------------------------------------------
 // Session registry (session-specific task/plan files)
 // ---------------------------------------------------------------------------
 let currentSession = null;
 
-/** Register the active session (called when a session is adopted or created). */
-export function registerSession(session) {
+/**
+ * Register the active session (called when a session is adopted or created).
+ *
+ * The checklist is optional: a session opened without one still registers and
+ * `getSessionTaskContent()` answers null for it. A session that carries one keeps
+ * it in the session record, so a resumed conversation starts with the checklist it
+ * was left with (`/sessions` hands both back when it resumes one).
+ */
+export function registerSession(session, taskContent = null, planContent = null) {
   currentSession = session;
+  if (session && typeof session === 'object') {
+    if (taskContent != null) session.taskContent = taskContent;
+    if (planContent != null) session.planContent = planContent;
+  }
   return currentSession;
 }
 

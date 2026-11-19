@@ -1,7 +1,6 @@
 import { TASK_FILE } from '../config/constants.js';
-import { readFileIfExists } from '../utils/file-io.js';
 import { parseCheckboxItems } from '../utils/plan-file.js';
-import { getSession, getSessionTaskContent } from '../utils/host.js';
+import { readTaskContent } from '../utils/tracking-store.js';
 
 /**
  * The `work:on` self-drive: the next prompt comes from `task.md`, not the keyboard.
@@ -46,20 +45,11 @@ export function nextPendingItem(items = []) {
 
 /**
  * Read the checklist. Returns `null` when `task.md` is missing, so a missing file is
- * told apart from an empty one.
+ * told apart from an empty one. The file wins when it is there and the session copy
+ * answers otherwise — the same rule `update_task` follows (utils/tracking-store.js).
  */
-export function readChecklist(readFile = readFileIfExists) {
-  // Try to get from session first
-  const session = getSession();
-  if (session) {
-    const taskContent = getSessionTaskContent();
-    if (taskContent !== null) {
-      return parseCheckboxItems(taskContent);
-    }
-  }
-  
-  // Fall back to file
-  const content = readFile(TASK_FILE);
+export function readChecklist(readFile = undefined) {
+  const content = readTaskContent(readFile);
   if (typeof content !== 'string') return null;
   return parseCheckboxItems(content);
 }
@@ -77,7 +67,7 @@ export function readChecklist(readFile = readFileIfExists) {
  */
 export function createWorkDrive({
   mode = null,
-  readTask = readFileIfExists,
+  readTask = undefined,
   log = () => {},
   maxAttempts = WORK_DRIVE_MAX_ATTEMPTS,
 } = {}) {

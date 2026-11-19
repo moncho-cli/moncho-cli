@@ -48,6 +48,7 @@ specs:
   - interface/commands
   - interface/line-cli
   - interface/input-focus
+  - interface/tracking-notice
   - runtime/provider-calls
   - runtime/startup-wiring
   - runtime/session-store

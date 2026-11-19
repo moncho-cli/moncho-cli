@@ -54,6 +54,8 @@ export const CONVERSATION_COLORS = Object.freeze({
   error: 'red',
   /** low-key chrome: `[Info]`, `[Session]`, `[pasted …]`, horizontal rules */
   notice: 'grey',
+  /** a `[Tracking]` row: a task.md / implementation_plan.md update */
+  tracking: 'bright-green',
 });
 
 /** The colour the intent is painted in (task-backlog: "a brightish blue"). */
@@ -61,6 +63,11 @@ export const INTENT_COLOR = CONVERSATION_COLORS.intent;
 
 /** The attribute, besides the colour, that makes the intent findable. */
 export const INTENT_BOLD = true;
+
+/** The colour a tracking update is painted in, so it never reads as a tool row. */
+export const TRACKING_COLOR = CONVERSATION_COLORS.tracking;
+/** Tracking updates are milestones, so they carry bold as well as the colour. */
+export const TRACKING_BOLD = true;
 
 /** A line the markdown renderer already tagged (fences, delimiters, quotes…). */
 const ALREADY_TAGGED = /^\{(?:bold|underline|inverse|blink|invisible|[a-z-]+-bg|[a-z-]+-fg)/;
@@ -97,6 +104,16 @@ const RULE = /^\s*-{3,}/;
 export function colorizeIntent(text) {
   const body = String(text ?? '');
   return `{${INTENT_COLOR}-fg}{bold}${body}{/bold}{/${INTENT_COLOR}-fg}`;
+}
+
+/**
+ * One tracking update, painted the way a milestone should read: its own bright colour
+ * plus bold, so a `[Tracking]` row can never be mistaken for a tool result (yellow) or
+ * a context notice (magenta).
+ */
+export function colorizeTracking(text) {
+  const body = String(text ?? '');
+  return `{${TRACKING_COLOR}-fg}{bold}${body}{/bold}{/${TRACKING_COLOR}-fg}`;
 }
 
 /**
@@ -138,6 +155,7 @@ export function classifyLine(line) {
   if (INTENT_LINE.test(text)) return 'intent';
   if (BLOCK_HEADER.test(text) || TOOL_HEADER.test(text) || CALLING_LINE.test(text)) return 'tool';
   if (/^\s*\[Context\]/.test(text)) return 'context';
+  if (/^\s*\[Tracking\]/.test(text)) return 'tracking';
   if (/^\s*\[(?:Info|Session)\]/.test(text) || /^\s*\[pasted\b/.test(text) || RULE.test(text)) return 'notice';
   return null;
 }
@@ -148,6 +166,7 @@ export function colorizeLine(line) {
   const kind = classifyLine(text);
   if (!kind) return text;
   if (kind === 'intent') return colorizeIntent(text);
+  if (kind === 'tracking') return colorizeTracking(text);
   const color = CONVERSATION_COLORS[kind];
   return `{${color}-fg}${highlightIntentSpans(text)}{/${color}-fg}`;
 }

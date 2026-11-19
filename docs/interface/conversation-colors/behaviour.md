@@ -16,6 +16,7 @@ all look alike, so the conversation is hard to skim. This spec fixes one colour 
 | `tool` | `-> Calling …`, `[<tool> Output]`, a block header | yellow |
 | `intent` | the `intent: …` row, and the `(intent: …)` span inside a tool row | bright blue, bold |
 | `context` | `[Context]` usage and compaction notices | magenta |
+| `tracking` | a `[Tracking]` task/plan milestone | bright green, bold |
 | `error` | `Error …`, `[error] …`, a warning marker | red |
 | `notice` | `[Info]`, `[Session]`, `[pasted …]`, horizontal rules | grey |
 

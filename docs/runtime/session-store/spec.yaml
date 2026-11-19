@@ -12,7 +12,7 @@ summary: >
   unreadable.
 code:
   - path: utils/session-store.js
-    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, serializeSession, countRoles, formatSession, parseSession, sessionChunks, sessionUsage, sessionModeState, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
+    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, sessionDir, serializeSession, countRoles, formatSession, parseSession, sessionChunks, sessionUsage, sessionModeState, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
   - path: app/session-recorder.js
     symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
   - path: utils/file-io.js
@@ -25,6 +25,7 @@ tests:
       - "sessions live under the gitignored agent/ tree by default"
       - "sessionId() derives a sortable, date-named id from a Date"
       - "sessionPath() refuses ids that could escape the sessions directory"
+      - "sessionDir() names the folder of one session, next to its file"
       - "serializeSession() records the metadata and the chunks verbatim"
       - "the file on disk is pretty-printed JSON ending in a newline"
       - "parseSession() rejects junk and unsupported versions instead of guessing"

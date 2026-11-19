@@ -1,44 +1,35 @@
-import {
-  TASK_FILE,
-  PLAN_FILE
-} from '../config/constants.js';
-import { readFileIfExists, writeFileVerified } from '../utils/file-io.js';
+import { TASK_FILE, PLAN_FILE } from '../config/constants.js';
+import { readTaskContent, readPlanContent, writeTaskContent, writePlanContent, trackingPaths } from '../utils/tracking-store.js';
+import { completeStep, refusal } from '../utils/tracking-step.js';
 import { defineTool } from '../utils/tool-schema.js';
-import { resetTaskPulse, getSession, getSessionTaskContent, getSessionPlanContent, setSessionTaskContent, setSessionPlanContent } from '../utils/host.js';
+import { resetTaskPulse, notifyTrackingUpdate } from '../utils/host.js';
+import { parseCheckboxItems, findCheckboxItem, readStatusLine, planProgress } from '../utils/plan-file.js';
 import {
-  parseCheckboxItems,
-  findCheckboxItem,
-  markCheckboxItem,
-  readStatusLine,
-  replaceStatusLine,
-  parsePlanSteps,
-  findPlanStep,
-  markPlanStepDone,
-  planProgress,
-  renderPlan
-} from '../utils/plan-file.js';
+  renderTaskFile, renderPlanFile, readTitle, extractNotes, normalizeStatus, trackingTemplate,
+} from '../utils/tracking-format.js';
 
 /**
- * `update_task` implements the task.md protocol in one place:
+ * `update_task` implements the tracking protocol in one place:
  *
- *   1. read the item list (checkbox lines like `- [ ] ...` / `- [x] ...`),
- *   2. mark exactly one item done (or advance the "status:" line),
- *   3. print the next item in line,
- *   4. reset implementation_plan.md with the steps for that next item, and
+ *   1. read the item list (the `- [ ]` / `- [x]` entries of the session's `task.md`),
+ *   2. mark exactly one item done (or advance its `status:` line),
+ *   3. report the next item in line,
+ *   4. reset the plan for that next item, and
  *   5. tick one plan *step* as soon as it is verified (`step`).
  *
- * It is intentionally deterministic: the model supplies the plan text, the tool
- * does the file bookkeeping with verified atomic writes and refuses ambiguous
- * matches (0 or >1 items).
+ * It is deliberately deterministic: the model supplies the text, the tool does the
+ * bookkeeping and refuses ambiguous matches (0 or >1 entries). Every write is
+ * **re-rendered** through `utils/tracking-format.js`, so the files on disk are always
+ * the canonical document — title, `status:` line, one section of entries — no matter
+ * what the model or a human left there. Which folder those files live in is
+ * `utils/tracking-store.js`'s decision: one pair per session.
  *
- * The checkbox machinery (parsing, strict selection, the in-place tick, the plan
- * rendering) lives in utils/plan-file.js, so the step-level editing — the part
- * that makes the plan move while an item is still in flight — is pure and unit
- * tested on plain text. `renderPlan` stays exported from here for callers that
- * only know this tool.
+ * The pure text machinery is elsewhere, so the whole protocol is unit tested on plain
+ * strings: `utils/plan-file.js` (parsing, strict selection), `utils/tracking-format.js`
+ * (the canonical shape) and `utils/tracking-step.js` (the `step` action).
  */
 
-/** The items of task.md: its checkbox lines. */
+/** The items of `task.md`: its checkbox entries. */
 export function parseTaskItems(content) {
   return parseCheckboxItems(content);
 }
@@ -56,9 +47,18 @@ export function findTaskItem(items, { index, query }) {
   return findCheckboxItem(items, { index, query, label: 'task item', queryParam: 'item', code: 'ITEM_NOT_FOUND' });
 }
 
-/** Mark the given item line as done (or undone), preserving indentation and marker. */
+/** Tick or untick one item line in place, preserving its marker. */
 export function markItemDone(content, item, done = true) {
-  return markCheckboxItem(content, item, done, { label: 'checkbox item' });
+  const entries = parseCheckboxItems(content).map((entry) => ({
+    text: entry.text,
+    done: entry.line === item.line ? done : entry.done,
+  }));
+  return renderTaskFile({
+    title: readTitle(content) || undefined,
+    status: normalizeStatus(readStatusLine(content) ?? 'pending'),
+    items: entries,
+    notes: extractNotes(content),
+  });
 }
 
 /** Next not-done item after the given one (by line order). */
@@ -69,22 +69,22 @@ export function nextPendingItem(items, afterItem) {
   return candidates[0] || null;
 }
 
-/** A structured refusal, so a failed selection never touches a file. */
-function refusal(code, message, extra = {}) {
-  return JSON.stringify({ status: 'error', code, message, ...extra });
+/** The canonical plan body, for callers that only know this tool. */
+export function renderPlan(parts = {}) {
+  return renderPlanFile(parts);
 }
 
 const { definition, execute } = defineTool({
   name: 'update_task',
   description:
-    `Mark one item in ${TASK_FILE} as done (or update its "status:" line), tick one verified step of ${PLAN_FILE}, report the next pending item, and rewrite ${PLAN_FILE} with the steps for that item. This is the task-tracking loop required by task.md.`,
+    `Mark one item of the session's ${TASK_FILE} as done (or update its "status:" line), tick one verified step of ${PLAN_FILE}, report the next pending item, and reset ${PLAN_FILE} with the steps for that item. This is the task-tracking loop. Both files live in the session folder (agent/sessions/<id>/) and are written in one canonical shape, which is what every write re-renders — a malformed draft is normalised, never kept:\n\n${TASK_FILE}:\n\n${trackingTemplate('task')}\n\n${PLAN_FILE}, titled with the item the plan is for:\n\n${trackingTemplate('plan')}\n\nNever author either file with write_file (the draft is normalised) or patch_file (refused as tool-owned): this tool owns them.`,
   parameters: {
     properties: {
       action: {
         type: 'string',
         enum: ['complete', 'start', 'step', 'status', 'list'],
         description:
-          'complete = mark an item done and start the next one; start = reset the plan for an item; step = tick one verified step of the current plan; status = only update the status line; list = report progress without editing.'
+          'complete = mark an item done and start the next one; start = reset the plan for an item; step = tick one verified step of the current plan; status = only update the status line; list = report progress and the format check without editing.'
       },
       item: {
         type: 'string',
@@ -104,7 +104,7 @@ const { definition, execute } = defineTool({
       },
       status: {
         type: 'string',
-        description: 'New value for the "status:" line, e.g. "in progress" or "done".'
+        description: 'New value for the "status:" line: "pending", "done", or "in progress: <item>".'
       },
       steps: {
         type: 'array',
@@ -125,17 +125,10 @@ const { definition, execute } = defineTool({
       return refusal('INVALID_ACTION', `Unknown action ${JSON.stringify(action)}. Use complete, start, step, status or list.`);
     }
 
-    // Read from session if available, otherwise fall back to files
-    const session = getSession();
-    let taskContent;
-    if (session) {
-      taskContent = getSessionTaskContent() || '';
-    } else {
-      taskContent = readFileIfExists(TASK_FILE);
-    }
-    
+    // One rule decides where the checklist comes from (utils/tracking-store.js).
+    const taskContent = readTaskContent();
     if (taskContent === null || taskContent === undefined) {
-      return refusal('TASK_FILE_NOT_FOUND', `${TASK_FILE} does not exist.`);
+      return refusal('TASK_FILE_NOT_FOUND', `There is no ${TASK_FILE} for this session.`);
     }
 
     const items = parseTaskItems(taskContent);
@@ -147,17 +140,13 @@ const { definition, execute } = defineTool({
     };
 
     if (action === 'list') {
-      let planContent;
-      if (session) {
-        planContent = getSessionPlanContent() || '';
-      } else {
-        planContent = readFileIfExists(PLAN_FILE);
-      }
+      const planContent = readPlanContent();
+      const paths = trackingPaths();
       return JSON.stringify({
         status: 'ok',
         action,
-        taskFile: TASK_FILE,
-        planFile: PLAN_FILE,
+        taskFile: paths.task,
+        planFile: paths.plan,
         taskStatus: currentStatus,
         progress,
         planProgress: planContent === null ? null : planProgress(planContent),
@@ -166,26 +155,31 @@ const { definition, execute } = defineTool({
       });
     }
 
-    if (action === 'step') return await completeStep(args, taskContent, currentStatus, progress);
+    // `step` only ever touches the plan, so it is its own module.
+    if (action === 'step') {
+      return await completeStep(args, { taskStatus: currentStatus, progress, paths: trackingPaths() });
+    }
 
-    const selection = action === 'status' ? { item: null, error: null } : findTaskItem(items, { index: args.index, query: args.item });
+    const selection = action === 'status'
+      ? { item: null, error: null }
+      : findTaskItem(items, { index: args.index, query: args.item });
     if (selection.error) {
       return refusal('ITEM_NOT_FOUND', selection.error, {
         items: items.map((item, i) => ({ index: i + 1, done: item.done, text: item.text }))
       });
     }
 
-    let updatedTask = taskContent;
     let completed = null;
     let nextItem = null;
+    let done = items.map((item) => ({ text: item.text, done: item.done, line: item.line }));
 
     if (action === 'complete') {
       completed = selection.item;
       if (completed.done) {
         return JSON.stringify({ status: 'skipped', code: 'ALREADY_DONE', message: `Item ${JSON.stringify(completed.text)} is already marked done.`, progress });
       }
-      updatedTask = markItemDone(updatedTask, completed, true);
-      nextItem = nextPendingItem(parseTaskItems(updatedTask), { ...completed, done: true });
+      done = done.map((entry) => (entry.text === completed.text ? { ...entry, done: true } : entry));
+      nextItem = nextPendingItem(done, completed);
     } else {
       nextItem = selection.item || nextPendingItem(items);
     }
@@ -194,56 +188,64 @@ const { definition, execute } = defineTool({
       ? (nextItem ? `in progress: ${nextItem.text}` : 'done')
       : (typeof args.status === 'string' && args.status.trim() !== '' ? args.status.trim() : currentStatus);
 
-    updatedTask = replaceStatusLine(updatedTask, newStatus);
+    // The checklist is re-rendered, never patched: the title and the human notes of
+    // the file survive, and everything else is the canonical document.
+    const taskWrite = writeTaskContent(renderTaskFile({
+      title: readTitle(taskContent) || undefined,
+      status: newStatus || 'pending',
+      items: done,
+      notes: extractNotes(taskContent),
+    }));
 
-    // Write to session if available, otherwise write to file
-    let taskWrite = null;
-    if (session) {
-      setSessionTaskContent(updatedTask);
-      taskWrite = updatedTask !== taskContent;
-    } else {
-      taskWrite = updatedTask === taskContent ? null : writeFileVerified(TASK_FILE, updatedTask);
-    }
-    
     const planTarget = nextItem || completed;
-    const newPlanContent = renderPlan({
+    const planWrite = writePlanContent(renderPlanFile({
       item: planTarget,
       status: newStatus || 'in progress',
       steps: Array.isArray(args.steps) ? args.steps : [],
       notes: Array.isArray(args.notes) ? args.notes : []
-    });
-    
-    let planWrite = null;
-    if (session) {
-      setSessionPlanContent(newPlanContent);
-      planWrite = true;
-    } else {
-      planWrite = writeFileVerified(PLAN_FILE, newPlanContent);
-    }
+    }));
 
     // A completed item is one of the two moments the model-call pulse starts again
     // from 0 (docs/context/call-pulse): the counter follows the work, not the
-    // process. `status` is a metadata edit and `step` ticks a step of the item
-    // still in flight, so neither of them resets anything.
+    // process. `status` is a metadata edit and `step` ticks a step of the item still
+    // in flight, so neither of them resets anything.
     const pulseReset = action === 'complete' ? resetTaskPulse('item-completed') : false;
+
+    // The user watches the conversation, not the two files, so a milestone the tool just
+    // wrote is announced in the transcript as a `[Tracking]` row (app/tracking-notice.js),
+    // in the palette's own bright-green + bold. Presentation only: the line is not a
+    // chunk, so it never reaches the model or a session file, and with no front end
+    // registered (a bare tool call) the report is a no-op.
+    const trackingLines = notifyTrackingUpdate({
+      action,
+      completed: completed ? completed.text : null,
+      next: nextItem ? nextItem.text : null,
+      status: newStatus || currentStatus,
+      progress: { total: items.length, done: done.filter((item) => item.done).length },
+      planTarget: planTarget ? planTarget.text : null,
+      planSteps: Array.isArray(args.steps) ? args.steps.length : 0,
+    });
 
     return JSON.stringify({
       status: 'success',
       action,
-      taskFile: TASK_FILE,
-      planFile: PLAN_FILE,
+      taskFile: taskWrite?.path ?? trackingPaths().task,
+      planFile: planWrite?.path ?? trackingPaths().plan,
       completed: completed ? completed.text : null,
       next: nextItem ? nextItem.text : null,
       taskStatus: newStatus || currentStatus,
       progress: {
         total: items.length,
-        done: items.filter((item) => item.done).length + (completed ? 1 : 0),
-        pending: items.filter((item) => !item.done).length - (completed ? 1 : 0)
+        done: done.filter((item) => item.done).length,
+        pending: done.filter((item) => !item.done).length
       },
       taskWritten: Boolean(taskWrite),
       planWritten: Boolean(planWrite),
       // True when this call put the live model-call pulse back to 0.
       pulseReset,
+      // The `[Tracking]` rows the transcript showed, so the user (and the tests) can see
+      // exactly what was announced. Empty when no front end is registered.
+      trackingLines,
       message: completed
         ? `Marked done: ${completed.text}. Next: ${nextItem ? nextItem.text : 'none'}.`
         : `Plan reset for: ${planTarget ? planTarget.text : 'harness work'}.`
@@ -251,77 +253,4 @@ const { definition, execute } = defineTool({
   }
 });
 
-/**
- * `action: "step"` — tick exactly one verified step of the current plan.
- *
- * This is what makes the plan honest *while* an item is in flight: the plan file
- * is the only thing written, the task list is untouched (`taskWritten: false`),
- * and the moment the last step is ticked the plan's own `status:` line records
- * that the item is verified.
- */
-async function completeStep(args, taskContent, taskStatus, progress) {
-  let planContent;
-  const session = getSession();
-  if (session) {
-    planContent = getSessionPlanContent();
-  } else {
-    planContent = readFileIfExists(PLAN_FILE);
-  }
-  
-  if (planContent === null) {
-    return refusal('PLAN_FILE_NOT_FOUND', `${PLAN_FILE} does not exist yet; start an item before ticking its steps.`);
-  }
-
-  const steps = parsePlanSteps(planContent);
-  const selection = findPlanStep(steps, { index: args.stepIndex, query: args.step });
-  if (selection.error) {
-    return refusal('STEP_NOT_FOUND', selection.error, {
-      steps: steps.map((step, i) => ({ index: i + 1, done: step.done, text: step.text }))
-    });
-  }
-
-  const step = selection.item;
-  if (step.done) {
-    return JSON.stringify({
-      status: 'skipped',
-      code: 'ALREADY_DONE',
-      message: `Plan step ${JSON.stringify(step.text)} is already ticked.`,
-      planProgress: planProgress(planContent)
-    });
-  }
-
-  let updatedPlan = markPlanStepDone(planContent, step, true);
-  const after = planProgress(updatedPlan);
-  const newStatus = typeof args.status === 'string' && args.status.trim() !== ''
-    ? args.status.trim()
-    : (after.pending === 0 ? 'done — every step verified' : readStatusLine(updatedPlan));
-  updatedPlan = replaceStatusLine(updatedPlan, newStatus);
-
-  let planWrite;
-  if (session) {
-    setSessionPlanContent(updatedPlan);
-    planWrite = true;
-  } else {
-    planWrite = writeFileVerified(PLAN_FILE, updatedPlan);
-  }
-
-  return JSON.stringify({
-    status: 'success',
-    action: 'step',
-    taskFile: TASK_FILE,
-    planFile: PLAN_FILE,
-    step: step.text,
-    planStatus: newStatus || null,
-    taskStatus,
-    planProgress: after,
-    progress,
-    taskWritten: false,
-    planWritten: Boolean(planWrite),
-    message: after.pending === 0
-      ? `Ticked the last plan step: ${step.text}. Every step of the current item is verified.`
-      : `Ticked plan step: ${step.text}. ${after.pending} step(s) still pending.`
-  });
-}
-
-export { renderPlan };
 export { definition, execute };

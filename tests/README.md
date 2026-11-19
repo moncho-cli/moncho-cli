@@ -22,6 +22,10 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | -------------------------------- | ----------------------------------------------------------- |
 | `docs-realm.test.js` | The three realms are linked: every spec exists, its code refs resolve to real symbols, its named cases exist, every source module is documented. |
 | `harness-tools.test.js` | The tool contract (`intent`), the read_file delimiters, the verified writes and the task.md protocol. |
+| `tracking-format.test.js` | The canonical shape of both tracking files: the closed status set, the skeleton, the validator, the legacy upgrade, and the template the model is shown in the prompt and the tool description. |
+| `tracking-store.test.js` | Where the pair lives: one folder per session, the file/record/root read order, the mirrored writes, and the seeding that never recreates the root files. |
+| `tracking-fence.test.js` | Who may author them: a `write_file` draft re-rendered into the canonical document, and a `patch_file` into one refused as tool-owned. |
+| `tracking-notice.test.js` | That an update is *visible*: the `[Tracking]` rows an item completion, a plan reset and a ticked step print, and the contrasting bright-green they are painted in. |
 | `context-window.test.js` | The context machinery: token estimation, the 80/20 compaction, the live window and the `compact_context` tool. |
 | `command-sandbox.test.js` | The sandbox rules: the allow-list, the shell-free refusals, and the structured npm failures. |
 | `command-output-window.test.js` | A command result as a document: the YAML header, the `---` delimiter, the `head`/`tail` window, and the structured failure envelope. |

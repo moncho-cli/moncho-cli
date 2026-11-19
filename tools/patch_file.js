@@ -1,5 +1,11 @@
 import { applyPatch, PatchError } from '../utils/patch_lib.js';
 import { defineTool } from '../utils/tool-schema.js';
+import { trackingFenceRefusal } from '../utils/tracking-fence.js';
+
+/**
+ * The two tracking files belong to `update_task` (utils/tracking-fence.js), so a patch
+ * that names one is refused with the tool to use instead of being applied.
+ */
 
 function errorResponse(error) {
   const code = error.code || (error instanceof SyntaxError ? 'INVALID_ARGUMENTS' : 'UNEXPECTED_ERROR');
@@ -43,6 +49,11 @@ const { definition, execute } = defineTool({
       if (typeof args.patchStr !== 'string' || args.patchStr.trim() === '') {
         throw new PatchError('INVALID_ARGUMENTS', 'patch_file requires a non-empty "patchStr" unified diff string.');
       }
+
+      // A tracking file is rewritten whole by `update_task`, so a diff into one would
+      // be undone by the next tracking call (utils/tracking-fence.js).
+      const fenced = trackingFenceRefusal(args.path);
+      if (fenced) return JSON.stringify(fenced);
 
       return JSON.stringify(applyPatch(args.patchStr, args.path));
     } catch (error) {

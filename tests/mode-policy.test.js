@@ -83,6 +83,23 @@ test('Design writes the two tracking files and nothing else', () => {
   assert.equal(refusalForMode(MODES.DESIGN, call('patch_file', { path: './task.md' })), null);
   assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path: 'implementation_plan.md' })), null);
 
+  // A session writes its own pair where they now live, under agent/sessions/<id>/.
+  for (const path of [
+    'agent/sessions/2026-02-14T10-30-00-000Z/task.md',
+    './agent/sessions/s1/implementation_plan.md',
+  ]) {
+    assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path })), null, path);
+  }
+  // But only there: one folder deep, and only the two names.
+  for (const path of [
+    'agent/sessions/task.md',
+    'agent/sessions/a/b/task.md',
+    'agent/sessions/s1/notes.md',
+    'agent/sessions/s1/../task.md',
+  ]) {
+    assert.ok(refusalForMode(MODES.DESIGN, call('write_file', { path })), path);
+  }
+
   const source = refusalForMode(MODES.DESIGN, call('write_file', { path: 'app/tui.js' }));
   assert.equal(source.code, TOOL_GUARD_REFUSAL);
   assert.equal(source.mode, 'design');
