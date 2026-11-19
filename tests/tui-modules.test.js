@@ -81,6 +81,11 @@ test('formatCompactionNotice() describes the split, tokens only when known', () 
   const bare = formatCompactionNotice({ olderChunks: 1, keptChunks: 1 });
   assert.match(bare, /1 older chunk\(s\)/);
   assert.doesNotMatch(bare, /tokens\)/, 'no token counts means no token suffix');
+  assert.doesNotMatch(bare, /carried/, 'a compaction that carried nothing says nothing');
+
+  // The user's own message is the one chunk of the evicted block kept as written.
+  const carried = formatCompactionNotice({ olderChunks: 3, keptChunks: 2, carriedChunks: 1, olderTokens: 900, afterTokens: 120 });
+  assert.match(carried, /kept 2 newest chunk\(s\), last user message carried \(900 -> 120 tokens\)/);
 
   assert.match(formatCompactionNotice(), /0 older chunk\(s\)/, 'junk stats do not throw');
 });

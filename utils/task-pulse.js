@@ -63,11 +63,11 @@ export function formatPulseText({ count = 0, limit = PULSE_LIMIT } = {}) {
   const remaining = cap - used;
   if (remaining > 0) {
     return `${PULSE_MARKER} model call ${used} of ${cap} — ${remaining} left.`
-      + ' Reset to 0 by completing a task.md item (update_task) or by a compaction.';
+      + ' Reset to 0 by completing a task.md item (update_task).';
   }
   return `${PULSE_MARKER} model call ${used} of ${cap} — hard limit reached.`
-    + ' Stop starting new work: complete the current task.md item (update_task action "complete")'
-    + ' or compact the context now; either one resets the pulse to 0.';
+    + ' Stop starting new work and complete the current task.md item'
+    + ' (update_task action "complete"), which resets the pulse to 0.';
 }
 
 /** The transient notice raised once, the first time a call goes past the cap. */
@@ -75,7 +75,7 @@ export function formatPulseLimitNotice({ count = 0, limit = PULSE_LIMIT } = {}) 
   const used = Math.max(0, Math.trunc(Number(count) || 0));
   const cap = normalizePulseLimit(limit);
   return `Model-call pulse passed its hard limit: call ${used} of ${cap}.`
-    + ' Complete a task.md item or run a compaction to reset it.';
+    + ' Complete a task.md item to reset it.';
 }
 
 /**

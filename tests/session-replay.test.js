@@ -83,6 +83,22 @@ test('replayChunks() rebuilds the dialogue the live loop had written', () => {
   assert.equal(ops[3].body, 'line one\nline two\nline three', 'the intent is unwrapped from the body');
 });
 
+test('a carried user chunk replays as the user echo it was', () => {
+  // The window a compaction leaves behind: the summary, the user's last message
+  // carried verbatim, then the kept tail (`docs/context/compaction`).
+  const carried = [
+    { role: 'system', content: '[compacted summary of earlier context]\nsummary', compacted: true, summarized_chunks: 4 },
+    { role: 'user', content: 'the ask that must survive' },
+    { role: 'assistant', content: 'All done.' },
+  ];
+  const { ops, notices } = replayChunks(carried);
+
+  assert.match(ops[0].text, /earlier context was compacted/);
+  assert.equal(ops[1].text, 'You:\n> the ask that must survive', 'the carried message replays as the user echo');
+  assert.match(ops[2].text, /All done\./);
+  assert.equal(notices, 1);
+});
+
 test('the tool name is recovered from the call the result answers', () => {
   // the tool chunk records the call id only, so the name comes from the
   // assistant chunk that asked for it

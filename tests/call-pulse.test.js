@@ -62,7 +62,7 @@ test('formatPulseText stays disabled past the hard limit as well', () => {
 test('formatPulseLimitNotice says what happened and what to do about it', () => {
   const notice = formatPulseLimitNotice({ count: 31, limit: 30 });
   assert.match(notice, /passed its hard limit: call 31 of 30/);
-  assert.match(notice, /Complete a task\.md item or run a compaction/);
+  assert.match(notice, /Complete a task\.md item to reset it/);
 });
 
 test('createTaskPulse counts calls, reports the first crossing once, and resets with a reason', () => {

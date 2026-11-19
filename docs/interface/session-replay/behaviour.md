@@ -23,6 +23,11 @@ chunks back into the display the live loop produced for them
 | `assistant` with prose | the reply, bracketed by the `--- AI Response ---` delimiters the loop prints |
 | `system` + `compacted: true` | a `[Context]` notice that earlier context was summarised |
 
+- A compaction leaves a real `user` chunk in the window when it carries the user's
+  last message verbatim (`docs/context/compaction`), and that chunk replays like any
+  other: the reloaded transcript shows the `You:` echo again, in the place the
+  window holds it.
+
 - The **tool name is not stored** in a tool chunk (only the `tool_call_id` and the
   body), so it is recovered by matching the id against the preceding assistant
   `tool_calls`. A chunk with no recorded call still renders, under a generic

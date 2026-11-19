@@ -122,7 +122,11 @@ test('an over-budget window is compacted with a neutral summariser call', () => 
       !request.messages.some((m) => /MONCHO-CLI/.test(m.content || '')),
       'the summariser call must not inherit the agent system prompt'
     );
-    assert.match(request.messages[1].content, /Summarise the following/);
+    // The request is self-contained: its own instruction and the evicted chunks,
+    // and nothing else (no agent prompt, no pulse line).
+    assert.match(request.messages[1].content, /^Compaction request: summarise the \d+ context chunk\(s\)/);
+    assert.match(request.messages[1].content, /nothing else is sent with this request/);
+    assert.equal(request.messages.length, 2, 'the summariser call is the instruction plus the payload');
   }
 
   // The summary chunk then travels in the *next* normal request.
@@ -154,6 +158,35 @@ test('maybeCompact keeps the newest chunks and evicts the rest', async () => {
   assert.equal(window.chunks[0].compacted, true);
   assert.equal(window.chunks.at(-1).content, 'latest question');
   assert.ok(!window.chunks.some((c) => c.content === 'A'.repeat(200)), 'evicted chunks must be gone');
+});
+
+test('a compaction carries the last user message out of the evicted block', async () => {
+  const transcript = [];
+  const window = new ContextWindow({ maxTokens: 40, tools: () => tools });
+  const manager = new ConversationManager(toolFunctions, () => tools, () => null, {
+    log: (line) => transcript.push(String(line)),
+    contextWindow: window
+  });
+
+  window.addMany([
+    { role: 'user', content: 'the ask that must survive' },
+    { role: 'assistant', content: 'B'.repeat(2000) },
+    { role: 'assistant', content: 'C'.repeat(2000) },
+    { role: 'user', content: 'tail' }
+  ]);
+
+  const report = await manager.maybeCompact(null, { force: true });
+
+  assert.equal(report.compacted, true);
+  assert.equal(report.carriedChunks, 1, 'the compaction reports the message it carried');
+  assert.equal(window.chunks[0].compacted, true, 'the summary is still the first chunk');
+  assert.equal(window.chunks[1].role, 'user', 'the user message rides just after the summary');
+  assert.equal(window.chunks[1].content, 'the ask that must survive');
+  assert.ok(!window.chunks.some((c) => c.content === 'B'.repeat(2000)), 'the rest of the block is gone');
+  assert.ok(
+    transcript.some((line) => line.includes('carrying the last user message verbatim')),
+    'the transcript says the message was carried'
+  );
 });
 
 test('a summariser failure never breaks the task loop', async () => {

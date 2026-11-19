@@ -245,7 +245,7 @@ async function main() {
   tui?.setTokens(manager.contextWindow.usage());
   log(`\nProvider/model: ${label}`);
   log(`Session file: ${sessions.path} (saved after every turn)`);
-  log(`Context window budget: ${formatContextLimit(contextSize)} tokens (compaction keeps the newest 20%)`);
+  log(`Context window budget: ${formatContextLimit(contextSize)} tokens (compaction keeps the newest 20% and the last user message)`);
 
   log("\nChat initialized. Type 'exit' to quit.");
   log("ESC or Ctrl+C cancels a running task (press twice to confirm) and quits when idle.");

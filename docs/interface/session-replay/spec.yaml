@@ -31,6 +31,7 @@ tests:
   - path: tests/session-replay.test.js
     cases:
       - "replayChunks() rebuilds the dialogue the live loop had written"
+      - a carried user chunk replays as the user echo it was
       - "the tool name is recovered from the call the result answers"
       - "a chunk list that does not match a live session still replays"
       - "a failed tool result keeps its error marker out of the body"

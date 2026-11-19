@@ -36,7 +36,7 @@ export function planCompaction(contextWindow, { force = false, dryRun = true } =
 const { definition, execute } = defineTool({
   name: 'compact_context',
   description:
-    `Summarise and shrink the conversation context window when it exceeds CONTEXT_MAX_LENGTH (${CONTEXT_MAX_LENGTH}) tokens. The older 80% of the window is replaced by one summary chunk covering original intent, tasks done and things pending; the newest 20% is kept verbatim.`,
+    `Summarise and shrink the conversation context window when it exceeds CONTEXT_MAX_LENGTH (${CONTEXT_MAX_LENGTH}) tokens. The older 80% of the window is replaced by one summary chunk covering original intent, tasks done and things pending; the newest 20% is kept verbatim, and the last message the user wrote inside the summarised block is carried over verbatim so the user's own intent survives.`,
   parameters: {
     properties: {
       force: {

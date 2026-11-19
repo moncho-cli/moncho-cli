@@ -14,11 +14,15 @@
 export function formatCompactionNotice(lastCompaction = {}) {
   const older = Number(lastCompaction.olderChunks) || 0;
   const kept = Number(lastCompaction.keptChunks) || 0;
+  // The user's own message is re-inserted verbatim after the summary, so the
+  // marker says so: it is the one chunk of the evicted block that was not
+  // paraphrased (`utils/compaction.js`).
+  const carried = Number(lastCompaction.carriedChunks) > 0 ? ', last user message carried' : '';
   const tokens =
     lastCompaction.olderTokens != null && lastCompaction.afterTokens != null
       ? ` (${lastCompaction.olderTokens} -> ${lastCompaction.afterTokens} tokens)`
       : '';
-  return `[Context] compaction fired: ${older} older chunk(s) -> summary, kept ${kept} newest chunk(s)${tokens}.`;
+  return `[Context] compaction fired: ${older} older chunk(s) -> summary, kept ${kept} newest chunk(s)${carried}${tokens}.`;
 }
 
 /**

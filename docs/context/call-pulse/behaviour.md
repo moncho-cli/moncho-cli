@@ -21,7 +21,7 @@ the agent system prompt (`api/ollama.js#callOllama` prepends `prompt.md`, then
 conversation):
 
 ```
-[pulse] model call 4 of 30 — 26 left. Reset to 0 by completing a task.md item (update_task) or by a compaction.
+[pulse] model call 4 of 30 — 26 left. Reset to 0 by completing a task.md item (update_task).
 ```
 
 That line is **disabled right now**, and the reason is worth recording because it is
@@ -120,6 +120,8 @@ number it cannot see. It asks for the property the limit was there to protect �
 loop over insignificant research, lock in `task.md` and `implementation_plan.md` early,
 never re-read what is already held — and to treat the one crossing notice as the signal
 to stop exploring and finish the item in flight.
+
+Its advice names `update_task` as the reset, not `compact_context`: compaction is a host decision the agent does not operate (`docs/context/compaction`), so the prompt no longer mentions it. The counter itself still resets on a compaction.
 
 <!--
 implementation: utils/task-pulse.js, app/conversation-manager.js,

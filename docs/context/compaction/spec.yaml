@@ -1,17 +1,21 @@
 id: context/compaction
 domain: context
-title: 80/20 token-mass compaction with a neutral summariser
+title: 80/20 token-mass compaction with a self-contained neutral summariser
 status: active
 summary: >
   An over-budget window is compacted by summarising the older 80% (by token mass)
   into one marked summary chunk and keeping the newest 20% verbatim, never
-  evicting the newest chunk. The summariser runs without the agent system prompt.
-  An empty summary or a provider error leaves the window untouched. compact_context
-  reaches the live window via the host registry and defers the real call to the
-  host loop.
+  evicting the newest chunk. The last message the user wrote inside the summarised
+  block is carried over verbatim between the summary and the kept tail by code, not
+  by the model, unless that would not still shrink the window. The summariser call
+  is a single self-contained request — its own instruction plus the evicted chunks,
+  with the agent system prompt deliberately absent — and prompt.md says nothing
+  about compaction at all. An empty summary or a provider error leaves the window
+  untouched. compact_context reaches the live window via the host registry and
+  defers the real call to the host loop.
 code:
   - path: utils/compaction.js
-    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, compactChunks, needsCompaction]
+    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, lastUserChunk, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, compactChunks, needsCompaction]
   - path: app/context-window.js
     symbols: [ContextWindow]
   - path: app/compaction-runner.js
@@ -32,10 +36,13 @@ tests:
       - the older 80% / newest 20% split is driven by token mass
       - a window of one chunk is never compacted away
       - compactChunks replaces the old block with one summary chunk and keeps the tail verbatim
+      - the last user message of the evicted block is carried verbatim
+      - "a carry that would not shrink the window is dropped, and no user chunk means none"
       - compactChunks can report the split without calling the model
       - compactChunks refuses to squash an empty older block
       - an empty summary is rejected so the window is left unchanged
       - buildSummaryChunk marks the compacted chunk
+      - the compaction request is self-contained and the agent prompt says nothing about it
       - ContextWindow reports usage and compacts in place when over budget
       - ContextWindow compaction is skipped while inside the budget
       - a failed summariser call leaves the window untouched
@@ -44,6 +51,7 @@ tests:
     cases:
       - an over-budget window is compacted with a neutral summariser call
       - maybeCompact keeps the newest chunks and evicts the rest
+      - a compaction carries the last user message out of the evicted block
       - a summariser failure never breaks the task loop
       - the compaction announces itself in the transcript before it runs
       - detectCompactionRequest only fires on deferred compact_context results

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import { ContextWindow } from '../app/context-window.js';
 import { detectCompactionRequest } from '../app/conversation-manager.js';
@@ -13,7 +14,7 @@ import {
   formatTokenCount,
   formatUsage
 } from '../utils/tokens.js';
-import { splitByTokenBudget, compactChunks, buildSummaryChunk } from '../utils/compaction.js';
+import { SUMMARIZER_SYSTEM_PROMPT, buildSummaryPrompt, splitByTokenBudget, compactChunks, buildSummaryChunk, lastUserChunk } from '../utils/compaction.js';
 import { COMPACTION_SUMMARY_PREFIX } from '../config/constants.js';
 
 /**
@@ -77,8 +78,8 @@ test('a window of one chunk is never compacted away', () => {
 
 test('compactChunks replaces the old block with one summary chunk and keeps the tail verbatim', async () => {
   const chunks = [
-    chunk('AAAA'.repeat(100)),
-    chunk('BBBB'.repeat(100)),
+    chunk('AAAA'.repeat(100), 'assistant'),
+    chunk('BBBB'.repeat(100), 'assistant'),
     chunk('recent-1'),
     chunk('recent-2')
   ];
@@ -100,6 +101,52 @@ test('compactChunks replaces the old block with one summary chunk and keeps the 
   assert.deepEqual(result.chunks.slice(1), kept);
   assert.ok(result.stats.afterTokens < result.stats.totalTokens, 'compaction must shrink the window');
   assert.ok(result.summary.includes('SUMMARY'));
+});
+
+test('the last user message of the evicted block is carried verbatim', async () => {
+  const ask = chunk('keep my words exactly', 'user');
+  const chunks = [chunk('B'.repeat(400), 'assistant'), ask, chunk('the newest tail', 'assistant')];
+  const { older, kept } = splitByTokenBudget(chunks);
+  assert.equal(older.at(-1), ask, 'the ask must sit inside the block being summarised');
+  assert.equal(kept.length, 1, 'the newest chunk survives verbatim');
+
+  const result = await compactChunks(chunks, { callModel: async () => 'condensed history' });
+
+  assert.equal(result.compacted, true);
+  assert.equal(result.chunks[0].compacted, true, 'the summary still comes first');
+  assert.equal(result.chunks[1], ask, 'the user chunk is re-inserted by reference, unaltered');
+  assert.deepEqual(result.chunks[1], { role: 'user', content: 'keep my words exactly' });
+  assert.deepEqual(result.chunks.slice(2), kept, 'the kept tail is untouched and still last');
+  assert.equal(result.stats.carriedChunks, 1);
+  assert.ok(result.stats.afterTokens < result.stats.totalTokens, 'the carry must not grow the window');
+  // The carry is code, not a model answer: this summary never mentions the user's
+  // words, and they are in the window all the same.
+  assert.doesNotMatch(result.chunks[0].content, /keep my words exactly/);
+  assert.equal(result.chunks[1].content, 'keep my words exactly');
+});
+
+test('a carry that would not shrink the window is dropped, and no user chunk means none', async () => {
+  // The user's message *is* the bulk of the evicted block: re-inserting it would
+  // hand back most of the tokens the compaction just reclaimed.
+  const huge = chunk('A'.repeat(400), 'user');
+  const heavy = await compactChunks(
+    [huge, chunk('B'.repeat(400), 'assistant'), chunk('latest question')],
+    { callModel: async () => 'condensed history' }
+  );
+  assert.equal(heavy.compacted, true);
+  assert.equal(heavy.stats.carriedChunks, 0, 'a carry that would not shrink the window is skipped');
+  assert.ok(!heavy.chunks.includes(huge), 'the oversized user chunk is evicted with the rest');
+
+  // A block with no user chunk at all has nothing to carry.
+  const assistantOnly = await compactChunks(
+    [chunk('B'.repeat(400), 'assistant'), chunk('C'.repeat(400), 'assistant'), chunk('D'.repeat(400), 'assistant')],
+    { callModel: async () => 'condensed history' }
+  );
+  assert.equal(assistantOnly.stats.carriedChunks, 0);
+  assert.equal(lastUserChunk([]), null);
+  assert.equal(lastUserChunk(null), null);
+  assert.equal(lastUserChunk([chunk('one', 'assistant')]), null);
+  assert.equal(lastUserChunk([chunk('one', 'user'), chunk('two', 'user')]).content, 'two');
 });
 
 test('compactChunks can report the split without calling the model', async () => {
@@ -130,6 +177,24 @@ test('buildSummaryChunk marks the compacted chunk', () => {
   assert.equal(built.summarized_chunks, 3);
   assert.ok(built.content.startsWith(COMPACTION_SUMMARY_PREFIX));
   assert.ok(built.content.endsWith('body'));
+});
+
+test('the compaction request is self-contained and the agent prompt says nothing about it', () => {
+  // The summariser is asked with its own instruction plus the evicted chunks: the
+  // agent system prompt deliberately stays out of it (`systemPrompt: false`), and
+  // the agent prompt itself carries no compaction instructions at all.
+  assert.match(SUMMARIZER_SYSTEM_PROMPT, /^You are the context-compaction component/);
+  assert.match(SUMMARIZER_SYSTEM_PROMPT, /This message is the whole instruction/);
+  assert.match(SUMMARIZER_SYSTEM_PROMPT, /keeps the user's own last message verbatim/);
+
+  const prompt = buildSummaryPrompt([{ role: 'user', content: 'evicted text' }]);
+  assert.match(prompt, /^Compaction request: summarise the 1 context chunk\(s\)/);
+  assert.match(prompt, /nothing else is sent with this request/);
+  assert.match(prompt, /evicted text/);
+
+  const agentPrompt = fs.readFileSync(new URL('../prompt.md', import.meta.url), 'utf-8');
+  assert.doesNotMatch(agentPrompt, /compact/i, 'the agent prompt must not instruct the agent about compaction');
+  assert.doesNotMatch(agentPrompt, /CONTEXT_MAX_LENGTH/);
 });
 
 // ---------------------------------------------------------------------------

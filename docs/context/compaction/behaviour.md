@@ -29,6 +29,43 @@ implementation is linked below.
   so an agent reading the window can tell a summary from a real message.
 - After compaction the window is strictly smaller than before.
 
+## The request is self-contained
+
+Compaction is a **single, self-contained request**: an instruction that says so, plus the
+chunks that are about to be evicted. Nothing else rides it — not the agent system
+prompt (`systemPrompt: false`), not the pulse line, not the conversation being kept.
+
+- `SUMMARIZER_SYSTEM_PROMPT` states that the message *is* the whole instruction and
+  that the payload is the entire record, so the summariser never assumes context it
+  was not given.
+- For the same reason **`prompt.md` says nothing about compaction at all**: no tool
+  bullet, no window section, no advice. The host decides when the window is compacted,
+  so teaching the mechanism to the agent only spends context on a decision the model
+  never makes.
+- The carried message is therefore *independent of the summary*: a summary that never
+  mentions the user's words still leaves them in the window verbatim.
+
+## The user's own words survive
+
+A summary paraphrases, and the prompt the user actually typed is the one thing that
+must not drift. So the **last message the user wrote inside the block being
+summarised is carried over verbatim** (`lastUserChunk()`), and the window after a
+compaction reads:
+
+```
+[summary chunk] · [the user's last message, as typed] · [the newest chunks, verbatim]
+```
+
+- The chunk is re-inserted **by reference**: no marker is added to it, no field is
+  rewritten, and its text is byte-for-byte what the user sent.
+- The carry is a fidelity rule, never a licence to grow the window: when
+  re-inserting the message would not still leave the window smaller than before
+  (the user's message *was* the bulk of the evicted block), the carry is dropped and
+  the summary stands alone.
+- A block that holds no user chunk carries nothing. The report says which happened
+  through `carriedChunks` (`0` or `1`), and the transcript line and the TUI marker
+  name the carried message when there is one.
+
 ## The announcement
 
 - A compaction is announced **twice** in the conversation thread: once when it

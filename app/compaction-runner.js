@@ -36,7 +36,10 @@ export function createCompactionRunner({ window, callModel, log = () => {}, noti
         const result = await window.compact({ force, reason, signal, callModel });
 
         if (result.compacted) {
-          log(`\n[Context] Compacted ${result.olderChunks} older chunk(s) into a summary (${result.olderTokens} -> ${result.afterTokens} tokens).`);
+          // The user's own message rides the summary (`utils/compaction.js`), so the
+          // line says so instead of leaving the extra chunk unexplained.
+          const carried = Number(result.carriedChunks) > 0 ? ', carrying the last user message verbatim' : '';
+          log(`\n[Context] Compacted ${result.olderChunks} older chunk(s) into a summary (${result.olderTokens} -> ${result.afterTokens} tokens)${carried}.`);
           log(`[Context] Window: ${result.usage}`);
           // The window was rewritten underneath the chunks, so the meter has to be
           // repainted with the smaller number straight away.

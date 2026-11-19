@@ -13,6 +13,18 @@ import { estimateMessageTokens, estimateMessagesTokens, exceedsTokenBudget } fro
  * the window (by token mass) is replaced by a single summarised chunk while the
  * newest 20% is kept verbatim.
  *
+ * The user's own words are the one thing a summary must never stand in for: the
+ * last message the user wrote inside the evicted block is carried over
+ * verbatim, right after the summary and ahead of the kept tail
+ * (`lastUserChunk`), so the intent survives exactly as it was typed.
+ *
+ * That carry is **code, not a model answer**: the summariser is never asked to
+ * preserve the user's words, so a summary that never mentions them still leaves
+ * them in the window. The request is self-contained for the same reason — its own
+ * instruction plus the evicted chunks, with the agent system prompt deliberately
+ * absent (`systemPrompt: false`) and `prompt.md` saying nothing about compaction
+ * at all.
+ *
  * The split and the assembly are pure functions so they can be unit-tested
  * without a model; only the summary text needs a model call, which is injected
  * as `callModel` to keep this module provider-agnostic.
@@ -20,13 +32,14 @@ import { estimateMessageTokens, estimateMessagesTokens, exceedsTokenBudget } fro
 
 export const SUMMARIZER_SYSTEM_PROMPT = [
   'You are the context-compaction component of a coding agent.',
-  'You receive the older part of a conversation window that is about to be evicted.',
+  'This message is the whole instruction: nothing else is sent with this request, and the payload below is the entire record of the conversation you are summarising.',
   'Produce a brief but thorough summary, in markdown, that a fresh agent could use to continue the work.',
   'Always cover, in this order:',
   '1. Original intent - what the user asked for and the constraints in force.',
   '2. Tasks done - completed work, decisions taken, and how each was verified.',
   '3. Things pending - remaining work, open questions and blockers.',
   '4. Key facts - file paths, commands, tool outputs, identifiers and errors worth remembering.',
+  "The harness keeps the user's own last message verbatim outside your summary, so describe that intent in your own words instead of quoting the user back.",
   'Do not add preamble, apologies or meta commentary. Output only the summary.'
 ].join('\n');
 
@@ -55,6 +68,25 @@ export function chunkToText(chunk) {
 /** Serialise a list of chunks into the single text block sent to the summariser. */
 export function serializeChunks(chunks) {
   return chunks.map(chunkToText).filter(Boolean).join('\n\n---\n\n');
+}
+
+/**
+ * The newest chunk the *user* wrote in a list, or `null` when it holds none.
+ *
+ * This picks the message a compaction carries verbatim out of the block it is
+ * about to summarise: a summary paraphrases, and the prompt the user actually
+ * typed is the thing that must not drift. The chunk comes back by reference, so
+ * it is re-inserted unchanged — no marker added, no field rewritten.
+ *
+ * @param {any[]} chunks
+ * @returns {any|null}
+ */
+export function lastUserChunk(chunks = []) {
+  if (!Array.isArray(chunks)) return null;
+  for (let i = chunks.length - 1; i >= 0; i -= 1) {
+    if (chunks[i]?.role === 'user') return chunks[i];
+  }
+  return null;
 }
 
 /**
@@ -107,7 +139,8 @@ export function splitByTokenBudget(
 /** Build the user message handed to the summariser model. */
 export function buildSummaryPrompt(chunks) {
   return [
-    `Summarise the following ${chunks.length} context chunk(s) for the compaction window.`,
+    `Compaction request: summarise the ${chunks.length} context chunk(s) below, which are about to be evicted from the window.`,
+    'Everything you need is below; nothing else is sent with this request.',
     '',
     serializeChunks(chunks)
   ].join('\n');
@@ -124,7 +157,9 @@ export function buildSummaryChunk(summary, { summarizedChunks = 0, prefix = COMP
 }
 
 /**
- * Compact a chunk list: summarise the older block and prepend it to the kept block.
+ * Compact a chunk list: summarise the older block and prepend it to the kept
+ * block, with the last user message of the evicted block carried verbatim
+ * between them.
  *
  * @param {any[]} chunks
  * @param {object} options
@@ -181,14 +216,23 @@ export async function compactChunks(chunks, options = {}) {
     prefix: summaryPrefix
   });
 
-  const nextChunks = [summaryChunk, ...split.kept];
+  // The user's own message survives the eviction: the last one they wrote inside
+  // the summarised block is re-inserted verbatim, after the summary and ahead of
+  // the untouched tail. The summariser saw it too — the summary paraphrases it,
+  // this keeps it as written.
+  const carried = lastUserChunk(split.older);
+  const withCarry = carried ? [summaryChunk, carried, ...split.kept] : null;
+  // A carry is a fidelity rule, never a licence to grow the window: if it did not
+  // still shrink the window, the summary stands alone.
+  const carryFits = withCarry !== null && estimateMessagesTokens(withCarry) < split.totalTokens;
+  const nextChunks = carryFits ? withCarry : [summaryChunk, ...split.kept];
   const afterTokens = estimateMessagesTokens(nextChunks);
 
   return {
     chunks: nextChunks,
     summary: `<compaction-result>\n${summary}\n</compaction-result>`,
     compacted: true,
-    stats: { ...stats, afterTokens }
+    stats: { ...stats, afterTokens, carriedChunks: carryFits ? 1 : 0 }
   };
 }
 
