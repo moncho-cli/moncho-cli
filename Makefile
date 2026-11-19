@@ -9,6 +9,7 @@
 #   make probe         the docker-free half of the runner's behaviour
 #   make payload       stage the distribution payload into build/ and prove that
 #                      docs/ and tests/ did not come along
+#   make release       check the next release and print the URLs the install uses
 #   make base          bake moncho-agent:$(VERSION) from this checkout, and nothing else
 #   make dev           run the agent on this checkout the way it has always been run
 #
@@ -26,13 +27,14 @@
 SHELL := /bin/bash
 VERSION ?= dev
 
-.PHONY: help test check-shell probe payload base dev clean
+.PHONY: help test check-shell probe payload release base dev clean
 
 help:
 	@echo "make test         run the test suite"
 	@echo "make check-shell  bash -n every shipped script, set the exec bits"
 	@echo "make probe        docker-free checks of the runner's logic"
 	@echo "make payload      stage the distribution payload into build/payload"
+	@echo "make release      check the next release, print the install URLs"
 	@echo "make base         build moncho-agent:$(VERSION) from this checkout"
 	@echo "make dev          run the agent on this checkout (./start.sh run)"
 	@echo "make clean        remove build/"
@@ -48,6 +50,11 @@ probe:
 
 payload:
 	node agent/utils/probe-payload.mjs $(VERSION)
+
+# The tag is declared by package.json#version, never discovered. Nothing is tagged,
+# committed or pushed: this checks the documents and prints the commands to run.
+release:
+	node scripts/release.mjs
 
 # MONCHO_HOME=. is what makes this work without an installer run: the runner bakes
 # moncho-agent:$(VERSION) from the payload it was pointed at. --base-only stops before

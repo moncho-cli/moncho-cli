@@ -91,6 +91,10 @@ The directory must be a git repository: moncho writes inside the workspace, and 
 repository is what keeps those files out of your history. It never edits .gitignore.
 Its own entries go to .git/info/exclude, which is local and never committed.
 --skip-git is the escape hatch, for a deliberate exception.
+
+Problems and questions go to the issue tracker, which is the one channel that is open:
+  https://github.com/moncho-cli/moncho-cli/issues
+Contributions arrive as forks: pull requests are not accepted (see CONTRIBUTING.md).
 EOF
 }
 

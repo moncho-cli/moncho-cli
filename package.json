@@ -2,6 +2,9 @@
   "name": "moncho-cli",
   "version": "0.0.1",
   "type": "module",
+  "license": "MIT",
+  "repository": "github:moncho-cli/moncho-cli",
+  "homepage": "https://github.com/moncho-cli/moncho-cli",
   "description": "Opinionated, permission-less, pluricontextual agentic suite for software development",
   "main": "main.js",
   "scripts": {

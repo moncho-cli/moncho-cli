@@ -2,7 +2,7 @@
 #
 # Installer: stage the Moncho agent into a user-scoped directory.
 #
-#   curl -fsSL https://raw.githubusercontent.com/<org>/<repo>/<ref>/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/moncho-cli/moncho-cli/<ref>/scripts/install.sh | bash
 #   ./scripts/install.sh --ref v0.1.0
 #
 # What it does, in order: checks the host, downloads the release tarball into a
@@ -42,7 +42,7 @@ Options:
   -h, --help         this text
 
 Environment:
-  MONCHO_REPO        <org>/<repo> to download from
+  MONCHO_REPO        repository to download from (default: moncho-cli/moncho-cli)
   MONCHO_REF         same as --ref
   MONCHO_HOME        same as --dir
 EOF
