@@ -91,7 +91,10 @@ run_container() {
   fi
 
   log "Starting $CONTAINER_NAME (workspace $WORKSPACE)"
-  docker run "${disposable[@]}" "${tty[@]}" "${RUN_ARGS[@]}"
+  # `${arr[@]+"${arr[@]}"}` rather than `"${arr[@]}"`: `disposable` is empty under
+  # --sync-files, and an empty array expansion is an unbound variable under `set -u`
+  # on bash 3.2, which is what macOS ships.
+  docker run ${disposable[@]+"${disposable[@]}"} "${tty[@]}" "${RUN_ARGS[@]}"
 
   if [ "$SYNC_FILES" = "1" ]; then
     sync_back

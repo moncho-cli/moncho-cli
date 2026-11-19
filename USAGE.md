@@ -227,8 +227,12 @@ on the host.
 ## Uninstalling
 
 ```bash
-~/.config/moncho-cli/scripts/install.sh --uninstall
+curl -fsSL https://raw.githubusercontent.com/moncho-cli/moncho-cli/main/scripts/install.sh \
+  | bash -s -- --uninstall
 ```
+
+The installer is not part of the payload it installs, so it is fetched again to run the
+uninstaller; from a checkout, `./scripts/install.sh --uninstall` does the same.
 
 That removes the installation and the symlink. It prints — but does not run — the
 `docker rmi` command for the images it created, so you can see what is being removed

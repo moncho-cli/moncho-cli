@@ -116,7 +116,11 @@ copy_payload() {
   [ -f "$src/Dockerfile.agent" ] && cp "$src/Dockerfile.agent" "$dst/"
   [ -f "$src/LICENSE" ] && cp "$src/LICENSE" "$dst/"
   cp -R "$src/app" "$src/api" "$src/config" "$src/tools" "$src/utils" "$dst/"
-  cp -R "$src/bin/." "$dst/bin/"
+  # bin/moncho is the *maintainer's* helper: it execs into the dev container ./start.sh
+  # builds, which a user's machine never has. The runner and its libraries ship; the
+  # helper does not.
+  cp "$src/bin/moncho-cli" "$dst/bin/"
+  cp -R "$src/bin/lib" "$dst/bin/"
   cp "$src"/templates/* "$dst/templates/" 2>/dev/null || true
 }
 

@@ -161,15 +161,17 @@ check('no placeholder is left in the installer', !/<org>|<repo>/.test(installer)
 if (flag('--stage')) {
   const probe = path.join(root, 'agent/utils/probe-payload.mjs');
   if (!fs.existsSync(probe)) {
-    warn('the payload probe is not in this checkout', `${probe} is a maintainer tool and does not ship`);
-  } else try {
-    execFileSync(process.execPath, [path.join(root, 'agent/utils/probe-payload.mjs'), version], {
-      cwd: root,
-      stdio: 'inherit',
-    });
-    pass('the payload stages cleanly', `build/payload at ${version}`);
-  } catch {
-    fail('the payload stages cleanly', 'agent/utils/probe-payload.mjs reported a problem');
+    warn(
+      'the payload probe is not in this checkout',
+      'agent/utils/probe-payload.mjs is a maintainer tool and does not ship'
+    );
+  } else {
+    try {
+      execFileSync(process.execPath, [probe, version], { cwd: root, stdio: 'inherit' });
+      pass('the payload stages cleanly', `build/payload at ${version}`);
+    } catch {
+      fail('the payload stages cleanly', 'agent/utils/probe-payload.mjs reported a problem');
+    }
   }
 }
 
