@@ -62,6 +62,8 @@ export function serializeSession({
   chunks = [],
   stats = {},
   usage = {},
+  taskContent = null,
+  planContent = null,
 } = {}) {
   const created = createdAt instanceof Date ? createdAt.toISOString() : String(createdAt);
   const updated = updatedAt instanceof Date
@@ -72,7 +74,7 @@ export function serializeSession({
     throw new SessionStoreError('INVALID_CHUNKS', 'chunks must be an array.');
   }
 
-  return {
+  const record = {
     version: SESSION_FORMAT_VERSION,
     id: id ?? sessionId(new Date(created)),
     createdAt: created,
@@ -91,6 +93,11 @@ export function serializeSession({
     usage: normalizeModelUsage(usage),
     chunks: chunks.map((chunk) => ({ ...chunk })),
   };
+
+  if (taskContent !== null) record.taskContent = taskContent;
+  if (planContent !== null) record.planContent = planContent;
+
+  return record;
 }
 
 /** Chunk count per role, so a listing can describe a session without loading it. */
@@ -141,6 +148,18 @@ export function parseSession(text) {
   return parsed;
 }
 
+/** The task.md content of a session, or null when not present. */
+export function sessionTaskContent(session) {
+  const parsed = parseSession(formatSession(session));
+  return parsed.taskContent || null;
+}
+
+/** The implementation_plan.md content of a session, or null when not present. */
+export function sessionPlanContent(session) {
+  const parsed = parseSession(formatSession(session));
+  return parsed.planContent || null;
+}
+
 /** The chunks to restore into a ContextWindow, validated. */
 export function sessionChunks(session) {
   const parsed = parseSession(formatSession(session));
@@ -172,6 +191,8 @@ export function sessionModeState(session) {
 /** Write (or overwrite) a session file, verified byte-for-byte. */
 export function writeSession(session, { dir = SESSION_DIR } = {}) {
   const record = serializeSession({ ...session, updatedAt: new Date() });
+  if (session.taskContent !== undefined) record.taskContent = session.taskContent;
+  if (session.planContent !== undefined) record.planContent = session.planContent;
   const relative = sessionPath(record.id, { dir });
   const written = writeFileVerified(relative, formatSession(record));
   return { ...written, session: record, id: record.id };

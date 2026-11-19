@@ -1,4 +1,4 @@
-import { listSessions, loadSession, describeSession, sessionChunks, sessionUsage, sessionModeState } from '../utils/session-store.js';
+import { listSessions, loadSession, describeSession, sessionChunks, sessionUsage, sessionModeState, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
 
@@ -164,6 +164,8 @@ export function sessionsCommand() {
         // (docs/interface/modes).
         resumed: { id: session.id, createdAt: session.createdAt, model: session.model, chunks },
         resumedMode: sessionModeState(session),
+        taskContent: sessionTaskContent(session),
+        planContent: sessionPlanContent(session),
         message: `Resumed ${session.id} (${chunks.length} chunk(s)).`,
       };
     },

@@ -1,6 +1,7 @@
 import { TASK_FILE } from '../config/constants.js';
 import { readFileIfExists } from '../utils/file-io.js';
 import { parseCheckboxItems } from '../utils/plan-file.js';
+import { getSession, getSessionTaskContent } from '../utils/host.js';
 
 /**
  * The `work:on` self-drive: the next prompt comes from `task.md`, not the keyboard.
@@ -48,6 +49,16 @@ export function nextPendingItem(items = []) {
  * told apart from an empty one.
  */
 export function readChecklist(readFile = readFileIfExists) {
+  // Try to get from session first
+  const session = getSession();
+  if (session) {
+    const taskContent = getSessionTaskContent();
+    if (taskContent !== null) {
+      return parseCheckboxItems(taskContent);
+    }
+  }
+  
+  // Fall back to file
   const content = readFile(TASK_FILE);
   if (typeof content !== 'string') return null;
   return parseCheckboxItems(content);

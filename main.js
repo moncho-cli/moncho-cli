@@ -12,6 +12,7 @@ import { prettyPrintJson } from './app/json-display.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
+import { registerSession, unregisterSession } from './utils/host.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
@@ -156,6 +157,10 @@ async function main() {
   // with the conversation and a resumed session opens in the state it was left in
   // (docs/interface/modes).
   const sessions = createSessionRecorder({ model: label, stateOf: () => sessionMode.toJSON() });
+  
+  // Register the new session with the host so task/plan content is available
+  registerSession(sessions);
+  
   const saveSession = (reason) => {
     try {
       return sessions.save(manager.chunks, {
@@ -211,6 +216,8 @@ async function main() {
     },
   });
 
+  // Unregister the session when the conversation ends
+  unregisterSession(sessions.id);
   abortManager.dispose();
   cli.close();
 }

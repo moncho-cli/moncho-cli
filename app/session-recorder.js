@@ -9,6 +9,7 @@ import {
   describeSession,
   SESSION_DIR,
 } from '../utils/session-store.js';
+import { getSessionTaskContent, getSessionPlanContent } from '../utils/host.js';
 
 /**
  * Keeps the conversation being had on disk (task.md item 3).
@@ -94,6 +95,11 @@ export function createSessionRecorder({
     save(chunks = [], extra = {}) {
       const at = now();
       const state = typeof stateOf === 'function' ? (stateOf() || NO_STATE) : NO_STATE;
+      
+      // Get task/plan content from session
+      const taskContent = getSessionTaskContent();
+      const planContent = getSessionPlanContent();
+      
       const record = writeSession(
         serializeSession({
           id: sessionId_,
@@ -106,6 +112,8 @@ export function createSessionRecorder({
           chunks,
           stats: extra.stats || {},
           usage: extra.usage || {},
+          taskContent,
+          planContent,
         }),
         { dir },
       );

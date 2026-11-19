@@ -1,6 +1,7 @@
 import { TASK_FILE } from '../config/constants.js';
 import { readFileIfExists } from '../utils/file-io.js';
 import { parseCheckboxItems } from '../utils/plan-file.js';
+import { getSession, getSessionTaskContent } from '../utils/host.js';
 
 /**
  * `/work on` and `/work off`: the execution lock, reached from the command line.
@@ -21,11 +22,21 @@ import { parseCheckboxItems } from '../utils/plan-file.js';
  */
 
 /**
- * Read the items of `task.md`.
+ * Read the items of `task.md` from session or file.
  * @param {Function} [readFile] the file reader (defaults to the project one)
  * @returns {object[]|null} the checkbox items, or `null` when the file is missing
  */
 export function readTaskItems(readFile = readFileIfExists) {
+  // Try to get from session first
+  const session = getSession();
+  if (session) {
+    const taskContent = getSessionTaskContent();
+    if (taskContent !== null) {
+      return parseCheckboxItems(taskContent);
+    }
+  }
+  
+  // Fall back to file
   const content = readFile(TASK_FILE);
   if (typeof content !== 'string') return null;
   return parseCheckboxItems(content);

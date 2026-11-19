@@ -4,7 +4,7 @@ import {
 } from '../config/constants.js';
 import { readFileIfExists, writeFileVerified } from '../utils/file-io.js';
 import { defineTool } from '../utils/tool-schema.js';
-import { resetTaskPulse } from '../utils/host.js';
+import { resetTaskPulse, getSession, getSessionTaskContent, getSessionPlanContent, setSessionTaskContent, setSessionPlanContent } from '../utils/host.js';
 import {
   parseCheckboxItems,
   findCheckboxItem,
@@ -125,8 +125,16 @@ const { definition, execute } = defineTool({
       return refusal('INVALID_ACTION', `Unknown action ${JSON.stringify(action)}. Use complete, start, step, status or list.`);
     }
 
-    const taskContent = readFileIfExists(TASK_FILE);
-    if (taskContent === null) {
+    // Read from session if available, otherwise fall back to files
+    const session = getSession();
+    let taskContent;
+    if (session) {
+      taskContent = getSessionTaskContent() || '';
+    } else {
+      taskContent = readFileIfExists(TASK_FILE);
+    }
+    
+    if (taskContent === null || taskContent === undefined) {
       return refusal('TASK_FILE_NOT_FOUND', `${TASK_FILE} does not exist.`);
     }
 
@@ -139,7 +147,12 @@ const { definition, execute } = defineTool({
     };
 
     if (action === 'list') {
-      const planContent = readFileIfExists(PLAN_FILE);
+      let planContent;
+      if (session) {
+        planContent = getSessionPlanContent() || '';
+      } else {
+        planContent = readFileIfExists(PLAN_FILE);
+      }
       return JSON.stringify({
         status: 'ok',
         action,
@@ -183,14 +196,30 @@ const { definition, execute } = defineTool({
 
     updatedTask = replaceStatusLine(updatedTask, newStatus);
 
-    const taskWrite = updatedTask === taskContent ? null : writeFileVerified(TASK_FILE, updatedTask);
+    // Write to session if available, otherwise write to file
+    let taskWrite = null;
+    if (session) {
+      setSessionTaskContent(updatedTask);
+      taskWrite = updatedTask !== taskContent;
+    } else {
+      taskWrite = updatedTask === taskContent ? null : writeFileVerified(TASK_FILE, updatedTask);
+    }
+    
     const planTarget = nextItem || completed;
-    const planWrite = writeFileVerified(PLAN_FILE, renderPlan({
+    const newPlanContent = renderPlan({
       item: planTarget,
       status: newStatus || 'in progress',
       steps: Array.isArray(args.steps) ? args.steps : [],
       notes: Array.isArray(args.notes) ? args.notes : []
-    }));
+    });
+    
+    let planWrite = null;
+    if (session) {
+      setSessionPlanContent(newPlanContent);
+      planWrite = true;
+    } else {
+      planWrite = writeFileVerified(PLAN_FILE, newPlanContent);
+    }
 
     // A completed item is one of the two moments the model-call pulse starts again
     // from 0 (docs/context/call-pulse): the counter follows the work, not the
@@ -231,7 +260,14 @@ const { definition, execute } = defineTool({
  * that the item is verified.
  */
 async function completeStep(args, taskContent, taskStatus, progress) {
-  const planContent = readFileIfExists(PLAN_FILE);
+  let planContent;
+  const session = getSession();
+  if (session) {
+    planContent = getSessionPlanContent();
+  } else {
+    planContent = readFileIfExists(PLAN_FILE);
+  }
+  
   if (planContent === null) {
     return refusal('PLAN_FILE_NOT_FOUND', `${PLAN_FILE} does not exist yet; start an item before ticking its steps.`);
   }
@@ -261,7 +297,13 @@ async function completeStep(args, taskContent, taskStatus, progress) {
     : (after.pending === 0 ? 'done — every step verified' : readStatusLine(updatedPlan));
   updatedPlan = replaceStatusLine(updatedPlan, newStatus);
 
-  const planWrite = writeFileVerified(PLAN_FILE, updatedPlan);
+  let planWrite;
+  if (session) {
+    setSessionPlanContent(updatedPlan);
+    planWrite = true;
+  } else {
+    planWrite = writeFileVerified(PLAN_FILE, updatedPlan);
+  }
 
   return JSON.stringify({
     status: 'success',

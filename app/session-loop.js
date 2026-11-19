@@ -2,6 +2,7 @@ import { nextPrompt } from './message-queue.js';
 import { parseCommand, runCommand } from './commands.js';
 import { formatCommandResult } from './json-display.js';
 import { reloadConversation } from './session-replay.js';
+import { registerSession } from '../utils/host.js';
 
 /**
  * The host turn loop, kept out of `main.js` so startup stays wiring.
@@ -110,6 +111,10 @@ export async function handleCommand(input, {
         createdAt: result.resumed.createdAt,
         model: result.resumed.model,
       });
+      // Register the resumed session with the host so task/plan content is available
+      if (result.taskContent !== undefined || result.planContent !== undefined) {
+        registerSession(sessions, result.taskContent, result.planContent);
+      }
     }
     for (const line of formatCommandResult(result)) log(line);
     if (result.resumed?.id) {

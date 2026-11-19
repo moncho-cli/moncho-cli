@@ -56,3 +56,44 @@ export function clearTaskPulse() {
   taskPulse = null;
 }
 
+
+// ---------------------------------------------------------------------------
+// Session registry (session-specific task/plan files)
+// ---------------------------------------------------------------------------
+let currentSession = null;
+
+/** Register the active session (called when a session is adopted or created). */
+export function registerSession(session) {
+  currentSession = session;
+  return currentSession;
+}
+
+/** @returns {object|null} The current session object with taskContent and planContent. */
+export function getSession() {
+  return currentSession;
+}
+
+/** Clear the current session. */
+export function clearSession() {
+  currentSession = null;
+}
+
+/** Get the task.md content for the current session, or null. */
+export function getSessionTaskContent() {
+  return currentSession?.taskContent || null;
+}
+
+/** Get the implementation_plan.md content for the current session, or null. */
+export function getSessionPlanContent() {
+  return currentSession?.planContent || null;
+}
+
+/** Update the task.md content for the current session. */
+export function setSessionTaskContent(content) {
+  if (currentSession) currentSession.taskContent = content;
+}
+
+/** Update the implementation_plan.md content for the current session. */
+export function setSessionPlanContent(content) {
+  if (currentSession) currentSession.planContent = content;
+}

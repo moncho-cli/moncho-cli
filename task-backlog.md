@@ -13,7 +13,7 @@
 - [x] clean up failed attempts, i got a 502 error then it worked but the error text was still there. this info should also be displayed in some kind of overlay near the top of the screen and auto hide after some minutes
 - [x] implementation-plan.md should be updated more frequently, as soon as items are done and verified
 - [x] the stdout on bash commands, formatted inside a json, cannot be properly truncated as one would use pipe + head/tail. so maybe bash responses should be a yaml header and the stdout after, and it be possible to pass head/tail parameters to let the model choose that
-- [ ] make sure the intent string is not being repeated many times with exact same content, both in conversation and actual context sent to the model
+- [x] make sure the intent string is not being repeated many times with exact same content, both in conversation and actual context sent to the model
 - [ ] be able to use arrow keys left and right to move through the text, and up/down to navigate messages history
 - [ ] conversation to show unicode emojis properly
 - [x] the messages in queue get strangely truncated, too soon, i cant read whats there, idk if its will be sent properly — **fixed:** the queue row never knew how wide it was. The preview was capped at a fixed 48 characters whatever the terminal, and a row wider than the box wrapped onto a second display line that the region's height clipped, so the tail vanished with no `…`. A row is now fitted to the interior width of the bar, counted in cells (`app/queue-rows.js#queuePreviewBudget`), so it uses the whole width on a wide terminal and always stays one display line; the queued text itself was never altered — the queue keeps it verbatim.
@@ -32,3 +32,7 @@
 - [ ] a new hint_file tool that is very similar to how read works, with the exception that all tabs and multiple continuous new lines are removed. long lines are truncated as well leaving a ...[N chars after] so the model can hint file contents without risking super long lines congesting the context
 - [ ] when compaction is triggered, add a message in the conversation thread notifying "compaction process started", right now it just tell syou at the end of it, we need the initial notification
 - [ ] we need to save logs in some internal local log file that gets auto rotated by this same deterministic code, so we can find errors and stuff. the usual 3 leves: error, warning, info and a level threshold via environment
+- [ ] during thinking, instead of a question mark to the right of Thinking label, do a basic ascii char animation of a spinner
+- [ ] deprecate the main task.md file from the repo, delete it, the task-backlog.md is a global file so that can stay, but now task.md should be specific to each session own path, as well as implementation-plan.md
+- [ ] use the stream mode when calling the model api, if the user clicks on the Thinking label, show a modal that fills most of the screen (but not all) that shows the current thinking stream
+- [ ] add a delete_file tool, that can only delete files within the workdir, never out of it
