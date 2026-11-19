@@ -1,65 +1,67 @@
 status: done
 
-# Queue preview: a row must use the width it actually has
+# Input box focus: a click must not take the caret away, and the focus comes back by itself
 
 The backlog item:
 
-> the messages in queue get strangely truncated, too soon, i cant read whats there,
-> idk if its will be sent properly
+> sometimes the input box for the message looses focus and i cant make it come back
+> there, so i cant write anything. clicking should work, and periodically just put the
+> focus back in there
 
-- [x] the messages in queue get strangely truncated, too soon, i cant read whats there, idk if its will be sent properly
+- [x] sometimes the input box for the message looses focus and i cant make it come back there, so i cant write anything. clicking should work, and periodically just put the focus back in there
 
-## What was actually wrong
+## What is actually wrong
 
-Two display bugs in the same row, both from one cause: the row formatter did not know
-how wide it was.
+Reproduced on the real TUI with the mouse events the blessed program emits for a
+real click (a one-off probe, since deleted; the proof lives in `tests/`):
 
-| Symptom | Cause |
-| ------- | ----- |
-| "too soon" | `previewMessage()` capped every preview at `QUEUE_PREVIEW_CHARS` (48) however wide the terminal was, so an 80-column bar (78 usable cells) threw away 25 of them, and a 120-column one threw away 65. |
-| "strangely truncated" | the bar passed the *number of rows* to `setQueueHeight`, not the number of *display lines*: a row wider than the box wrapped onto a second line and neo-blessed clipped it at the height it was given — so the end of the message vanished with **no `…` at all**. Measured in the probe: at 50 and 30 columns the row was 53 cells long, painted as 2 lines in a 1-row region, `clipped: true`. |
+| Step | `screen.focused` | `inputBox._reading` | keypress listeners | typing |
+| ---- | ---------------- | ------------------- | ------------------ | ------ |
+| after `question('> ')` | `inputBox` | `true` | 1 | lands, once |
+| after a click on the transcript | `log` | `false` | 0 | **dropped** |
+| after a click on the input box | `log` | `false` | 0 | **dropped** |
 
-The message itself was **never** damaged: the queue keeps it verbatim, so what is
-injected is exactly what was typed. Only the *preview* was wrong — which is precisely
-why the user could not tell what would be sent.
+Two causes, both in the widget layer rather than in our own handlers:
+
+1. **A click autofocuses the clicked region.** blessed binds
+   `screen.on('element click', el => el.focus())` for every `clickable` element
+   whose `options.autoFocus !== false` (`lib/widgets/screen.js#Screen`), and the
+   transcript (block toggle) and the queue bar (delete row) are both `clickable`.
+   Focusing the transcript blurs the input box, and the textarea's own
+   `this.on('blur', this.__done)` handler **ends the read cycle**: the keypress
+   listener is removed and `_reading` goes false
+   (`lib/widgets/textarea.js#Textarea`). The armed `question()` promise is never
+   settled, so the host loop also waits forever.
+2. **The input box cannot be clicked back into focus.** A `blessed.textbox` is not
+   `clickable` unless it is asked to be, so there is no click path back to the box,
+   and focusing alone would not resume the read anyway (no `inputOnFocus`).
 
 ## The fix
 
-A row now knows one number about the screen — the interior width the bar offers, in
-**cells** — and is fitted to it.
-
 | Piece | What it does |
 | ----- | ------------ |
-| `app/queue-rows.js` | the row view: `displayWidth` / `truncateToWidth` count **cells** (a wide glyph two, a combining mark none), `queuePreviewBudget` takes the `✕ N. ` prefix off the budget so the marker and position always survive, and `formatQueueRow`/`formatQueueRows` fit every preview to one row. |
-| `app/message-queue.js` | unchanged model: the order, the verbatim bytes and the click geometry stay here, and the row view is re-exported (`export * from './queue-rows.js'`) so every existing import keeps working. |
-| `app/queue-bar.js` | passes the width to the rows, re-read on every paint; exposes `columns` (the interior width in use). |
-| `app/tui.js` | `columns: () => screen.width - 2` — the widget's own two columns of padding — and a resize now repaints the queue so the previews are re-fitted to the new window. |
-
-The width budget lives in a **new module** rather than in `app/message-queue.js`
-because that file would otherwise have crossed the 300-line budget (it is now 152
-lines, `app/queue-rows.js` is 139): the model is the queue, the row is the view of it.
+| `app/focus-guard.js` | `needsFocus()` (one honest question: does the box own the focus *and* is it reading?) and `createFocusGuard()`: focus the box and re-arm its read when the answer is no, stand down while `screen.lockKeys` says a modal owns the keyboard, and run that check on an unref'd timer — the "periodically just put the focus back in there" clause. |
+| `app/tui-layout.js` | `autoFocus: false` on the transcript and the queue bar, so a click there toggles/deletes and *never* moves the caret; `clickable: true, autoFocus: false` on the input box, so it can be clicked. |
+| `app/tui.js` | a click on the input box re-arms it (`promptInput.arm()`), the guard is created with `hold: () => armed or in flight`, started, closed with the screen, and exposed on the surface. |
+| `app/prompt-input.js` | an `isReading` view of the box's read cycle, so the guard can tell a healthy box from a silently-killed one without reaching into blessed's privates in two places. |
 
 ## Done when — verified
 
-- [x] a long queued message uses the whole width of the bar: `formatQueueRow` returns
-      exactly 118 cells of row on a 120-column screen, 78 on an 80-column one
-      (`tests/queue-rows.test.js`, `tests/message-queue-tui.test.js`).
-- [x] no painted row exceeds the box, and the region height matches the rows painted:
-      each row is one display line, `queueBar.getScreenLines().length === 1`, and the
-      whole screen is 316 pass / 0 fail.
-- [x] `docs/interface/message-queue` states the width rule (a new *the row is fitted to
-      the width it really has* section) and `spec.yaml` links the new module and cases,
-      so `tests/docs-realm.test.js` passes.
-- [x] `npm test` is green — **316 pass / 0 fail** — every touched file is under 300
-      lines (longest: `app/tui.js`, 273), and the one-off probe
-      (`agent/utils/probe-queue-row-width.mjs`) was deleted once it had answered its
-      question.
+- [x] a click on the transcript or the queue bar leaves the input box focused,
+      reading and accepting keystrokes — proven on the real TUI with mouse events on
+      the program (`tests/input-focus.test.js`).
+- [x] clicking the input box focuses it and re-arms its read from any state, and a
+      keyboard drift is repaired by the watchdog within one interval while a question
+      is armed; the guard stands down while a modal holds the keys.
+- [x] `docs/interface/input-focus` states the contract and `docs/index.yaml`
+      registers it, so `tests/docs-realm.test.js` passes.
+- [x] `npm test` is green, every touched file is under 300 lines, and the one-off
+      probe is deleted once it has answered its question.
 
 ## Files
 
 | Action | Path |
 | ------ | ---- |
-| added | `app/queue-rows.js`, `tests/queue-rows.test.js` |
-| rewritten | `app/queue-bar.js` (the `columns` accessor and its surface view) |
-| edited | `app/message-queue.js` (the row view re-exported), `app/tui.js` (the width accessor, the resize repaint), `tests/message-queue.test.js`, `tests/message-queue-tui.test.js`, `docs/interface/message-queue/*`, `tests/README.md` |
-| deleted | `agent/utils/probe-queue-row-width.mjs` |
+| added | `app/focus-guard.js`, `tests/input-focus.test.js`, `docs/interface/input-focus/*` |
+| edited | `app/tui-layout.js` (clickable + `autoFocus: false`), `app/tui.js` (the guard, the box click), `app/prompt-input.js` (`isReading`), `app/tui-surface.js` (the guard view), `docs/index.yaml`, `tests/README.md` |
+| deleted | `agent/utils/probe-input-focus.mjs` |

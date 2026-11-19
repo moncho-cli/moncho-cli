@@ -35,6 +35,7 @@ export function createTuiSurface({
   modelBar,
   inputBox,
   setQueueHeight,
+  focusGuard = null,
   noticeBar,
   brandBar = null,
   refresh,
@@ -122,6 +123,13 @@ export function createTuiSurface({
     queueBar: queueRegion,
     inputBox,
     setQueueHeight,
+    // Keeping the input box armed: the click on the box and the periodic check
+    // (app/focus-guard.js). Exposed so the host and the tests can see a repair
+    // without reaching into the wiring module.
+    focusGuard,
+    get focusRepairs() {
+      return focusGuard ? focusGuard.repairs : 0;
+    },
     // The transient notices near the top of the screen (app/notice-overlay.js).
     noticeBar,
     get isClosed() {

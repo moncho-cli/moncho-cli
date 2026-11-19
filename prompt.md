@@ -187,6 +187,9 @@ exchange against `CONTEXT_MAX_LENGTH`. When it exceeds the budget the older 80% 
 the window is summarised into a single chunk and the newest 20% is kept verbatim
 (`compact_context` reports the split; the host loop performs the summarisation).
 
+### 10. Planning rules
+When investigating to create the task.md contents and implementation-plan.md prefer shorter planning rounds to lock in sooner rather than later.
+
 ## Response Format
 When responding to user requests:
 1. Acknowledge the task

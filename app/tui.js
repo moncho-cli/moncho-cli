@@ -13,6 +13,7 @@ import { createBrandBar } from './brand-bar.js';
 import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
 import { bindKeys } from './tui-keys.js';
+import { bindFocusGuard } from './focus-guard.js';
 import {
   sanitize,
   formatArg,
@@ -148,6 +149,19 @@ export function createTui(options = {}) {
     refresh,
   });
 
+  // The input box keeps its focus and its read cycle on a click and on a timer: a
+  // click on another region can no longer take the caret away (both regions opt out
+  // of blessed's autofocus, app/tui-layout.js) and any other cause of a lost focus
+  // is repaired by the periodic check. The guard only acts while the box is
+  // *supposed* to be armed -- an armed question or an in-flight turn -- and never
+  // while a modal owns the keyboard (app/focus-guard.js).
+  const focusGuard = bindFocusGuard({
+    inputBox,
+    promptInput,
+    hold: () => promptInput.isArmed || promptInput.inFlight,
+  });
+  focusGuard.start();
+
   // The status bar carries two independent pieces of information on one row: the
   // logical status (or the spinner frame) on the left, and the context-window
   // meter pinned to the right, so usage stays visible while a request is in
@@ -236,6 +250,7 @@ export function createTui(options = {}) {
     brandBar.close();
     view.close();
     keys.dispose();
+    focusGuard.close();
     statusRow.dispose();
     screen.destroy();
   };
@@ -259,6 +274,7 @@ export function createTui(options = {}) {
     modelBar,
     inputBox,
     setQueueHeight,
+    focusGuard,
     noticeBar,
     brandBar,
     refresh,

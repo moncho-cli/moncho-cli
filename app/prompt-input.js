@@ -17,6 +17,10 @@ import { createInputHint, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR } 
  * The formatting and the value/content rule live in `app/input-hint.js`, which is
  * pure; this module only decides *when* to paint it.
  *
+ * `arm()` is the single arming point and is **idempotent**, so anything that finds
+ * the box unfocused or no longer reading can simply arm it again (app/focus-guard.js
+ * does, on a click and on a timer) without risking a second key listener.
+ *
  * Kept apart from app/tui.js so the screen wiring stays thin, and free of
  * neo-blessed: the caller injects the box, the paste table, the queue and a log,
  * so every rule below is unit testable without a terminal.
@@ -54,10 +58,42 @@ export function createPromptInput({
   // The tests (and the picker hand-back) read the label off the box itself.
   if (inputBox) inputBox.getLabel = () => labelText;
 
-  /** Focus the box, start its single read cycle and repaint the hint over it. */
+  /** Whether the box owns the screen's focus right now. */
+  const hasFocus = () => Boolean(inputBox?.screen) && inputBox.screen.focused === inputBox;
+
+  /**
+   * Drop a keypress listener that outlived the read it was installed for.
+   *
+   * neo-blessed installs the textarea's key listener from a deferred tick and never
+   * re-checks `_reading` inside that tick (`lib/widgets/textarea.js#Textarea`): a blur
+   * landing between `readInput()` and the tick ends the read and removes the listener
+   * it knows about, and the tick then installs a fresh one anyway. Arming on top of
+   * that orphan leaves TWO listeners and every later keystroke is appended twice — the
+   * "/sessions breaks the input" bug guarded by tests/tui-modal.test.js. Cleaning it up
+   * here is what makes `arm()` safe to call at any moment, whatever the box was doing
+   * before (app/focus-guard.js depends on that).
+   */
+  const dropOrphanReader = () => {
+    if (!inputBox || inputBox._reading === true) return false;
+    const orphan = inputBox.__listener;
+    if (typeof orphan !== 'function') return false;
+    inputBox.removeListener('keypress', orphan);
+    delete inputBox.__listener;
+    return true;
+  };
+
+  /**
+   * Focus the box, start its single read cycle and repaint the hint over it.
+   *
+   * Idempotent: a box that already owns the focus is *not* focused again — blessed
+   * emits a `blur` on the element being focused, which would end the very read it is
+   * holding — and `readInput()` returns immediately while a read is live, so arming an
+   * armed box changes nothing and can never leave two key listeners behind.
+   */
   const arm = () => {
     if (!inputBox) return false;
-    if (typeof inputBox.focus === 'function') inputBox.focus();
+    dropOrphanReader();
+    if (!hasFocus() && typeof inputBox.focus === 'function') inputBox.focus();
     if (typeof inputBox.readInput === 'function') inputBox.readInput();
     lastPromptHint.apply();
     refresh();
@@ -169,6 +205,18 @@ export function createPromptInput({
     },
     get isArmed() {
       return typeof pending === 'function';
+    },
+    /**
+     * Whether the box is inside its read cycle right now: the second half of the
+     * armed state, and the fact app/focus-guard.js asks about (a focused box that is
+     * not reading swallows every keystroke).
+     */
+    get isReading() {
+      return Boolean(inputBox) && inputBox._reading === true;
+    },
+    /** Whether the box owns the screen's focus right now. */
+    get hasFocus() {
+      return hasFocus();
     },
     get inFlight() {
       return inFlight;

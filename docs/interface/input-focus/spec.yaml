@@ -1,0 +1,37 @@
+id: interface/input-focus
+domain: interface
+title: Keeping the input box armed (focus and read cycle)
+status: active
+summary: >
+  The input box is "armed" when it owns the screen's focus and is inside its read
+  cycle; losing either half means the user cannot type. A click on the transcript or
+  the queue bar no longer autofocuses them (both set autoFocus: false), a click on
+  the box itself focuses and re-arms it, and a periodic watchdog (one check per
+  FOCUS_CHECK_INTERVAL_MS, unref'd) re-arms the box when it drifted. Arming is
+  idempotent, so a click or a check on an already armed box changes nothing and never
+  leaves two keypress listeners behind. The guard stands down while a modal owns the
+  keyboard (screen.lockKeys) and while nothing is armed or in flight, and closing it
+  clears the timer and the click listener. Backlog: "sometimes the input box for the
+  message looses focus and i cant make it come back there ... clicking should work,
+  and periodically just put the focus back in there".
+code:
+  - path: app/focus-guard.js
+    symbols: [FOCUS_CHECK_INTERVAL_MS, needsFocus, createFocusGuard, bindFocusGuard]
+  - path: app/prompt-input.js
+    symbols: [createPromptInput]
+  - path: app/tui-layout.js
+    symbols: [createLayout]
+  - path: app/tui.js
+    symbols: [createTui]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+tests:
+  - path: tests/input-focus.test.js
+    cases:
+      - "needsFocus() reports a missing focus or a dead read cycle"
+      - "createFocusGuard() re-arms a drifted box once and counts the repair"
+      - "createFocusGuard() stands down while a modal owns the keys or nothing is armed"
+      - "a click on the transcript leaves the input box focused and reading"
+      - "clicking the input box focuses it and restarts its read cycle"
+      - "the periodic check repairs a lost focus within one interval"
+      - "the guard stands down while the picker modal owns the keyboard"

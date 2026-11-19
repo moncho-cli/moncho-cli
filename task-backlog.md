@@ -19,6 +19,9 @@
 - [x] the messages in queue get strangely truncated, too soon, i cant read whats there, idk if its will be sent properly — **fixed:** the queue row never knew how wide it was. The preview was capped at a fixed 48 characters whatever the terminal, and a row wider than the box wrapped onto a second display line that the region's height clipped, so the tail vanished with no `…`. A row is now fitted to the interior width of the bar, counted in cells (`app/queue-rows.js#queuePreviewBudget`), so it uses the whole width on a wide terminal and always stays one display line; the queued text itself was never altered — the queue keeps it verbatim.
 - [ ] destructive tool subagent gate: able to define via environment a specific url/key/model that will be used to assess the threat level of a destructive operation and could reject it given a env configurable threshold
 - [ ] add working time counter to sessions, show next avobe the token window size information row, also aligned to the right (so only add up time the model spent thiking or a tool call resolving) save this also in the usage stats
-- [ ] sometimes the input box for the message looses focus and i cant make it come back there, so i cant write anything. clicking should work, and periodically just put the focus back in there
+- [x] sometimes the input box for the message looses focus and i cant make it come back there, so i cant write anything. clicking should work, and periodically just put the focus back in there
 - [ ] text selection should copy to clipboard whatever was selected right on mouse up, in the conversation section
 - [ ] keep track of the package version, in README.md and files where this version is mentioned, top bar in the tui, etc
+- [ ] slash command to run compact at will by user input message
+- [ ] keep in the context an incremental pulse on each model call, create a hard limit configurable defaulting to 30, and instruct via prompt.md to honor this value. reset it to 0 after marking an item as completed or running compaction 
+- [ ] use different colors for read, write, and bash type of operations so they are easy trackable in the conversation at a glance

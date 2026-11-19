@@ -47,9 +47,14 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     alwaysScroll: true,
     keys: true,
     vi: true,
-    // The transcript is the only clickable region: a click toggles the tool
-    // result block under the cursor (see app/transcript-view.js).
+    // A click toggles the tool result block under the cursor (see
+    // app/transcript-view.js) but must never move the caret. blessed autofocuses
+    // every clickable region whose `autoFocus` is left on (its `element click`
+    // handler in lib/widgets/screen.js), and focusing the transcript blurs the
+    // input box and ends its read cycle -- the "input box loses focus" bug that
+    // app/focus-guard.js repairs.
     clickable: true,
+    autoFocus: false,
     scrollbar: { ch: ' ', style: { inverse: true } },
     padding: { left: 1, right: 1 },
   });
@@ -87,7 +92,10 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     height: 0,
     tags: true,
     hidden: true,
+    // A click deletes the message on that row (app/queue-bar.js) and, like the
+    // transcript, must not take the focus away from the input box.
     clickable: true,
+    autoFocus: false,
     padding: { left: 1, right: 1 },
   });
 
@@ -108,6 +116,13 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     height: INPUT_HEIGHT,
     border: { type: 'line' },
     tags: false,
+    // Clickable, so the box can be clicked back into focus -- but with `autoFocus`
+    // off: blessed's own autofocus focuses through `screen.focused = el`, which
+    // emits a `blur` on the box and ends the very read it is holding. The click is
+    // handled explicitly instead (app/focus-guard.js#bindFocusGuard), where the box
+    // is only focused when it does not already own the focus.
+    clickable: true,
+    autoFocus: false,
     padding: { left: 1, right: 1 },
   });
 

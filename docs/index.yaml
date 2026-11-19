@@ -45,6 +45,7 @@ specs:
   - interface/session-replay
   - interface/commands
   - interface/line-cli
+  - interface/input-focus
   - runtime/provider-calls
   - runtime/startup-wiring
   - runtime/session-store

@@ -33,6 +33,7 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `tui-status.test.js` | The status row: right-aligned context meter and spinner. |
 | `transcript-blocks.test.js` | Collapsible tool output: the transcript model, clicks and toggles. |
 | `interrupt-controls.test.js` | ESC / Ctrl+C semantics on both front ends. |
+| `input-focus.test.js` | Keeping the input box armed: a click on another region never steals the caret, clicking the box re-arms it, and a periodic watchdog repairs a lost focus. |
 | `ollama-provider.test.js` | Provider calls: system prompt injection, response normalisation, abort. |
 | `conversation-manager.test.js` | The end-to-end loop against a stub provider. |
 | `user-echo.test.js` | The user's own message: announced by the loop, rendered as a quote, never altered in the context. |
