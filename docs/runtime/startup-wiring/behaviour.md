@@ -1,9 +1,15 @@
 # Runtime — startup wiring and the conversation loop
 
-`main.js` wires the realms together: it picks the front end, loads the tools,
+`main.js` wires the realms together — it picks the front end, loads the tools,
 resolves the context size, and runs the conversation loop that turns one user
-message into model calls and tool executions. This spec fixes that wiring and the
-loop's observability guarantees; the implementation is linked below.
+message into model calls and tool executions — and nothing else: the turn loop
+itself lives in `app/session-loop.js`, so the wiring module stays readable and the
+loop is testable without a terminal or a provider. This spec fixes that wiring and
+the loop's observability guarantees; the implementation is linked below.
+Inside that loop the control flow of one *turn* lives in `app/turn-runner.js`:
+`ConversationManager` keeps the state (window, meter, pulse, compaction runner, tool
+batch) and delegates `processInput()` to `runTurn()`, which the tests drive through
+that seam with a stub provider.
 
 ## Startup order
 
@@ -21,6 +27,8 @@ loop's observability guarantees; the implementation is linked below.
    label and an `onContextChange` hook that paints the token meter.
 6. Create the session recorder (`docs/runtime/session-store`) and announce the
    session file it writes, so the user knows where the conversation is kept.
+7. Hand the built pieces to `runSessionLoop()` (`app/session-loop.js`), which owns
+   the prompt loop until the user asks to leave.
 
 ## The conversation loop
 
@@ -30,6 +38,10 @@ loop's observability guarantees; the implementation is linked below.
   so an injected message can never split an assistant `tool_calls` message from its
   `tool` results, and the drained text enters the conversation as the ordinary user
   prompt (`docs/interface/message-queue`).
+- A slash command is answered by the registry and never reaches the model; a
+  resumed conversation reloads the view *before* the command result is printed, so
+  the reload cannot wipe the confirmation it belongs with
+  (`docs/interface/session-replay`).
 - One user input is appended as a `user` chunk, then the loop repeats until a
   final (tool-free) assistant message arrives or an error/abort ends the task.
 - The prompt is also announced through `onUserMessage` before the first model
@@ -74,7 +86,8 @@ loop's observability guarantees; the implementation is linked below.
 - The loop reads the active `AbortSignal` from the `AbortManager` before each
   model call and passes it down. An abort ends the task quietly (an informational
   line, no stack trace), and the host loop then clears the task and stops the
-  spinner in a `finally` block.
+  spinner in a `finally` block — so the teardown happens whether the turn landed,
+  was aborted, or threw.
 - A failed compaction never breaks the task: the loop reports the skip and
   continues with the unchanged window.
 
@@ -93,9 +106,12 @@ loop's observability guarantees; the implementation is linked below.
 
 ## See also
 
-- Implementation: `main.js`, `app/conversation-manager.js`, `app/context-window.js`,
-  `app/abort-manager.js`, `app/session-recorder.js`, `utils/tool-loader.js`
+- Implementation: `main.js`, `app/session-loop.js`, `app/conversation-manager.js`,
+  `app/turn-runner.js`,
+  `app/context-window.js`, `app/abort-manager.js`, `app/session-recorder.js`,
+  `utils/tool-loader.js`
 - Spec of the prompt the loop drains: `docs/interface/message-queue`
 - Spec of the stored sessions: `docs/runtime/session-store`
-- Proof: `tests/conversation-manager.test.js`, `tests/session-store.test.js`,
+- Proof: `tests/session-loop.test.js`, `tests/turn-runner.test.js`,
+  `tests/conversation-manager.test.js`, `tests/session-store.test.js`,
   `tests/message-queue.test.js`

@@ -14,6 +14,7 @@ import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
 import { bindKeys } from './tui-keys.js';
 import { bindFocusGuard } from './focus-guard.js';
+import { createResizeRepaint, createTeardown } from './tui-teardown.js';
 import {
   sanitize,
   formatArg,
@@ -82,18 +83,28 @@ export function createTui(options = {}) {
     ? options.modelLabel
     : describeModel().label;
 
-  const {
-    transcript, statusBar, modelBar, queueBar: queueRegion, inputBox, setQueueHeight,
-    setBrandRows,
-  } = createLayout({ screen, modelLabel });
-
-  const pastes = createPasteRegistry();
+  // The screen is repainted by whichever part of the wiring changes something on
+  // it, so the mode row built below can repaint itself when the mode moves.
   let closed = false;
 
   const refresh = () => {
     if (!closed) screen.render();
   };
 
+  const {
+    transcript, statusBar, modelBar, queueBar: queueRegion, inputBox, setQueueHeight,
+    setBrandRows, modeRow,
+  } = createLayout({
+    screen,
+    modelLabel,
+    // The session's intent mode (app/session-mode.js), or a plain state object:
+    // the layout paints it as the leftmost cell of the model row and repaints on
+    // every accepted change, never on a refused one.
+    mode: options.mode || null,
+    repaint: refresh,
+  });
+
+  const pastes = createPasteRegistry();
   // The transcript is a model + view pair: the model holds the entries (plain
   // lines and collapsible blocks), the view paints them and resolves clicks.
   const view = createTranscriptView({ widget: transcript, refresh });
@@ -226,34 +237,28 @@ export function createTui(options = {}) {
   // `screen.emit('keypress', …)` reaches them.
   const keys = bindKeys({ screen, onInterrupt, scrollPage, transcript, refresh });
 
-  // Regions are laid out relatively, so blessed relayouts them on resize; we only
-  // have to repaint the status row (whose width changed) and keep the newest line
-  // in view.
-  screen.on('resize', () => {
-    transcript.setScrollPerc(100);
-    statusRow.render();
-    // Every row that is fitted to a width has to be re-fitted at the new one: the
-    // queue bar's previews would otherwise keep the width of the old terminal.
-    queue.paint();
-    brandBar.paint();
-    // The brand line may fit or stop fitting at the new width, which moves the top
-    // of the conversation; the notices follow the mark down or back up.
-    noticeBar.paint();
-  });
+  // A resize re-fits every row measured at the old width and puts the newest line
+  // back in view (app/tui-teardown.js).
+  createResizeRepaint({ screen, transcript, statusRow, queue, brandBar, noticeBar });
 
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    promptInput.abandon();
-    queue.close();
-    noticeBar.close();
-    brandBar.close();
-    view.close();
-    keys.dispose();
-    focusGuard.close();
-    statusRow.dispose();
-    screen.destroy();
-  };
+  // The teardown is the reverse of construction, and happens once: the input box
+  // stops accepting keystrokes first, then the regions that own a timer or a widget
+  // are closed, and the screen goes last (app/tui-teardown.js).
+  const close = createTeardown({
+    steps: [
+      () => promptInput.abandon(),
+      () => queue.close(),
+      () => modeRow.close(),
+      () => noticeBar.close(),
+      () => brandBar.close(),
+      () => view.close(),
+      () => keys.dispose(),
+      () => focusGuard.close(),
+      () => statusRow.dispose(),
+    ],
+    screen,
+    state: { isClosed: () => closed, markClosed: () => { closed = true; } },
+  });
 
   statusRow.render();
   queue.paint();
@@ -272,6 +277,7 @@ export function createTui(options = {}) {
     transcript,
     statusBar,
     modelBar,
+    modeRow,
     inputBox,
     setQueueHeight,
     focusGuard,

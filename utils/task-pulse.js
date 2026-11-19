@@ -7,8 +7,8 @@ import { PULSE_LIMIT, PULSE_LIMIT_DEFAULT } from '../config/constants.js';
  * completed or running compaction").
  *
  * One line, counting how many **agent** model calls the current stretch of work has
- * cost. It rides every request as the message right after the agent system prompt,
- * so the model can see the budget it is spending and can act on it.
+ * cost. The counter is **internal**: the line is paused (`formatPulseText`), so the
+ * model only learns of it through the one notice raised at the crossing.
  *
  * Three decisions this module fixes:
  *
@@ -52,8 +52,12 @@ export function normalizePulseLimit(value, fallback = PULSE_LIMIT_DEFAULT) {
 /**
  * The line carried by the request: plain, one line, and it says what clears the
  * counter — the two resets the backlog names.
+ * 
+ * REMOVED BECAUSE THIS BREAKS CACHE HIT PERFORMANCE
  */
 export function formatPulseText({ count = 0, limit = PULSE_LIMIT } = {}) {
+  return "";
+
   const used = Math.max(0, Math.trunc(Number(count) || 0));
   const cap = normalizePulseLimit(limit);
   const remaining = cap - used;
@@ -133,7 +137,8 @@ export function createTaskPulse({ limit = PULSE_LIMIT } = {}) {
     },
     /** The same line as the `system` message the request carries. */
     message() {
-      return { role: 'system', content: formatPulseText({ count, limit: cap }) };
+      const line = formatPulseText({ count, limit: cap });
+      return line ? { role: 'system', content: line } : null;
     },
     /** A snapshot for the host, the notice and the tests. */
     stats() {

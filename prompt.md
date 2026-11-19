@@ -181,27 +181,25 @@ When `task.md` holds a list of unchecked items:
 4. Set the context to the updated `task.md` before starting the next item, and only
    advance once the current item is completed and verified.
 
-### 9. Model-call pulse (honour the limit)
-Every request carries a `[pulse]` line right after this system prompt. It counts the
-model calls the current stretch of work has cost, against the configured limit
-(`PULSE_LIMIT`, **30** by default):
+### 9. Lock in a plan instead of looping over research
 
-```
-[pulse] model call 4 of 30 — 26 left. Reset to 0 by completing a task.md item (update_task) or by a compaction.
-```
+The host still counts your model calls against a hard limit (`PULSE_LIMIT`, **30**
+by default) and raises one notice the first time a call goes past it, but **the
+count is never shown to you** — the per-call `[pulse]` line was removed because a
+message generated per call defeats provider prompt caching. Do not budget against a
+number you cannot read; keep the count low by not wandering.
 
-- **The limit is a budget for actions**, not a measure of effort: it exists so the
-  whole window is not spent on probes, retries and small steps.
-- **While calls remain**, keep working normally, but take the shortest path that
-  answers a question: one `grep` before a `read_file`, a batch of up to five
-  independent calls in one message (4.3), and never re-read a file you already hold.
-- **When the line says the hard limit is reached**, stop starting new exploration
+- **Research only until the plan is writable.** A few targeted probes — one `grep`
+  before a `read_file`, a batch of up to five independent calls in one message
+  (4.3) — are enough to fill `task.md` and `implementation_plan.md`. Lock in the
+  plan early (§11) rather than reading the whole tree first.
+- **Never re-read what you already hold**, and never re-run a probe that cannot
+  answer a new question.
+- **When a notice says the hard limit is reached**, stop starting new exploration
   and finish what you were doing: `update_task` with `action: "complete"` as soon as
-  the item is verified, or `compact_context`. Either one resets the counter to 0,
-  and the next stretch of work starts with a fresh budget.
-- The pulse is your own budget, not a property of the environment: never report it
-  to the user as a limitation, and never use it as an excuse to leave the plan half
-  done.
+  the item is verified, or `compact_context`. Either one resets the counter.
+- Never report the limit to the user as a limitation of the environment, and never
+  use it as an excuse to leave the plan half done.
 
 ### 10. Context window
 The context is an array of chunks. `main.js` reports its token usage after every

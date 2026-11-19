@@ -31,7 +31,12 @@ test('a pty gets the three-region TUI (transcript, status bar, input box)', asyn
     // model label: one row between the status bar and the input box
     assert.equal(tui.modelBar.height, 1);
     assert.equal(tui.modelBar.bottom, 4);
-    assert.equal(tui.modelBar.getContent(), tui.modelLabel);
+    // The row opens with the session's mode (app/session-mode-label.js): the label
+    // is the leftmost cell, then the identity this option asked for.
+    assert.equal(
+      tui.modelBar.getContent().replace(/\x1b\[[\d;]*m/g, ''),
+      `Chat ${tui.modelLabel}`,
+    );
     assert.equal(tui.modelLabel, 'openrouter · test/model');
 
     // input box: three rows (border + content + border) at the very bottom

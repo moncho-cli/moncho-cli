@@ -12,10 +12,15 @@ summary: >
   by formatCallSignature(). A refused call is answered with a structured
   TOO_MANY_TOOL_CALLS body, a throwing or unknown tool is an error outcome, an
   aborted task skips its calls, and parseToolChunk() unwraps the envelope while
-  still reading a chunk written before it existed.
+  still reading a chunk written before it existed. Before anything runs, every
+  call passes the injected pre-dispatch gate (app/tool-guard.js): a gate answer
+  becomes a structured refusal instead of an invocation, and no gate leaves the
+  batch exactly as it was.
 code:
   - path: app/tool-batch.js
     symbols: [formatBatchRefusal, planToolBatch, dispatchToolCalls, formatBatchLine, handleToolBatch]
+  - path: app/tool-guard.js
+    symbols: [allowAllGate, guardToolCall, formatGuardRefusal, TOOL_GUARD_REFUSAL]
   - path: app/tool-call-format.js
     symbols: [formatArgType, formatCallSignature, MULTICALL_FOOTER, formatMulticallHeader, formatMulticallEnvelope, parseMulticallEnvelope, formatToolResultChunk, parseToolChunk, normalizeToolCall, formatCallLines]
   - path: config/constants.js
@@ -39,3 +44,12 @@ tests:
       - "the loop stores one enveloped chunk per call, in call order"
       - "a call beyond the cap is answered with a structured TOO_MANY_TOOL_CALLS refusal"
       - "handleToolCalls() batches the calls of one assistant message"
+  - path: tests/tool-guard.test.js
+    cases:
+      - "guardToolCall() allows every call when no gate is installed"
+      - "guardToolCall() turns a gate answer into a structured refusal"
+      - "a gate that throws fails closed instead of running the tool"
+      - "formatGuardRefusal() names the tool, the mode and the reason"
+      - "dispatchToolCalls() refuses a gated call without invoking the tool"
+      - "without a gate the batch runs every accepted call, as before"
+      - "handleToolBatch() stores a refusal as the tool chunk of the refused call"

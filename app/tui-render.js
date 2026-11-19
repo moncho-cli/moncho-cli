@@ -49,7 +49,7 @@ const BLOB_TAG_RE = /^\s*<blob\s+path="([^"]*)"(?:\s+bytes=(\d+)\s+lines=(\d+)|\
 const BLOB_END_RE = /^\s*<\/blob>\s*$/;
 
 /** Blessed parses `{...}` as tags, so braces in untrusted text must be escaped. */
-function escapeTags(text) {
+export function escapeTags(text) {
   return text.replace(/[{}]/g, (ch) => (ch === '{' ? '{open}' : '{close}'));
 }
 

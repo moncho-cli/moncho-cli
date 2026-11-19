@@ -13,7 +13,7 @@ Six regions, laid out relatively so blessed relayouts them on resize:
 | input box | bottom 0, height 3 | the prompt the user types into |
 | queue bar | bottom 3, height 0..n | pending messages, one `✕` row each; hidden while empty |
 | status bar | bottom 3 + queue height | status text/spinner on the left, token meter on the right |
-| model row | bottom 4 + queue height | provider · model label, resolved at startup |
+| model row | bottom 4 + queue height | the session's mode label, then provider · model, resolved at startup |
 | transcript | bottom 5 + queue height up to one row below the top | scrollable, bordered conversation log |
 
 - The queue bar is the only region whose size changes: `setQueueHeight(rows)` makes
@@ -26,6 +26,10 @@ Six regions, laid out relatively so blessed relayouts them on resize:
   throw when there is no pty.
 - A mid-session resize repaints the status row (re-pinning the meter to the new
   right edge) and keeps the newest transcript line in view.
+  Every row fitted to a width — the queue previews, the brand line and the notices
+  that follow it — is re-fitted at the new width as well, and the teardown releases
+  the regions in reverse construction order exactly once; both sequences live in
+  `app/tui-teardown.js`, so `app/tui.js` stays the wiring.
 - The region layout lives in `createLayout()` (`app/tui-layout.js`), so the
   orchestration in `app/tui.js` stays about keys, questions and the public surface.
 - The input box is **armed by `question()` alone**. The region is created without

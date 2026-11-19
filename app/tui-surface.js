@@ -33,6 +33,7 @@ export function createTuiSurface({
   transcript,
   statusBar,
   modelBar,
+  modeRow = null,
   inputBox,
   setQueueHeight,
   focusGuard = null,
@@ -120,6 +121,12 @@ export function createTuiSurface({
     transcript,
     statusBar,
     modelBar,
+    // The session's intent mode, painted as the leftmost cell of the model row
+    // (app/session-mode-label.js): the row itself, plus the state it shows.
+    modeRow,
+    get modeState() {
+      return modeRow ? modeRow.state : null;
+    },
     queueBar: queueRegion,
     inputBox,
     setQueueHeight,

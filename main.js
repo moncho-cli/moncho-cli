@@ -1,18 +1,28 @@
 import { loadTools } from './utils/tool-loader.js';
-import { nextPrompt } from './app/message-queue.js';
 import { ConversationManager } from './app/conversation-manager.js';
 import { createCLI } from './app/cli.js';
 import { createTui } from './app/tui.js';
 import { AbortManager } from './app/abort-manager.js';
 import { createSessionRecorder } from './app/session-recorder.js';
-import { createDefaultCommands, parseCommand, runCommand } from './app/commands.js';
-import { prettyPrintJson, formatCommandResult } from './app/json-display.js';
+import { createDefaultCommands } from './app/commands.js';
+import { prettyPrintJson } from './app/json-display.js';
 import { formatUserEcho } from './app/tui-render.js';
-import { reloadConversation } from './app/session-replay.js';
+import { runSessionLoop } from './app/session-loop.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
 import { resolveContextSize, formatContextLimit } from './utils/context-size.js';
+
+/**
+ * Startup wiring.
+ *
+ * This module only *builds* the session — front end, tools, manager, recorder,
+ * commands — and then hands the built pieces to `app/session-loop.js`, which owns
+ * the one loop in the program. Keeping the wiring and the loop apart is what lets
+ * the loop be tested without a terminal or a provider, and what keeps this file
+ * under the line budget as the session surface grows (see
+ * `docs/runtime/startup-wiring`).
+ */
 
 let activeTui = null;
 
@@ -63,8 +73,8 @@ async function main() {
     // In the TUI a tool result is a collapsible block: one header line carrying
     // the "X char response" size, expanded with a click. The line CLI has no
     // widget, so it prints the header and the payload plainly.
-    // A JSON result is re-indented for display only (task.md item 5): the model
-    // still receives the raw bytes, and the session file keeps them verbatim.
+    // A JSON result is re-indented for display only: the model still receives the
+    // raw bytes, and the session file keeps them verbatim.
     const body = prettyPrintJson(result);
     const header = `\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''}`;
     if (tui) {
@@ -111,8 +121,8 @@ async function main() {
     },
   });
 
-  // The conversation is recorded under agent/sessions/<date>.json (task.md item
-  // 3): every chunk of the live window, verbatim, so it can be picked up later.
+  // The conversation is recorded under agent/sessions/<date>.json: every chunk of
+  // the live window, verbatim, so it can be picked up later (`/sessions`).
   const sessions = createSessionRecorder({ model: label });
   const saveSession = (reason) => {
     try {
@@ -129,52 +139,9 @@ async function main() {
     }
   };
 
-  // Slash commands (task.md item 4): an iterable registry, so adding a command
-  // later needs no change in this loop. Anything that is not `/<name>` stays a
-  // prompt and goes to the model untouched.
+  // Slash commands: an iterable registry, so adding a command later needs no
+  // change in the loop. Anything that is not `/<name>` stays a prompt.
   const commands = createDefaultCommands();
-  const handleCommand = async (input) => {
-    const parsed = parseCommand(input);
-    if (!parsed) return false;
-    const result = await runCommand(commands, parsed.name, {
-      arg: parsed.arg,
-      log,
-      choose: typeof cli.choose === 'function' ? (labels, options) => cli.choose(labels, options) : null,
-      manager,
-      dir: sessions.dir,
-    });
-    if (result === null) {
-      log(`Unknown command /${parsed.name}. Try /help.`);
-      return true;
-    }
-    if (result.ok && result.code === 'RESUMED') {
-      // The reload empties the transcript, so it runs before the result is
-      // printed: otherwise it would wipe the confirmation it belongs with. And
-      // the conversation *view* is reloaded, not just the context: the chunks
-      // hold the whole dialogue, so the transcript is rebuilt from them — in the
-      // TUI as collapsible blocks, in the line CLI as header, body, blank.
-      const chunks = result.resumed?.chunks || manager.chunks;
-      if (typeof tui?.reload === 'function') tui.reload(chunks);
-      else reloadConversation(chunks, { log });
-      // Keep saving into the session that was opened, instead of starting a
-      // parallel file: resuming must continue the conversation.
-      if (result.resumed?.id) {
-        sessions.adopt(result.resumed.id, {
-          createdAt: result.resumed.createdAt,
-          model: result.resumed.model,
-        });
-      }
-      for (const line of formatCommandResult(result)) log(line);
-      if (result.resumed?.id) {
-        log(`[Session] Continuing ${result.resumed.id}; new turns are saved there.`);
-      }
-      tui?.setTokens(manager.contextWindow.usage());
-      saveSession('resume');
-      return true;
-    }
-    for (const line of formatCommandResult(result)) log(line);
-    return true;
-  };
 
   tui?.setTokens(manager.contextWindow.usage());
   log(`\nProvider/model: ${label}`);
@@ -185,58 +152,24 @@ async function main() {
   log("ESC or Ctrl+C cancels a running task (press twice to confirm) and quits when idle.");
   log(`Commands: ${commands.list().map((command) => `/${command.name}`).join(', ')} (try /help)`);
 
-  while (true) {
-    // Between two turns -- and only there -- the pending-message queue is drained
-    // (app/message-queue.js#nextPrompt): a message typed while the last turn was in
-    // flight becomes the next prompt instead of waiting for the user to type it
-    // again (task.md: "injected when possible"). Draining here, and never inside a
-    // tool chain, is what keeps an assistant `tool_calls` message together with its
-    // `tool` results. The line CLI has no queue bar, so `tui` is null there and
-    // readline buffers the typed line for the next question() exactly as before.
-    const userInput = await nextPrompt({
-      dequeue: () => tui?.dequeue(),
-      ask: () => cli.question(tui ? '> ' : '\n> '),
-    });
-
-    if (userInput.toLowerCase() === 'exit') {
-      log("Exiting...");
-      saveSession('exit');
-      break;
-    }
-    if (!userInput.trim()) continue;
-
-    // A slash command is answered here and never sent to the model.
-    if (await handleCommand(userInput)) continue;
-
-    abortManager.startTask();
-    try {
-      tui?.startSpinner();
-      // No repaint after the turn: the manager announces every chunk it adds
-      // (app/conversation-manager.js#ConversationManager), so the meter already
-      // holds the final number before the spinner stops.
-      await manager.processInput(userInput);
-      // The turn landed, so whatever the provider recovered from on the way is no
-      // longer worth showing: drop the retry notice now rather than at its TTL.
+  await runSessionLoop({
+    cli,
+    tui,
+    log,
+    manager,
+    commands,
+    sessions,
+    abortManager,
+    saveSession,
+    // The turn landed, so whatever the provider recovered from on the way is no
+    // longer worth showing: drop the retry notice now rather than at its TTL.
+    onTurnLanded: () => {
       if (retryNotice !== null) {
         tui?.dismissNotice(retryNotice);
         retryNotice = null;
       }
-      saveSession('turn');
-    } catch (error) {
-      if (
-        error.name === 'AbortError' ||
-        error.code === 'ABORTED' ||
-        error.message?.toLowerCase().includes('aborted')
-      ) {
-        log('\n[Info] Task was aborted.');
-        continue;
-      }
-      throw error;
-    } finally {
-      tui?.stopSpinner();
-      abortManager.endTask();
-    }
-  }
+    },
+  });
 
   abortManager.dispose();
   cli.close();

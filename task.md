@@ -1,62 +1,76 @@
-status: done
+status: in progress: interface: Tab cycles Chat -> Design -> Work in the TUI and is refused while work:on, with a notice explaining the lock
 
-# Model-call pulse: an incremental counter carried by every request, under a hard limit
+# Stateful mode isolation: Chat / Design / Work, under a session-scoped execution lock
 
-The backlog item:
+The backlog item (`agent/tmp/mode-isolation.md`):
 
-> keep in the context an incremental pulse on each model call, create a hard limit
-> configurable defaulting to 30, and instruct via prompt.md to honor this value.
-> reset it to 0 after marking an item as completed or running compaction
+> Most CLI agents blur the line between talking about code and mutating code — a
+> casual question like *"how would we refactor this?"* can accidentally trigger file
+> edits. To prevent this while still supporting autonomous background execution, the
+> system separates **Intent Modes** (`Chat` and `Design`) from **Execution State**
+> (`Work:on` / `Work:off`).
 
-- [x] keep in the context an incremental pulse on each model call, create a hard limit configurable defaulting to 30, and instruct via prompt.md to honor this value. reset it to 0 after marking an item as completed or running compaction
+## The model to build
 
-## What the pulse is
+| Concept | Meaning |
+| ------- | ------- |
+| **Intent mode** | `Chat` (strictly read-only), `Design` (authors `task.md`), `Work` (executes it) |
+| **Execution state** | `work:on` / `work:off` — a *lock*, not a mode: while `work:on` the intent mode cannot change |
+| **Session scope** | every session carries its own mode; a session in `Chat` creates no files at all |
 
-One line, generated fresh for every **agent** model call and sent as the second
-message of the request — right after the agent system prompt, before the
-conversation:
+The contract, restated so each item below can be judged against it:
 
-```
-[pulse] model call 4 of 30 — 26 left. Reset to 0 by completing a task.md item (update_task) or by a compaction.
-```
+- `Tab` moves `Chat -> Design -> Work`; the move is **blocked while `work:on`**.
+- `/work on` needs a `task.md` with at least one pending item; it locks the session to
+  `Work` and keeps a background agent alive. `/work off` stops it and falls back to
+  `Design`.
+- The current state is a **coloured label at the leftmost cell of the model row**, one
+  bright colour per state.
+- While `work:on` the session stays reachable: chat messages steer it, and hot-editing
+  `task.md` is an explicit senior escape hatch, never a guarantee.
+- The main agent answers questions about progress by reading `task.md` /
+  `implementation_plan.md`; a deterministic timer watches those files and injects
+  progress updates into the main conversation.
+- `Alt+1` is the main agent, `Alt+2` the work subagent (more subagents later).
 
-Three decisions worth stating up front:
+## Items — refactors first, then the feature, then the proof
 
-| Decision | Why |
-| -------- | ----------------------------------------------------------------------- |
-| It is generated per call, **not stored as a window chunk** | N calls then cost one line of context instead of N chunks, the recorded session stays the conversation, and the line can never land between an assistant `tool_calls` message and its `tool` results |
-| The limit is **instructive, not enforced** | The backlog asks prompt.md to make the model honour it; the model can only reset the pulse by calling a tool, so refusing the call would turn a nudge into a deadlock |
-| It resets on a **completed item** or a **compaction** only | Those are the two moments the backlog names, and they are exactly where a budget of calls should start again |
+- [x] refactor: extract the host turn loop out of main.js into app/session-loop.js, so main.js stays a wiring module under the size budget
+- [x] refactor: split app/conversation-manager.js by moving one-turn execution (request, tool batch, final response) into app/turn-runner.js
+- [x] refactor: trim app/tui.js by extracting teardown and the resize repaint into app/tui-teardown.js, leaving room for the mode wiring
+- [x] refactor: give app/tool-batch.js a pre-dispatch call gate, extracted into app/tool-guard.js so the batch stays under the size budget
+- [x] app/session-mode.js: the pure Chat/Design/Work state machine — cycle order, the work lock rules, the label text and the per-state colours
+- [x] interface: paint the current mode as a coloured label at the leftmost of the model row, refreshed on every mode change
+- [ ] interface: Tab cycles Chat -> Design -> Work in the TUI and is refused while work:on, with a notice explaining the lock
+- [ ] interface: /work on and /work off gate on a task.md with a pending item, auto-switch Work/Design and spawn or stop the background agent
+- [ ] agent: mode-gated tool exposure — Chat advertises and runs read-only tools, Design can only write task.md and implementation_plan.md, Work is unrestricted
+- [ ] agent: a refused mutating call in Chat or Design comes back as a structured refusal naming the mode, instead of touching a file
+- [ ] agent: app/work-agent.js, the background agent that walks task.md one item at a time and keeps implementation_plan.md moving
+- [ ] agent: app/work-watch.js, the timer that reads the two tracking files deterministically and injects progress updates into the main conversation
+- [ ] sessions: persist the mode with the session file and restore it on /sessions, so a resumed conversation keeps its state
+- [ ] interface: Alt+1 / Alt+2 switch the session view between the main agent and the work subagent transcript
+- [ ] docs: docs/interface/modes and docs/runtime/work-agent specs, index.yaml, tests/README rows and the prompt.md section, so the realms stay linked
+- [ ] verify: npm test green, every touched file under 300 lines, and the whole flow rehearsed once end to end
 
-## Done when — verified
+## Done when — acceptance criteria
 
-- [x] every agent model call carries the line, the count climbs by exactly one per
-      call, and the whole turn adds one line of context, not one chunk per call.
-- [x] `PULSE_LIMIT` is configurable, defaults to 30, and reaches the container
-      (`start.sh`, `.env.example`, `README.md`).
-- [x] crossing the limit is announced once (a transient notice) and the line tells
-      the model the budget is spent.
-- [x] the count resets to 0 after `update_task` marks an item done and after a
-      compaction that actually ran; the summariser call itself does not tick.
-- [x] `prompt.md` instructs the model to honour the value (§9).
-- [x] `docs/context/call-pulse` states the contract and `docs/index.yaml`
-      registers it, so `tests/docs-realm.test.js` passes.
-- [x] `npm test` is green (334 tests, 0 failing) and every touched file stays under
-      300 lines.
-
-## Files
-
-| Action | Path |
-| ------ | ---- |
-| added | `utils/task-pulse.js`, `app/compaction-runner.js`, `tests/call-pulse.test.js`, `tests/call-pulse-loop.test.js`, `docs/context/call-pulse/*` |
-| edited | `config/constants.js`, `app/conversation-manager.js`, `app/context-window.js`, `utils/host.js`, `tools/update_task.js`, `prompt.md`, `README.md`, `.env.example`, `start.sh`, `docs/index.yaml`, `docs/README.md`, `docs/context/compaction/spec.yaml`, `tests/README.md` |
+- [ ] `Chat` provably cannot write: with the mode on Chat, no mutating tool is offered
+      to the provider and a mutating call the model still makes is refused by code.
+- [ ] `Design`'s only writes are `task.md` and `implementation_plan.md`.
+- [ ] `Tab` walks the three intent modes, the label changes colour with it, and
+      neither Tab nor `/work off` can leave the Work lock without `work:off`.
+- [ ] `/work on` refuses a session with no `task.md` or with every item already done.
+- [ ] The background agent works one item at a time; the main agent reports status
+      from the tracking files; the watcher injects deterministic progress lines.
+- [ ] Every touched file stays under 300 lines and `npm test` is green.
 
 ## Notes
 
-- The two pulse suites are split along the same seam as the code: `call-pulse.test.js`
-  proves the pure counter and its wording, `call-pulse-loop.test.js` proves the
-  wiring against a stub provider (position in the request, never a chunk, the
-  summariser not ticking, and both resets).
-- `app/compaction-runner.js` was extracted from `app/conversation-manager.js` while
-  wiring the compaction reset, to keep the manager under the 300-line budget; the
-  behaviour is unchanged, and the module is covered by `docs/context/compaction`.
+- The five refactor items come first on purpose: `main.js` (249 lines),
+  `app/conversation-manager.js` (287), `app/tui.js` (289) and `app/tool-batch.js` (254)
+  all sit close to the 300-line budget, and the mode wiring is what would push them
+  over. Each refactor is behaviour-preserving and is verified by the existing suite.
+- The mode state machine is pure and lives outside the TUI, so both front ends share
+  it; the line CLI (no `Tab`, no coloured label) still honours the gating rules.
+- `work:on` is a lock, never a sandbox: live steaming and hot-edits stay available by
+  design, and the clean workflow remains `work:off` -> Design -> `work:on`.

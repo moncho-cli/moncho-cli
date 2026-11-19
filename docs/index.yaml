@@ -40,6 +40,7 @@ specs:
   - interface/transcript-smooth-scroll
   - interface/conversation-colors
   - interface/notice-overlay
+  - interface/modes
   - interface/brand-line
   - interface/json-display
   - interface/user-messages

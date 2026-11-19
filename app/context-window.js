@@ -18,10 +18,11 @@ import { formatContextLimit, CONTEXT_SIZE_SOURCE } from '../utils/context-size.j
  * the `compact_context` tool reach the *live* window through the host registry.
  *
  * The chunks are the *conversation*: what a request sends is assembled by
- * `request()`, which takes the per-call prelude (the pulse line, see
- * `utils/task-pulse.js`). That keeps a message the model must see but the session
- * should not record out of the array, and it is why nothing ever lands between an
- * assistant `tool_calls` chunk and the `tool` chunks answering it.
+ * `request()`, which takes a per-call prelude (the pulse line lived there, see
+ * `utils/task-pulse.js`; it is paused and the prelude is empty today). That keeps a
+ * message the model must see but the session should not record out of the array, and
+ * it is why nothing ever lands between an assistant `tool_calls` chunk and the `tool`
+ * chunks answering it.
  */
 export class ContextWindow {
   #chunks = [];
@@ -76,8 +77,10 @@ export class ContextWindow {
    * The exact messages a provider call sends, `extra` first.
    *
    * `api/ollama.js` prepends the agent system prompt, so the order the model reads
-   * is: agent prompt, the prelude (the pulse line), the summary of anything that was
-   * compacted, then the conversation in order.
+   * is: agent prompt, the prelude (today empty — the pulse line is paused, see
+   * `utils/task-pulse.js`), the summary of anything that was compacted, then the
+   * conversation in order. That prefix only ever grows, which is what lets a provider
+   * hit its prompt cache (`docs/context/call-pulse`).
    */
   request(extra = []) {
     const messages = Array.isArray(extra) ? extra : [extra];

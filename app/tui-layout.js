@@ -1,5 +1,6 @@
 import blessed from 'neo-blessed';
 import { sanitize } from './tui-render.js';
+import { createModeRow } from './session-mode-label.js';
 
 // Screen regions (from the bottom up):
 //   input box : bottom 0, height 3 (border 'line')
@@ -31,7 +32,7 @@ export const BRAND_BAND_ROWS = 0;
  * surface) stays readable and the layout numbers live in one place. The regions
  * are positioned relatively, so blessed relayouts them on resize.
  */
-export function createLayout({ screen, modelLabel = '' } = {}) {
+export function createLayout({ screen, modelLabel = '', mode = null, repaint = null } = {}) {
   const transcript = blessed.log({
     parent: screen,
     label: ' Conversation ',
@@ -76,10 +77,29 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
     right: 0,
     bottom: MODEL_BOTTOM,
     height: 1,
-    tags: false,
+    // The row opens with the session's mode in its own colour
+    // (app/session-mode-label.js), then the identity, so it parses tags; the
+    // identity is escaped before it gets here.
+    tags: true,
     padding: { left: 1, right: 1 },
     content: sanitize(modelLabel),
   });
+
+  // The session's intent mode owns the leftmost cell of the row: it is the one
+  // place on screen that answers "what may this session do right now?", and
+  // createModeRow() repaints it the moment an *accepted* change lands
+  // (app/session-mode.js#subscribe) -- never on a refused one.
+  const modeRow = createModeRow({
+    mode,
+    modelLabel,
+    paint: (line) => {
+      modelBar.setContent(line);
+      if (typeof repaint === 'function') repaint();
+    },
+  });
+  // Paint it once, so the leftmost cell shows a mode from the first frame even
+  // when the caller drives no session mode at all.
+  modeRow.render();
 
   // The queue bar sits right above the input box and is hidden while the queue
   // is empty, so it costs no row when nothing is waiting. Its rows are painted
@@ -164,6 +184,7 @@ export function createLayout({ screen, modelLabel = '' } = {}) {
   }
 
   return {
-    transcript, statusBar, modelBar, queueBar, inputBox, setQueueHeight, setBrandRows,
+    transcript, statusBar, modelBar, modeRow, queueBar, inputBox, setQueueHeight,
+    setBrandRows,
   };
 }

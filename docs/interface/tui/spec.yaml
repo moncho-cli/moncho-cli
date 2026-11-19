@@ -23,6 +23,8 @@ code:
     symbols: [sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD]
   - path: app/tui-keys.js
     symbols: [bindKeys]
+  - path: app/tui-teardown.js
+    symbols: [createResizeRepaint, createTeardown]
   - path: app/paste-registry.js
     symbols: [createPasteRegistry]
   - path: app/compaction-notice.js
@@ -74,6 +76,12 @@ tests:
       - "createCompactionNotifier() announces each compaction exactly once"
       - "bindKeys() forwards interrupts from the program and scrolls from the screen"
       - "bindKeys() without a screen is a harmless no-op"
+  - path: tests/tui-teardown.test.js
+    cases:
+      - "createResizeRepaint() re-fits every row measured at the old width"
+      - "createResizeRepaint() survives a half-built screen"
+      - "createTeardown() closes in construction-reverse order and only once"
+      - "createTeardown() without a latch still tears down, and skips unknown steps"
   - path: tests/tui-status.test.js
     cases:
       - "composeStatusRow() right-aligns the meter and never drops it"

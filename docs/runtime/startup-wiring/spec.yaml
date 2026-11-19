@@ -6,17 +6,26 @@ summary: >
   main.js picks the front end (TUI with a pty, else the line CLI), loads the tools
   with a result hook, resolves the context size once, and builds the
   ConversationManager with an onContextChange hook, then records the live
-  conversation to a dated session file after every turn. Each turn's prompt comes
-  from nextPrompt(), which drains the pending-message queue and only asks the front
-  end when it is empty (docs/interface/message-queue). The manager announces every
-  window change and every call (docs/context/usage-refresh), so the host paints no
-  usage itself. The loop checks the budget before every call, stores tool calls as
-  one assistant chunk plus one tool chunk each (intent included), retries transient
-  empty responses, and ends quietly on abort; a failed compaction never breaks the
-  task.
+  conversation to a dated session file after every turn. main.js only wires those
+  pieces together: the turn loop itself lives in app/session-loop.js, which asks for
+  each turn's prompt through nextPrompt() — draining the pending-message queue and
+  only asking the front end when it is empty (docs/interface/message-queue) — answers
+  a slash command without calling the model, and saves the session once a turn lands.
+  The manager announces every window change and every call
+  (docs/context/usage-refresh), so the host paints no usage itself. The loop checks
+  the budget before every call, stores tool calls as one assistant chunk plus one
+  tool chunk each (intent included), retries transient empty responses, and ends
+  quietly on abort; a failed compaction never breaks the task. The control flow of a
+  single turn lives in app/turn-runner.js: the manager keeps the state (window, meter,
+  pulse, compaction runner, tool batch) and delegates processInput() to runTurn(),
+  which the tests drive through the documented session seam with a stub provider.
 code:
   - path: main.js
     symbols: [main]
+  - path: app/session-loop.js
+    symbols: [runSessionLoop, handleCommand, isExitInput, isAbortError]
+  - path: app/turn-runner.js
+    symbols: [runTurn, isAbortFailure]
   - path: app/message-queue.js
     symbols: [nextPrompt, createMessageQueue]
   - path: app/conversation-manager.js
@@ -28,6 +37,22 @@ code:
   - path: utils/tool-loader.js
     symbols: [loadTools]
 tests:
+  - path: tests/session-loop.test.js
+    cases:
+      - "isExitInput() and isAbortError() recognise the sentinels both front ends emit"
+      - "runSessionLoop() drains the queue before asking, runs one turn and saves it"
+      - "runSessionLoop() answers a command without calling the model"
+      - "runSessionLoop() swallows an abort, keeps going, and always tears the task down"
+      - "runSessionLoop() lets a real failure escape instead of hiding it"
+      - "handleCommand() resumes a session by reloading the view before printing"
+      - "handleCommand() returns false for a prompt and reports an unknown command"
+  - path: tests/turn-runner.test.js
+    cases:
+      - "runTurn() asks, runs the tool batch, and ends on the first tool-free reply"
+      - "runTurn() counts every call and compacts when a tool defers it"
+      - "an abort ends the turn quietly, with no failure line and no notice"
+      - "a provider failure ends the turn as a notice plus a transcript line"
+      - "isAbortFailure() recognises both shapes an abort arrives in"
   - path: tests/message-queue.test.js
     cases:
       - "nextPrompt() injects the oldest queued message between turns, else asks"

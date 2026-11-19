@@ -1,0 +1,40 @@
+id: interface/modes
+domain: interface
+title: The session's intent mode — Chat, Design, Work under a work:on lock
+status: active
+summary: >
+  A session carries one intent mode — chat (strictly read-only), design (authors
+  task.md and implementation_plan.md only) and work (executes them) — kept apart
+  from the work:on execution lock. createSessionMode() is the pure, terminal-free
+  machine both front ends drive: nextMode() walks chat -> design -> work -> chat
+  for Tab, cycle() and setMode() are refused while the lock is on with the
+  WORK_LOCK_NOTICE, setWork(true) pins the mode to work and engages the lock while
+  setWork(false) falls back to design, describe() answers the state key, the label
+  and one bright colour per state (work:on carries its own), accepted changes are
+  announced to subscribe()d listeners, and toJSON() persists mode and lock for a
+  resumed session.
+code:
+  - path: app/session-mode.js
+    symbols: [MODE_ORDER, MODES, MODE_LABELS, MODE_COLORS, WORK_ON_LABEL, WORK_LOCK_NOTICE, normalizeMode, nextMode, modeStateKey, formatModeLabel, modeColor, createSessionMode]
+  - path: app/session-mode-label.js
+    symbols: [MODE_LABEL_SEPARATOR, defaultModeState, formatModeTag, formatModeRow, createModeRow]
+  - path: app/tui-layout.js
+    symbols: [createLayout]
+tests:
+  - path: tests/session-mode.test.js
+    cases:
+      - "normalizeMode() falls back to chat for anything but the three known names"
+      - "nextMode() walks chat -> design -> work -> chat and wraps"
+      - "Tab cycles the three intent modes and announces every change once"
+      - "the work lock refuses Tab and any mode change, and explains itself"
+      - "setWork(true) pins the mode to work, setWork(false) falls back to design"
+      - "the state key, the label and one bright colour per state"
+      - "toJSON() round-trips the mode and the lock into createSessionMode()"
+  - path: tests/session-mode-label.test.js
+    cases:
+      - "formatModeRow() paints the mode label at the leftmost cell and the model after it"
+      - "formatModeTag() uses one bright colour per state and escapes the label"
+      - "createModeRow() repaints on an accepted mode change and never on a refused one"
+      - "createModeRow() paints the chat default without a mode, and setState() moves it"
+      - "the TUI paints the session mode at the leftmost cell of the model row"
+      - "the TUI without a session mode still shows the read-only chat default"

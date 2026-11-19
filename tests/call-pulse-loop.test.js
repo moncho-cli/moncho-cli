@@ -12,8 +12,8 @@ import path from 'node:path';
  * an item as completed or running compaction").
  *
  * The *pure* counter and its wording are proved in tests/call-pulse.test.js; this
- * file proves the wiring: every agent request carries the freshly generated line
- * right after the agent system prompt, the line is never a window chunk, the
+ * file proves the wiring: the counter ticks once per agent call, the (currently
+ * disabled) line never reaches the request and never becomes a window chunk, the
  * summariser call does not tick the counter, and a completed item or a compaction
  * puts it back to 0.
  *
@@ -95,7 +95,7 @@ function createManager(options = {}) {
   return new ConversationManager(toolFunctions, () => tools, () => null, { log: () => {}, ...options });
 }
 
-test('every agent request carries the pulse line right after the agent system prompt', async () => {
+test('no agent request carries a pulse line or an empty system message while it is disabled', async () => {
   requests.length = 0;
   toolAnswers = 1;
 
@@ -104,19 +104,22 @@ test('every agent request carries the pulse line right after the agent system pr
 
   const lines = pulseLines();
   assert.equal(lines.length, 2, 'the turn makes two agent calls');
-  assert.match(lines[0], /model call 1 of 30/);
-  assert.match(lines[1], /model call 2 of 30/, 'the count climbs call by call');
+  assert.deepEqual(lines, [null, null], 'the line is disabled, so none is carried');
 
-  // Position matters: api/ollama.js prepends the agent prompt, then the pulse.
+  // The request is the agent prompt followed by the conversation: a disabled line
+  // must not leave an empty `system` message behind, which would still be a role
+  // marker the provider bills and the prompt cache hashes.
   const first = requests.at(0);
   assert.equal(first.messages[0].role, 'system');
   assert.match(first.messages[0].content, /MONCHO-CLI/, 'the agent prompt stays first');
-  assert.equal(first.messages[1].role, 'system');
-  assert.equal(first.messages[1].content, lines[0]);
-  assert.equal(first.messages.at(-1).role, 'user', 'the conversation follows the pulse');
+  assert.equal(first.messages[1].role, 'user', 'the conversation follows the agent prompt');
+  assert.ok(
+    !first.messages.some((m) => (m.content ?? '') === ''),
+    'no empty message is sent'
+  );
 
-  // Generated per call, never stored: N calls cost one line of context, and the
-  // session stays the conversation itself.
+  // The counter still runs even though its line is not sent, and it is never a
+  // window chunk: the session stays the conversation itself.
   assert.ok(
     !manager.chunks.some((chunk) => (chunk.content || '').startsWith(PULSE_MARKER)),
     'the pulse must not be a window chunk'
@@ -147,7 +150,7 @@ test('the summariser call is not an agent call and does not carry or tick the pu
   assert.equal(stats.resetReason, 'compaction');
 });
 
-test('the pulse counts calls, never refuses them, and warns once past the hard limit', async () => {
+test('the pulse counts calls and warns once past the hard limit without refusing them', async () => {
   requests.length = 0;
   toolAnswers = 3;
   const notices = [];
@@ -160,13 +163,35 @@ test('the pulse counts calls, never refuses them, and warns once past the hard l
 
   const lines = pulseLines();
   assert.equal(lines.length, 4);
-  assert.match(lines.at(-1), /model call 4 of 2/, 'the call is counted, not blocked');
+  assert.deepEqual(lines, [null, null, null, null], 'the line is disabled, so none is carried');
 
   const warnings = notices.filter((notice) => notice.code === 'pulse-limit');
   assert.equal(warnings.length, 1, 'the crossing is announced exactly once per stretch');
   assert.equal(warnings[0].kind, 'warn');
   assert.match(warnings[0].text, /passed its hard limit/);
   assert.equal(manager.chunks.at(-1).content, 'all done', 'the turn still completed');
+});
+
+test('the request prefix never changes between agent calls, so the prompt cache can be hit', async () => {
+  requests.length = 0;
+  toolAnswers = 3;
+
+  const manager = createManager();
+  await manager.processInput('read the fixture repeatedly');
+
+  const agent = requests.filter(isAgentCall);
+  assert.equal(agent.length, 4, 'the tool loop makes four agent calls');
+
+  for (let i = 1; i < agent.length; i += 1) {
+    const previous = agent[i - 1].messages;
+    const current = agent[i].messages;
+    assert.ok(current.length > previous.length, 'a later call only appends to the conversation');
+    assert.deepEqual(
+      current.slice(0, previous.length),
+      previous,
+      `call ${i + 1} must repeat call ${i} byte-for-byte as its prefix`
+    );
+  }
 });
 
 test('completing a task.md item resets the live pulse through the host registry', async () => {

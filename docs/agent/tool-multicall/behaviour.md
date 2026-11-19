@@ -61,6 +61,23 @@ intent: read the fixture
   guidance, max }` — with the very same signature, so the model sees *which* call
   was dropped and is told to ask for a smaller batch.
 
+## The pre-dispatch gate
+
+- Before a tool is looked up, every accepted call passes the **injected gate**
+  (`app/tool-guard.js#guardToolCall`). The gate answers `null`/`undefined`/`false`/
+  `true` to allow the call, or an object (`{ reason, code?, mode?, guidance? }`) to
+  refuse it; any other answer — and a gate that throws — is a refusal, so a broken
+  policy **fails closed** instead of silently granting everything.
+- A refusal never invokes the tool. It becomes a normal `[error]` outcome whose body
+  is `formatGuardRefusal()`'s JSON (`code`, `tool`, `mode`, `message`,
+  `guidance`), stored in the call's own `tool` chunk, so the provider's pairing is
+  untouched and the model learns *which* call was blocked and why. The batch then
+  reports it as `guarded` next to `executed` and `refused`.
+- With **no gate installed** the batch behaves exactly as it did before: the abort
+  check, the unknown-tool error and the throwing-tool error are unchanged. What the
+  gate decides is a session policy (`docs/interface/modes`), never the batch's
+  business.
+
 ## Reading it back
 
 - `formatMulticallEnvelope()` writes the envelope and `parseMulticallEnvelope()`
@@ -90,9 +107,11 @@ simultaneous, order }`, and the deferred-compaction request
 
 ## See also
 
-- Implementation: `app/tool-batch.js`, `app/tool-call-format.js`,
-  `config/constants.js`, `app/conversation-manager.js`
+- Implementation: `app/tool-batch.js`, `app/tool-guard.js`,
+  `app/tool-call-format.js`, `config/constants.js`,
+  `app/conversation-manager.js`
 - The chunk a tool result lives in: `docs/agent/tool-call-contract`
 - Replaying an enveloped chunk: `docs/interface/session-replay`
 - The meter's per-chunk announcements: `docs/context/usage-refresh`
-- Proof: `tests/tool-multicall.test.js`
+- Proof: `tests/tool-multicall.test.js`, `tests/tool-batch.test.js`,
+  `tests/tool-guard.test.js`

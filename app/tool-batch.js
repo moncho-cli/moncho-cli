@@ -4,6 +4,7 @@ import {
   TOO_MANY_TOOL_CALLS_GUIDANCE,
 } from '../config/constants.js';
 import { detectCompactionRequest } from './compaction-request.js';
+import { guardToolCall, formatGuardRefusal } from './tool-guard.js';
 import {
   formatCallLines,
   formatCallSignature,
@@ -86,7 +87,7 @@ export function planToolBatch(toolCalls = [], { max = MAX_PARALLEL_TOOL_CALLS } 
  * the behaviour the sequential loop had). An aborted task skips the remaining
  * calls instead of starting work for a request the user already cancelled.
  */
-export async function dispatchToolCalls(entries = [], toolFunctions = {}, { signal = null } = {}) {
+export async function dispatchToolCalls(entries = [], toolFunctions = {}, { signal = null, gate = null } = {}) {
   const list = Array.isArray(entries) ? entries : [];
 
   return Promise.all(list.map(async ({ call }) => {
@@ -106,6 +107,17 @@ export async function dispatchToolCalls(entries = [], toolFunctions = {}, { sign
     if (signal?.aborted) {
       outcome.isError = true;
       outcome.result = `Error executing ${name}: the task was cancelled before the call started.`;
+      return outcome;
+    }
+
+    // The pre-dispatch gate (app/tool-guard.js): the only place a call can be
+    // refused *before* it touches anything. Without a gate this is a no-op, so
+    // the batch behaves exactly as it did before the modes existed.
+    const refusal = guardToolCall({ id, name, args, rawArgs, intent }, gate);
+    if (refusal) {
+      outcome.isError = true;
+      outcome.refused = true;
+      outcome.result = formatGuardRefusal({ name, ...refusal });
       return outcome;
     }
 
@@ -167,6 +179,7 @@ export async function handleToolBatch({
   toolFunctions = {},
   max = MAX_PARALLEL_TOOL_CALLS,
   notify = () => {},
+  gate = null,
 } = {}) {
   const plan = planToolBatch(toolCalls, { max });
   const notifyChange = typeof notify === 'function' ? notify : () => {};
@@ -201,7 +214,7 @@ export async function handleToolBatch({
 
   // The accepted calls are dispatched together and awaited together, so their
   // wall-clock cost is the slowest call rather than the sum of all of them.
-  const outcomes = await dispatchToolCalls(plan.accepted, toolFunctions, { signal });
+  const outcomes = await dispatchToolCalls(plan.accepted, toolFunctions, { signal, gate });
   let compactionRequested = false;
   const order = [];
 
@@ -247,6 +260,9 @@ export async function handleToolBatch({
   return {
     compactionRequested,
     executed: outcomes.length,
+    // How many of the executed calls the mode gate refused (app/tool-guard.js);
+    // they still got a result chunk, but no tool ran for them.
+    guarded: outcomes.filter((outcome) => outcome.refused).length,
     refused: plan.refused.length,
     simultaneous: plan.simultaneous,
     order,
