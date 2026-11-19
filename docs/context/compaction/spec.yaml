@@ -45,4 +45,5 @@ tests:
       - an over-budget window is compacted with a neutral summariser call
       - maybeCompact keeps the newest chunks and evicts the rest
       - a summariser failure never breaks the task loop
+      - the compaction announces itself in the transcript before it runs
       - detectCompactionRequest only fires on deferred compact_context results

@@ -29,6 +29,18 @@ implementation is linked below.
   so an agent reading the window can tell a summary from a real message.
 - After compaction the window is strictly smaller than before.
 
+## The announcement
+
+- A compaction is announced **twice** in the conversation thread: once when it
+  starts and once when it is done. The first one is there because the summariser
+  call takes time — the thread must not go quiet while the window is rewritten.
+- The starting line is written **before** the summariser call, so the order of the
+  transcript is the order of the events.
+- A window that needs no compaction announces nothing at all: the announcement
+  belongs to a compaction, not to a turn.
+- A compaction that fails has already announced that it started; the failure is
+  reported on its own line.
+
 ## Failure behaviour
 
 - An empty or whitespace-only summary is **rejected**: the compactor throws and the

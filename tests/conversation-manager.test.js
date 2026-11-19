@@ -179,6 +179,50 @@ test('a summariser failure never breaks the task loop', async () => {
   assert.ok(reported.some((m) => m.includes('[Context] Compaction skipped')), 'failures must be reported');
 });
 
+test('the compaction announces itself in the transcript before it runs', async () => {
+  const transcript = [];
+  let announcedBeforeCompact = false;
+  const compactingWindow = {
+    chunks: [{ role: 'user', content: 'x' }],
+    maxTokens: 10,
+    compactions: [],
+    needsCompaction: () => true,
+    compact: async () => {
+      // The announcement must already be on the transcript when the window is
+      // rewritten: the summariser call takes time, and the thread must not go
+      // quiet while it runs.
+      announcedBeforeCompact = transcript.some((line) => line.includes('Compaction process started'));
+      return {
+        compacted: true,
+        olderChunks: 2,
+        keptChunks: 1,
+        olderTokens: 900,
+        afterTokens: 120,
+        usage: '120/1000 tokens'
+      };
+    },
+    stats: () => ({}),
+    usage: () => '120/1000 tokens'
+  };
+
+  const manager = new ConversationManager(toolFunctions, () => [], () => null, {
+    log: (message) => transcript.push(String(message)),
+    contextWindow: compactingWindow
+  });
+
+  await manager.maybeCompact(null, { force: true });
+
+  assert.ok(announcedBeforeCompact, 'the starting line must be logged before the window is rewritten');
+  assert.ok(
+    transcript.some((line) => line.includes('[Context] Compaction process started')),
+    'the transcript must say that the compaction started'
+  );
+  assert.ok(
+    transcript.some((line) => line.includes('[Context] Compacted')),
+    'the finishing line still follows it'
+  );
+});
+
 test('detectCompactionRequest only fires on deferred compact_context results', () => {
   assert.equal(detectCompactionRequest(JSON.stringify({ code: 'COMPACTION_REQUESTED', defer: true })), true);
   assert.equal(detectCompactionRequest(JSON.stringify({ code: 'COMPACTION_REQUESTED', defer: false })), false);

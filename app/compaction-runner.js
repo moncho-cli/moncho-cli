@@ -27,6 +27,11 @@ export function createCompactionRunner({ window, callModel, log = () => {}, noti
     async run(signal, { force = false, reason = 'over-budget' } = {}) {
       if (!force && !window.needsCompaction()) return null;
 
+      // The compaction is announced *before* it runs: the summariser call takes
+      // time, so the conversation thread must say that something is happening
+      // instead of going quiet until the window has been rewritten.
+      log(`\n[Context] Compaction process started...`);
+
       try {
         const result = await window.compact({ force, reason, signal, callModel });
 

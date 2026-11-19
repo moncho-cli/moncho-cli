@@ -7,3 +7,5 @@ node_modules/
 # reusable, and never let it leak into a commit.
 # The leading slash is required: a bare `agent/` would also hide docs/agent/.
 /agent/
+
+task-backlog.md

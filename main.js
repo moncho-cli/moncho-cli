@@ -12,7 +12,7 @@ import { prettyPrintJson } from './app/json-display.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
-import { registerSession, unregisterSession } from './utils/host.js';
+import { registerSession } from './utils/host.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
@@ -216,8 +216,6 @@ async function main() {
     },
   });
 
-  // Unregister the session when the conversation ends
-  unregisterSession(sessions.id);
   abortManager.dispose();
   cli.close();
 }
