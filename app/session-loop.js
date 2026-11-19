@@ -27,6 +27,23 @@ import { reloadConversation } from './session-replay.js';
  *    `finally` block always clears the task and stops the spinner.
  */
 
+/**
+ * The third source of a prompt: the `work:on` self-drive, or the front end's question.
+ *
+ * The order is the whole contract of the lock (`docs/interface/modes`): `nextPrompt()`
+ * drains the pending-message queue *before* calling this, so a message typed mid-run
+ * steers the next turn; when nothing is queued and the lock is engaged, the next
+ * `task.md` item becomes the prompt; otherwise the user types.
+ *
+ * The drive prints its own progress line, so the hand-out is visible without the loop
+ * knowing what a checklist is.
+ */
+export function askForPrompt({ drive = null, cli = null, tui = null } = {}) {
+  const next = typeof drive?.next === 'function' ? drive.next() : null;
+  if (next && String(next.prompt ?? '').trim()) return next.prompt;
+  return cli.question(tui ? '> ' : '\n> ');
+}
+
 /** True when the user asked to leave (the `exit` sentinel both front ends emit). */
 export function isExitInput(input) {
   return String(input ?? '').trim().toLowerCase() === 'exit';
@@ -57,6 +74,7 @@ export async function handleCommand(input, {
   tui = null,
   manager = null,
   sessions = null,
+  mode = null,
 } = {}) {
   const parsed = parseCommand(input);
   if (!parsed) return false;
@@ -67,6 +85,9 @@ export async function handleCommand(input, {
     choose: typeof cli?.choose === 'function' ? (labels, options) => cli.choose(labels, options) : null,
     manager,
     dir: sessions?.dir,
+    // The live mode (`app/session-mode.js`), so `/work on|off` moves the very state
+    // the gate and the label read. Absent in a front end without modes.
+    mode,
   });
 
   if (result === null) {
@@ -76,6 +97,11 @@ export async function handleCommand(input, {
 
   if (result.ok && result.code === 'RESUMED') {
     const chunks = result.resumed?.chunks || manager?.chunks || [];
+    // The stored intent mode is *restored*, never requested: `/sessions` brings back the
+    // state the conversation was left in, and `setMode()` would be refused while a
+    // resumed `work:on` lock is on (app/session-mode.js#restore). A file written before
+    // the mode existed restores nothing, so the session keeps the state it opened with.
+    mode?.restore?.(result.resumedMode);
     if (typeof tui?.reload === 'function') tui.reload(chunks);
     else reloadConversation(chunks, { log });
 
@@ -121,6 +147,8 @@ export async function runSessionLoop({
   manager,
   commands,
   sessions = null,
+  mode = null,
+  drive = null,
   abortManager = null,
   saveSession = () => null,
   onTurnLanded = null,
@@ -132,7 +160,12 @@ export async function runSessionLoop({
     // is what keeps an assistant `tool_calls` message together with its results.
     const userInput = await nextPrompt({
       dequeue: () => tui?.dequeue(),
-      ask: () => cli.question(tui ? '> ' : '\n> '),
+      // The keyboard is the *third* source of a prompt: the queue is drained first, and
+      // while `work:on` the self-drive (app/work-drive.js) hands over the next task.md
+      // item, so the session keeps walking the checklist in its own conversation instead
+      // of waiting for a keystroke. A typed message still wins, which is what makes live
+      // steering work.
+      ask: () => askForPrompt({ drive, cli, tui }),
     });
 
     if (isExitInput(userInput)) {
@@ -143,7 +176,7 @@ export async function runSessionLoop({
     if (!String(userInput ?? '').trim()) continue;
 
     // A slash command is answered here and never sent to the model.
-    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions });
+    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions, mode });
     if (consumed) continue;
 
     abortManager?.startTask();

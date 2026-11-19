@@ -65,6 +65,9 @@ export function createTui(options = {}) {
   const output = options.output || process.stdout;
   // Escape / Ctrl+C are forwarded to this hook (main.js wires it to the AbortManager).
   const onInterrupt = typeof options.onInterrupt === 'function' ? options.onInterrupt : null;
+  // Tab / Shift+Tab are forwarded to this hook with the direction they walk in
+  // (main.js wires it to the session mode's cycle()).
+  const onCycleMode = typeof options.onCycleMode === 'function' ? options.onCycleMode : null;
 
   if (!output.isTTY) return null;
 
@@ -235,7 +238,7 @@ export function createTui(options = {}) {
   // taken on the program so blessed cannot turn Escape into the textarea's own
   // 'cancel', and the scrolling keys are taken on the screen so a synthetic
   // `screen.emit('keypress', …)` reaches them.
-  const keys = bindKeys({ screen, onInterrupt, scrollPage, transcript, refresh });
+  const keys = bindKeys({ screen, onInterrupt, onCycleMode, scrollPage, transcript, refresh });
 
   // A resize re-fits every row measured at the old width and puts the newest line
   // back in view (app/tui-teardown.js).

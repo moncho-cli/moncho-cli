@@ -12,7 +12,7 @@ summary: >
   unreadable.
 code:
   - path: utils/session-store.js
-    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, serializeSession, countRoles, formatSession, parseSession, sessionChunks, sessionUsage, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
+    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, serializeSession, countRoles, formatSession, parseSession, sessionChunks, sessionUsage, sessionModeState, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
   - path: app/session-recorder.js
     symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
   - path: utils/file-io.js
@@ -33,3 +33,5 @@ tests:
       - "latestSession() returns the newest readable session"
       - "the session recorder snapshots the live window under a dated name"
       - "a recorded session can be replayed into a context window"
+      - "the mode and the lock sail with the session file, so a resumed session opens as it was left"
+      - "a session file written before the mode existed still resumes"

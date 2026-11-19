@@ -1,12 +1,12 @@
 import { sanitize, escapeTags } from './tui-render.js';
-import { modeStateKey, formatModeLabel, modeColor, MODES } from './session-mode.js';
+import { modeStateKey, formatModeLabel, modeColor, DEFAULT_MODE, MODES } from './session-mode.js';
 
 /**
  * The mode label at the leftmost cell of the model row.
  *
  * The session's intent mode is the one piece of state that decides *what the
  * session may do*, so it belongs on screen without a command and without a
- * keystroke: `{green-fg}Chat{/green-fg} openrouter · deepseek`. The row is the
+ * keystroke: `{yellow-fg}Work{/yellow-fg} openrouter · deepseek`. The row is the
  * model row's own leftmost cell rather than a new region, so no layout number
  * moves and the identity keeps the place it always had.
  *
@@ -22,14 +22,22 @@ import { modeStateKey, formatModeLabel, modeColor, MODES } from './session-mode.
 /** The gap between the mode label and the model identity. */
 export const MODE_LABEL_SEPARATOR = ' ';
 
-/** The state a row shows before any session mode is known: the safe default. */
+/**
+ * The state a row shows before any session mode is known.
+ *
+ * It is `DEFAULT_MODE` — a session opens in `work` — and deliberately not a
+ * hard-coded `chat`: a row that announced `Chat` while the session really is `Work`
+ * would be the one thing this label exists to prevent, a screen and a session
+ * disagreeing about what may touch a file. `normalizeMode()`'s `chat` fallback is a
+ * different rule: a *junk* stored mode still lands in the read-only state.
+ */
 export function defaultModeState() {
   return {
-    mode: MODES.CHAT,
+    mode: DEFAULT_MODE,
     work: false,
-    key: modeStateKey(MODES.CHAT, false),
-    label: formatModeLabel(MODES.CHAT, false),
-    color: modeColor(MODES.CHAT, false),
+    key: modeStateKey(DEFAULT_MODE, false),
+    label: formatModeLabel(DEFAULT_MODE, false),
+    color: modeColor(DEFAULT_MODE, false),
   };
 }
 
@@ -38,13 +46,14 @@ export function defaultModeState() {
  *
  * Both halves are sanitised and the braces are escaped: the label and the colour
  * travel through a screen that parses `{...}`, so neither may smuggle a tag of its
- * own. An unusable colour falls back to the `chat` green instead of a broken tag.
+ * own. An unusable colour falls back to the default state's own colour instead of a
+ * broken tag.
  */
 export function formatModeTag(state = {}) {
   const source = state && typeof state === 'object' ? state : {};
   const rawColor = sanitize(source.color ?? '');
-  const color = /^[a-z][a-z-]*$/.test(rawColor) ? rawColor : modeColor(MODES.CHAT, false);
-  const label = escapeTags(sanitize(source.label ?? formatModeLabel(MODES.CHAT, false)));
+  const color = /^[a-z][a-z-]*$/.test(rawColor) ? rawColor : modeColor(DEFAULT_MODE, false);
+  const label = escapeTags(sanitize(source.label ?? formatModeLabel(DEFAULT_MODE, false)));
   return `{${color}-fg}${label}{/${color}-fg}`;
 }
 
@@ -66,8 +75,8 @@ export function formatModeRow(state = {}, modelLabel = '') {
  * `mode` may be a `createSessionMode()` object: the row then subscribes to it and
  * repaints itself on every accepted change, and `close()` drops the subscription
  * so tearing a screen down never leaves a listener behind. Without one the row
- * still paints a state — the passed one, or the `chat` default — so the leftmost
- * cell is never blank.
+ * still paints a state — the passed one, or the `DEFAULT_MODE` default — so the
+ * leftmost cell is never blank.
  */
 export function createModeRow({
   paint = null,
@@ -110,3 +119,5 @@ export function createModeRow({
     close: () => unsubscribe(),
   };
 }
+
+export { MODES };

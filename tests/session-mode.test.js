@@ -4,11 +4,13 @@ import assert from 'node:assert/strict';
 import {
   MODE_ORDER,
   MODES,
+  DEFAULT_MODE,
   MODE_COLORS,
   WORK_LOCK_NOTICE,
   WORK_ON_LABEL,
   normalizeMode,
   nextMode,
+  prevMode,
   modeStateKey,
   formatModeLabel,
   modeColor,
@@ -44,7 +46,8 @@ test('nextMode() walks chat -> design -> work -> chat and wraps', () => {
 });
 
 test('Tab cycles the three intent modes and announces every change once', () => {
-  const mode = createSessionMode();
+  // the default is `work`, so the cycle is asserted from an explicit `chat`
+  const mode = createSessionMode({ mode: 'chat' });
   const seen = [];
   const unsubscribe = mode.subscribe((state) => seen.push(state.key));
 
@@ -130,6 +133,8 @@ test('the state key, the label and one bright colour per state', () => {
 });
 
 test('toJSON() round-trips the mode and the lock into createSessionMode()', () => {
+  // a fresh session stores the mode it opens in, so /sessions restores `work`
+  assert.deepEqual(createSessionMode().toJSON(), { mode: 'work', work: false });
   const mode = createSessionMode();
   mode.setMode('design');
   assert.deepEqual(mode.toJSON(), { mode: 'design', work: false });
@@ -148,4 +153,60 @@ test('toJSON() round-trips the mode and the lock into createSessionMode()', () =
   assert.equal(createSessionMode({ work: true }).mode, 'work');
   assert.equal(MODES.CHAT, 'chat');
   assert.equal(createSessionMode({ mode: 'junk' }).mode, 'chat');
+});
+
+test('a fresh session opens in work, while a junk stored mode stays in chat', () => {
+  const fresh = createSessionMode();
+  assert.equal(DEFAULT_MODE, 'work');
+  assert.equal(fresh.mode, 'work', 'the default is the executing mode');
+  assert.equal(fresh.work, false, 'opening in work is not the lock');
+  assert.equal(fresh.describe().key, 'work');
+  assert.equal(fresh.describe().label, 'Work');
+
+  // what the session cannot vouch for stays read-only: a junk stored mode, an
+  // empty string and a missing one are all the safe fallback, never `work`
+  assert.equal(createSessionMode({ mode: 'junk' }).mode, 'chat');
+  assert.equal(createSessionMode({ mode: '' }).mode, 'chat');
+  assert.equal(createSessionMode({ mode: null }).mode, 'chat');
+
+  // an explicit mode is always honoured, chat included
+  assert.equal(createSessionMode({ mode: 'chat' }).mode, 'chat');
+  assert.equal(createSessionMode({ mode: 'design' }).mode, 'design');
+});
+
+test('prevMode() walks the ring backwards and is the exact inverse of nextMode()', () => {
+  assert.equal(prevMode('chat'), 'work');
+  assert.equal(prevMode('work'), 'design');
+  assert.equal(prevMode('design'), 'chat');
+  // a junk mode enters the backward cycle at its end, not its start
+  assert.equal(prevMode('nonsense'), 'work');
+
+  for (const mode of MODE_ORDER) {
+    assert.equal(prevMode(nextMode(mode)), mode, `${mode} round-trips`);
+  }
+});
+
+test('restore() adopts the state of a resumed session instead of requesting a change', () => {
+  // A locked session: `setMode()` is refused here, so resuming must restore, not ask.
+  const mode = createSessionMode({ mode: MODES.WORK, work: true });
+
+  const seen = [];
+  mode.subscribe((state) => seen.push(state.key));
+
+  const restored = mode.restore({ mode: MODES.DESIGN, work: false });
+  assert.equal(mode.mode, MODES.DESIGN);
+  assert.equal(mode.work, false, 'the lock came down with the stored state');
+  assert.equal(restored.key, 'design');
+  assert.deepEqual(seen, ['design'], 'the repaint is announced once');
+
+  // A stored `work:on` is restored as `work:on`, never as a plain `Work`.
+  mode.restore({ mode: 'chat', work: true });
+  assert.equal(mode.describe().key, 'work:on', 'the lock wins over the stored mode name');
+
+  // Junk lands in chat (the safe fallback) and a missing payload changes nothing.
+  mode.restore({ mode: 'junk', work: false });
+  assert.equal(mode.mode, MODES.CHAT);
+  const before = mode.describe();
+  assert.deepEqual(mode.restore(null), before, 'an old file restores nothing');
+  assert.deepEqual(mode.toJSON(), { mode: 'chat', work: false });
 });

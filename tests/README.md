@@ -30,9 +30,11 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `tool-batch.test.js` | Running one batch: the five-call cap, the simultaneous dispatch in call order, the refusal, and the chunks the loop stores. |
 | `patch.test.js` | Unified-diff application, its error codes and all-or-nothing behaviour. |
 | `tui.test.js` | The blessed TUI layout, transcript rendering and pastes. |
+| `tui-modules.test.js` | The TUI's extracted parts: the paste registry, the compaction notice, and the key bindings — interrupts and Tab taken pre-dispatch, scrolling on the screen. |
 | `tui-status.test.js` | The status row: right-aligned context meter and spinner. |
 | `transcript-blocks.test.js` | Collapsible tool output: the transcript model, clicks and toggles. |
 | `interrupt-controls.test.js` | ESC / Ctrl+C semantics on both front ends. |
+| `key-shapes.test.js` | What a key *is* before anything binds it: the decoder shapes of the interrupt pair and of Tab / Shift+Tab, and the two families staying disjoint. |
 | `input-focus.test.js` | Keeping the input box armed: a click on another region never steals the caret, clicking the box re-arms it, and a periodic watchdog repairs a lost focus. |
 | `ollama-provider.test.js` | Provider calls: system prompt injection, response normalisation, abort. |
 | `conversation-manager.test.js` | The end-to-end loop against a stub provider. |
@@ -44,6 +46,16 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `call-pulse-loop.test.js` | The pulse in the loop: the line rides every agent request right after the agent prompt, is never a chunk, the summariser does not tick it, and a completed item or a compaction resets it. |
 | `brand.test.js` | The brand line: `MONCHO (v x.y.z)` formatted from the manifest, the one-row all-or-nothing fit rule, the reserved band, and the floating box in the top right of the conversation. |
 | `queue-rows.test.js` | How a queued message is drawn: the cell counting (wide glyphs two, combining marks none), the preview budget that keeps the `✕ N. ` marker, and the rule that a row is fitted to the bar it is painted in. |
+| `session-loop.test.js` | The host turn loop: the queue drained before the prompt, a command answered without a model call, an abort swallowed, and the task always torn down. |
+| `turn-runner.test.js` | One turn against a stub provider: the request built from the window, the tool batch, and the three ways a turn can end (reply, abort, failure). |
+| `session-mode.test.js` | The intent-mode machine: the cycle order, the `work:on` lock, the label and the colour per state, the `work` default against the `chat` junk fallback, and the round-trip through `toJSON()`. |
+| `session-mode-label.test.js` | The mode painted on screen: the tag and the model in one row, a repaint on an accepted change only, and the state a session opens in. |
+| `mode-controller.test.js` | Where a refused `Tab` goes: the `work:on` notice reaches the notice bar, the transcript is untouched, an accepted move stays silent, and a missing or throwing sink never costs the keystroke. |
+| `mode-policy.test.js` | What each mode may do: the tool families, Chat read-only against Design's two tracking files, a shell refused where it cannot be scoped, the narrowed tool list, and the gate reading the live mode. |
+| `tool-guard.test.js` | The pre-dispatch gate: no gate allows every call, a gate answer becomes a structured refusal, a throwing gate fails closed, and a refused call never invokes the tool. |
+| `work-drive.test.js` | The `work:on` self-drive: the drive speaks only while the lock is on, hands the first pending item over, yields to a queued message, stops a finished checklist without releasing the lock, and stands down after a bounded number of identical hand-outs. |
+| `work-command.test.js` | `/work on` and `/work off`: the lock refused over a missing, empty or finished checklist, the mode pinned to Work with the next item named, the release onto Design, and the live mode reached through the registry context. |
+| `tui-teardown.test.js` | Closing the TUI and following a resize: the construction-reverse close that runs once, and the re-fit of every row measured at the old width. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the
 suites import; they are not test files themselves.

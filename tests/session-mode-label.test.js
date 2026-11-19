@@ -13,22 +13,26 @@ import { createTui } from '../app/tui.js';
 import { fakeTty } from './support/tui-harness.js';
 
 /**
- * The mode label at the leftmost cell of the model row (task.md item 6).
+ * The mode label at the leftmost cell of the model row.
  *
  * The pure composition (the order, the colour, the escaping) is checked without
  * a terminal, and the wiring is checked against a fabricated pty, so both the
  * string a test can read and the row a user sees are proved.
+ *
+ * A session opens in `work` (`app/session-mode.js#DEFAULT_MODE`), so the default
+ * row is the `Work` label in yellow — and a *junk* stored mode still lands in the
+ * read-only `Chat`, which is a different rule and is asserted separately.
  */
 
 /** The visible text of a row, with the blessed colour escapes stripped. */
 const strip = (content) => String(content ?? '').replace(/\x1b\[[\d;]*m/g, '');
 
-async function withModeTui(mode, fn) {
+async function withModeTui(mode, fn, options = {}) {
   const input = fakeTty();
   const output = fakeTty();
   const chunks = [];
   output.on('data', (chunk) => chunks.push(chunk.toString()));
-  const tui = createTui({ input, output, modelLabel: 'probe · model', mode });
+  const tui = createTui({ input, output, modelLabel: 'probe · model', mode, ...options });
   await new Promise((resolve) => setImmediate(resolve));
   try {
     return await fn(tui, () => chunks.join(''));
@@ -40,7 +44,7 @@ async function withModeTui(mode, fn) {
 }
 
 test('formatModeRow() paints the mode label at the leftmost cell and the model after it', () => {
-  const state = createSessionMode().describe();
+  const state = createSessionMode({ mode: 'chat' }).describe();
   const row = formatModeRow(state, 'openrouter · test/model');
 
   assert.equal(
@@ -63,7 +67,7 @@ test('formatModeRow() paints the mode label at the leftmost cell and the model a
 });
 
 test('formatModeTag() uses one bright colour per state and escapes the label', () => {
-  const mode = createSessionMode();
+  const mode = createSessionMode({ mode: 'chat' });
   const colours = [mode.describe().color];
 
   assert.equal(formatModeTag(mode.describe()), '{green-fg}Chat{/green-fg}');
@@ -88,13 +92,13 @@ test('formatModeTag() uses one bright colour per state and escapes the label', (
 
   // Junk in a hand-made state cannot smuggle a tag or break the row.
   assert.equal(formatModeTag({ label: 'a{b}', color: 'green' }), '{green-fg}a{open}b{close}{/green-fg}');
-  assert.equal(formatModeTag({ label: 'x', color: '}; evil {red' }), '{green-fg}x{/green-fg}');
-  assert.equal(formatModeTag(), '{green-fg}Chat{/green-fg}');
-  assert.equal(formatModeTag(null), '{green-fg}Chat{/green-fg}');
+  assert.equal(formatModeTag({ label: 'x', color: '}; evil {red' }), '{yellow-fg}x{/yellow-fg}');
+  assert.equal(formatModeTag(), '{yellow-fg}Work{/yellow-fg}');
+  assert.equal(formatModeTag(null), '{yellow-fg}Work{/yellow-fg}');
 });
 
 test('createModeRow() repaints on an accepted mode change and never on a refused one', () => {
-  const mode = createSessionMode();
+  const mode = createSessionMode({ mode: 'chat' });
   const painted = [];
   const row = createModeRow({ mode, modelLabel: 'm', paint: (line) => painted.push(line) });
 
@@ -124,23 +128,34 @@ test('createModeRow() repaints on an accepted mode change and never on a refused
   assert.equal(painted.length, afterLock, 'a closed row is no longer subscribed');
 });
 
-test('createModeRow() paints the chat default without a mode, and setState() moves it', () => {
+test('createModeRow() paints the work default without a mode, and setState() moves it', () => {
   const painted = [];
   const row = createModeRow({ paint: (line) => painted.push(line) });
 
   assert.deepEqual(row.state, defaultModeState());
-  assert.equal(row.render(), '{green-fg}Chat{/green-fg}');
-  assert.equal(formatModeRow(defaultModeState(), 'm'), '{green-fg}Chat{/green-fg} m');
+  assert.equal(row.render(), '{yellow-fg}Work{/yellow-fg}');
+  assert.equal(formatModeRow(defaultModeState(), 'm'), '{yellow-fg}Work{/yellow-fg} m');
 
-  assert.equal(row.setState({ label: 'Work', color: 'yellow' }), '{yellow-fg}Work{/yellow-fg}');
-  assert.equal(row.state.label, 'Work');
-  // A caller that clears the state gets the safe, read-only default back.
-  assert.equal(row.setState(null), '{green-fg}Chat{/green-fg}');
+  assert.equal(row.setState({ label: 'Chat', color: 'green' }), '{green-fg}Chat{/green-fg}');
+  assert.equal(row.state.label, 'Chat');
+  // A caller that clears the state gets the session's opening state back.
+  assert.equal(row.setState(null), '{yellow-fg}Work{/yellow-fg}');
   assert.deepEqual(painted.length, 3);
 });
 
+test('defaultModeState() follows the session default instead of hard-coding chat', () => {
+  const fresh = createSessionMode().describe();
+  assert.deepEqual(defaultModeState(), fresh, 'a row with no mode shows what a session opens in');
+  assert.equal(defaultModeState().key, 'work');
+
+  // the junk fallback is a *different* rule and still lands in the read-only mode
+  const junk = createSessionMode({ mode: 'junk' }).describe();
+  assert.equal(junk.key, 'chat');
+  assert.notDeepEqual(junk, defaultModeState());
+});
+
 test('the TUI paints the session mode at the leftmost cell of the model row', async () => {
-  const mode = createSessionMode();
+  const mode = createSessionMode({ mode: 'chat' });
 
   await withModeTui(mode, (tui) => {
     const row = strip(tui.modelBar.getContent());
@@ -169,9 +184,33 @@ test('the TUI paints the session mode at the leftmost cell of the model row', as
   });
 });
 
-test('the TUI without a session mode still shows the read-only chat default', async () => {
+test('the TUI without a session mode still shows the state a session opens in', async () => {
   await withModeTui(null, (tui) => {
-    assert.equal(strip(tui.modelBar.getContent()), 'Chat probe · model');
-    assert.equal(tui.modeState.key, 'chat');
+    assert.equal(strip(tui.modelBar.getContent()), 'Work probe · model');
+    assert.equal(tui.modeState.key, 'work');
   });
+});
+
+test('Tab in the real TUI moves the mode and never types into the input box', async () => {
+  const mode = createSessionMode({ mode: 'chat' });
+  const cycles = [];
+
+  await withModeTui(mode, async (tui) => {
+    const armed = tui.question('> ');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(tui.inputBox._reading, true, 'the box owns the keys');
+
+    // The real dispatch path: the program decodes the key, the screen re-emits it.
+    tui.screen.program.emit('keypress', '\x09', { name: 'tab', full: 'tab' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(cycles, [1], 'the binding walked the ring forward');
+    assert.equal(mode.mode, 'design', 'the session mode really moved');
+    assert.equal(strip(tui.modelBar.getContent()), 'Design probe · model');
+    assert.equal(tui.inputBox.getValue(), '', 'the tab byte never reached the box');
+    assert.equal(tui.screen.lockKeys, false, 'the one-event key lock is released');
+
+    tui.inputBox.emit('submit', 'still here');
+    assert.equal(await armed, 'still here', 'the armed question survives the move');
+  }, { onCycleMode: ({ direction }) => { cycles.push(direction); mode.cycle({ direction }); } });
 });

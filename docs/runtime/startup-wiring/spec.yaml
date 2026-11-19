@@ -46,6 +46,7 @@ tests:
       - "runSessionLoop() lets a real failure escape instead of hiding it"
       - "handleCommand() resumes a session by reloading the view before printing"
       - "handleCommand() returns false for a prompt and reports an unknown command"
+      - "runSessionLoop() saves the conversation in Chat too, because the host writes that file, not a tool"
   - path: tests/turn-runner.test.js
     cases:
       - "runTurn() asks, runs the tool batch, and ends on the first tool-free reply"

@@ -148,6 +148,19 @@ user cannot see what they asked a moment ago. `app/input-hint.js` fixes that:
   reader who scrolled up keeps the offset they chose. The rule and the geometry it
   reads are fixed by `docs/interface/transcript-scroll`.
 
+## Key bindings and the dispatch level
+
+- Escape, Ctrl+C and **Tab** are answered on the **program**, ahead of the focused
+  widget, and key dispatch is locked for that single event (`screen.lockKeys`,
+  released in a microtask). Both would otherwise be lost: while the input box is
+  reading, the textarea turns Escape into its own `cancel` event, and it appends
+  every `ch` that is not a control byte — and the tab byte is *not* one of them, so
+  a screen-level binding would both fire *and* type a tab into the prompt.
+- Tab walks the intent modes (`docs/interface/modes`), Shift+Tab walks them the
+  other way; the binding only reports the direction to its `onCycleMode` hook.
+- The scrolling keys are bound on the **screen**, not the program, so a synthetic
+  `screen.emit('keypress', …)` reaches them.
+
 ## See also
 
 - Implementation: `app/tui.js` (screen wiring), `app/tui-layout.js` (regions),

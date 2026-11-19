@@ -11,7 +11,7 @@ summary: >
   expose exit() which settles an armed question with the 'exit' sentinel.
 code:
   - path: utils/keys.js
-    symbols: [ESCAPE_CHAR, CTRL_C_CHAR, isEscapeKey, isCtrlC, isInterruptKey]
+    symbols: [ESCAPE_CHAR, CTRL_C_CHAR, TAB_CHAR, isEscapeKey, isCtrlC, isInterruptKey, isTabKey, isShiftTabKey]
   - path: app/abort-manager.js
     symbols: [AbortManager]
   - path: app/cli.js
@@ -19,9 +19,13 @@ code:
   - path: app/tui.js
     symbols: [createTui]
 tests:
+  - path: tests/key-shapes.test.js
+    cases:
+      - "the key-shape constants name the bytes the decoders deliver"
+      - "isInterruptKey recognises Escape/Ctrl+C in both decoder shapes"
+      - "isTabKey recognises Tab and Shift+Tab without swallowing an interrupt"
   - path: tests/interrupt-controls.test.js
     cases:
-      - "isInterruptKey recognises Escape/Ctrl+C in both decoder shapes"
       - "AbortManager: no task means an interrupt is an exit request, exactly once"
       - "AbortManager: no onExit means an idle interrupt is ignored, not a crash"
       - "AbortManager: an exit the host could not deliver is not latched"

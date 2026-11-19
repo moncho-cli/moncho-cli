@@ -10,6 +10,7 @@
  */
 export const ESCAPE_CHAR = '\x1b';
 export const CTRL_C_CHAR = '\x03';
+export const TAB_CHAR = '\x09';
 
 /** True for the Escape key in either decoder's shape. */
 export function isEscapeKey(ch, key) {
@@ -25,4 +26,25 @@ export function isCtrlC(ch, key) {
 /** The app's interrupt keys: ESC and Ctrl+C. */
 export function isInterruptKey(ch, key) {
   return isEscapeKey(ch, key) || isCtrlC(ch, key);
+}
+
+/**
+ * True for the Tab key in either decoder's shape.
+ *
+ * `\x09` is the byte a decoder delivers and `tab` is the name it gives it, but
+ * Shift+Tab is a *different* byte (`\x1b[Z`, which blessed decodes to name `tab`
+ * with `shift: true` and full `S-tab`). Recognising all three shapes here keeps the
+ * binding free of decoder trivia, exactly like `isInterruptKey()` above: the same
+ * physical key is decided once, in one pure place (`docs/interface/interrupt-controls`).
+ */
+export function isTabKey(ch, key) {
+  if (ch === TAB_CHAR) return true;
+  if (!key) return false;
+  return key.name === 'tab' || key.full === 'tab' || key.full === 'S-tab';
+}
+
+/** True for Shift+Tab specifically, so a caller can tell the two directions apart. */
+export function isShiftTabKey(ch, key) {
+  if (!isTabKey(ch, key)) return false;
+  return Boolean(key?.shift) || key?.full === 'S-tab';
 }

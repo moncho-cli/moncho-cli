@@ -21,9 +21,14 @@ import {
  * It is deliberately dumb about *when* to save: the host loop calls `save()` at
  * the moments that matter (after each turn, before exiting).
  */
+
+/** The state a fresh conversation opens with: no stored mode, no lock. */
+const NO_STATE = Object.freeze({ mode: null, work: false });
+
 export function createSessionRecorder({
   dir = SESSION_DIR,
   model = null,
+  stateOf = null,
   cwd = process.cwd(),
   now = () => new Date(),
   id = null,
@@ -88,12 +93,15 @@ export function createSessionRecorder({
      */
     save(chunks = [], extra = {}) {
       const at = now();
+      const state = typeof stateOf === 'function' ? (stateOf() || NO_STATE) : NO_STATE;
       const record = writeSession(
         serializeSession({
           id: sessionId_,
           createdAt: created,
           updatedAt: at,
           model,
+          mode: state.mode ?? null,
+          work: Boolean(state.work),
           cwd,
           chunks,
           stats: extra.stats || {},

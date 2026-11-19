@@ -22,6 +22,21 @@ registry and the commands that ship with it; the implementation is linked below.
 
 ## The commands
 
+- **`/work [on|off]`** — the execution lock (`docs/interface/modes`). It moves the
+  *live* session state, not a copy: `run(ctx)` receives the `createSessionMode()` the
+  tool gate already reads, so a typed `/work on` tightens the very next call.
+  - `/work on` refuses when there is nothing to drive: no `task.md`, a file with no
+    checkbox items, or one whose items are all done. A refused `on` leaves the mode
+    and the lock exactly where they were.
+  - an accepted `/work on` pins the mode to `Work`, engages the lock, and reports how
+    many items are still pending plus the next one in line.
+  - `/work off` releases the lock and falls back to `Design` — never `Chat`, so the
+    `task.md` the user was writing stays writable.
+  - `/work` with no argument reports the current state; an unknown argument is refused
+    with its own code, so a typo never engages the lock.
+  The checklist is read through `readTaskItems()` in `app/work-command.js`, which parses
+  the file with the same checkbox syntax the tracking tools use
+  (`docs/agent/task-tracking`).
 - **`/sessions [id]`** (alias `/resume`) — list the stored conversations
   (`docs/runtime/session-store`) and continue one:
   - no stored session: says so and changes nothing;

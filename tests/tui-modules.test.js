@@ -111,10 +111,11 @@ test('createCompactionNotifier() announces each compaction exactly once', () => 
   assert.equal(notifier.notify(undefined), null, 'junk stats are not a crash');
 });
 
-test('bindKeys() forwards interrupts from the program and scrolls from the screen', () => {
+test('bindKeys() takes interrupts and Tab before blessed dispatches, and scrolls from the screen', () => {
   const screen = stubScreen();
   const interrupts = [];
   const pages = [];
+  const cycles = [];
   let refreshes = 0;
   const transcript = {
     perc: null,
@@ -124,6 +125,7 @@ test('bindKeys() forwards interrupts from the program and scrolls from the scree
   const keys = bindKeys({
     screen,
     onInterrupt: () => interrupts.push('interrupt'),
+    onCycleMode: ({ direction }) => cycles.push(direction),
     scrollPage: (direction) => pages.push(direction),
     transcript,
     refresh: () => { refreshes += 1; },
@@ -137,6 +139,15 @@ test('bindKeys() forwards interrupts from the program and scrolls from the scree
   // a non-interrupt key on the program is left alone
   screen.emitProgram('keypress', 'a', { name: 'a', full: 'a' });
   assert.equal(interrupts.length, 1);
+
+  // Tab is taken before blessed dispatches it: the binding reports the direction
+  // and locks key dispatch for that one event, so the textarea never sees \x09.
+  screen.emitProgram('keypress', '\x09', { name: 'tab', full: 'tab' });
+  assert.deepEqual(cycles, [1], 'Tab walks the ring forward');
+  assert.equal(screen.lockKeys, true, 'the tab byte is kept out of the input box');
+  screen.emitProgram('keypress', '\x1b[Z', { name: 'tab', full: 'S-tab', shift: true });
+  assert.deepEqual(cycles, [1, -1], 'Shift+Tab walks it backwards');
+  assert.equal(interrupts.length, 1, 'a tab is not an interrupt');
 
   // scrolling keys: a whole page, one row short of the screenful
   screen.emitScreen('keypress', null, { name: 'pageup', full: 'pageup' });

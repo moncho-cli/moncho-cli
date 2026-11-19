@@ -2,36 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 
-import { isEscapeKey, isCtrlC, isInterruptKey } from '../utils/keys.js';
 import { AbortManager } from '../app/abort-manager.js';
 import { createCLI } from '../app/cli.js';
 import { createTui } from '../app/tui.js';
 
-/** The two shapes the decoders in utils/keys.js must agree on. */
-const READLINE_ESCAPE = ['\x1b', { sequence: '\x1b', name: 'escape' }];
-const READLINE_CTRL_C = ['\x03', { sequence: '\x03', name: 'c', ctrl: true }];
-const BLESSED_ESCAPE = [null, { full: 'escape', name: 'escape' }];
-const BLESSED_CTRL_C = ['\x03', { full: 'C-c', name: 'c', ctrl: true }];
-
-test('isInterruptKey recognises Escape/Ctrl+C in both decoder shapes', () => {
-  for (const [ch, key] of [READLINE_ESCAPE, BLESSED_ESCAPE]) {
-    assert.equal(isEscapeKey(ch, key), true);
-    assert.equal(isInterruptKey(ch, key), true);
-    assert.equal(isCtrlC(ch, key), false);
-  }
-  for (const [ch, key] of [READLINE_CTRL_C, BLESSED_CTRL_C]) {
-    assert.equal(isCtrlC(ch, key), true);
-    assert.equal(isInterruptKey(ch, key), true);
-    assert.equal(isEscapeKey(ch, key), false);
-  }
-
-  // Ordinary typing and unrelated keys must never look like an interrupt.
-  assert.equal(isInterruptKey('a', { name: 'a' }), false);
-  assert.equal(isInterruptKey('\r', { name: 'enter' }), false);
-  assert.equal(isInterruptKey(null, { name: 'pageup', full: 'pageup' }), false);
-  assert.equal(isInterruptKey(undefined, undefined), false);
-  assert.equal(isInterruptKey('\x03', {}), true, 'the raw byte is enough');
-});
+/** The decoder shapes and the pure key predicates live in tests/key-shapes.test.js. */
 
 /** Minimal readline-shaped stub; records the questions AbortManager asks. */
 function fakeRl() {

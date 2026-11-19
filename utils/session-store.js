@@ -56,6 +56,8 @@ export function serializeSession({
   createdAt = new Date(),
   updatedAt = null,
   model = null,
+  mode = null,
+  work = false,
   cwd = null,
   chunks = [],
   stats = {},
@@ -76,6 +78,10 @@ export function serializeSession({
     createdAt: created,
     updatedAt: updated,
     model,
+    // The mode and the `work:on` lock sail with the conversation, so a resumed session
+    // opens in the state it was left in (docs/interface/modes).
+    mode: mode == null ? null : String(mode),
+    work: Boolean(work),
     cwd,
     counts: {
       chunks: chunks.length,
@@ -144,6 +150,23 @@ export function sessionChunks(session) {
 /** The per-model token table of a session, ready to seed a usage meter. */
 export function sessionUsage(session) {
   return normalizeModelUsage(parseSession(formatSession(session)).usage);
+}
+
+/**
+ * The stored intent mode of a session, or `null` when the file carries none.
+ *
+ * `null` and a junk mode are deliberately different answers: an old file written before
+ * the mode existed restores **nothing** (the session keeps the state it opened with),
+ * while a file that *does* carry a mode hands it back verbatim for
+ * `createSessionMode()` to normalise — a corrupt value lands in `chat`, the read-only
+ * fallback, and never silently in `work` (`docs/interface/modes`).
+ *
+ * @returns {{mode: string, work: boolean}|null}
+ */
+export function sessionModeState(session) {
+  const parsed = parseSession(formatSession(session));
+  if (parsed.mode == null) return null;
+  return { mode: String(parsed.mode), work: Boolean(parsed.work) };
 }
 
 /** Write (or overwrite) a session file, verified byte-for-byte. */

@@ -32,10 +32,11 @@ test('a pty gets the three-region TUI (transcript, status bar, input box)', asyn
     assert.equal(tui.modelBar.height, 1);
     assert.equal(tui.modelBar.bottom, 4);
     // The row opens with the session's mode (app/session-mode-label.js): the label
-    // is the leftmost cell, then the identity this option asked for.
+    // is the leftmost cell, then the identity this option asked for. A TUI built
+    // without a mode shows the state a session opens in, which is `Work`.
     assert.equal(
       tui.modelBar.getContent().replace(/\x1b\[[\d;]*m/g, ''),
-      `Chat ${tui.modelLabel}`,
+      `Work ${tui.modelLabel}`,
     );
     assert.equal(tui.modelLabel, 'openrouter · test/model');
 

@@ -9,9 +9,13 @@ summary: >
   /help is derived from the registry itself. /usage prints the per-model token
   table (`docs/context/model-usage`). The picker's navigation rules are a pure
   model, so they are tested without a terminal.
+  /work on|off is the execution lock (`docs/interface/modes`): it refuses a session
+  with no task.md or with every item done, and releasing it lands on Design.
 code:
   - path: app/commands.js
     symbols: [createCommandRegistry, parseCommand, createDefaultCommands, helpCommand, sessionsCommand, usageCommand, runCommand]
+  - path: app/work-command.js
+    symbols: [workCommand, readTaskItems]
   - path: utils/usage-stats.js
     symbols: [formatUsageRows, normalizeModelUsage]
   - path: app/picker.js
@@ -27,7 +31,7 @@ tests:
     cases:
       - "parseCommand() recognises /<name> <arg> and leaves prompts alone"
       - "the command registry is iterable code, not a hard-coded switch"
-      - "the default registry ships /sessions, /usage and /help, and /help lists them"
+      - "the default registry ships /work, /sessions, /usage and /help, and /help lists them"
       - "/sessions with no stored session says so and changes nothing"
       - "/sessions lists the stored conversations when there is no picker"
       - "/sessions opens the picker and resumes the chosen conversation"
@@ -42,3 +46,17 @@ tests:
       - "the modal wraps at the ends and jumps with home/end"
       - "a picker with no rows cancels instead of resolving nonsense"
       - "closing the picker modal leaves the input box reading a keystroke once"
+  - path: tests/work-command.test.js
+    cases:
+      - "/work on refuses a session with no task.md, and the mode does not move"
+      - "/work on refuses an empty checklist and one whose items are all done"
+      - "/work on locks the session to Work and names the next item in line"
+      - "/work off releases the lock and falls back to Design"
+      - "/work with no argument reports the state, and an unknown argument is refused"
+      - "a front end with no session mode is refused instead of throwing"
+      - "/work reaches the live mode through the registry context"
+  - path: tests/session-loop.test.js
+    cases:
+      - "handleCommand() hands the live session mode to a command, so /work moves the gate state"
+      - "handleCommand() restores the stored mode of a resumed session, the lock included"
+      - "handleCommand() leaves the mode alone when the session file stored none"

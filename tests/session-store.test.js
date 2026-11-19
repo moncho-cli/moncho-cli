@@ -19,6 +19,7 @@ import {
   loadSession,
   latestSession,
   describeSession,
+  sessionModeState,
 } from '../utils/session-store.js';
 import { createSessionRecorder } from '../app/session-recorder.js';
 
@@ -234,4 +235,42 @@ test('a recorded session can be replayed into a context window', () => {
   } finally {
     cleanup(dir);
   }
+});
+
+test('the mode and the lock sail with the session file, so a resumed session opens as it was left', () => {
+  const dir = tempDir('mode');
+  try {
+    const recorder = createSessionRecorder({
+      dir,
+      now: () => new Date('2026-02-14T10:30:00.000Z'),
+      stateOf: () => ({ mode: 'work', work: true }),
+    });
+    recorder.save(CHUNKS, { reason: 'turn' });
+
+    const stored = loadSession(recorder.id, { dir });
+    assert.equal(stored.mode, 'work');
+    assert.equal(stored.work, true);
+    assert.deepEqual(sessionModeState(stored), { mode: 'work', work: true });
+
+    // A second recorder reads its state live, so a different state lands in its file.
+    const other = createSessionRecorder({
+      dir,
+      now: () => new Date('2026-02-15T10:30:00.000Z'),
+      stateOf: () => ({ mode: 'chat', work: false }),
+    });
+    other.save(CHUNKS, { reason: 'exit' });
+    assert.deepEqual(sessionModeState(loadSession(other.id, { dir })), { mode: 'chat', work: false });
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('a session file written before the mode existed still resumes', () => {
+  const legacy = serializeSession({ createdAt: new Date('2026-02-14T10:30:00.000Z'), chunks: CHUNKS });
+  assert.equal(sessionModeState(legacy), null, 'no stored state restores nothing');
+
+  // A file that *does* carry a mode hands it back verbatim, junk included, so the
+  // machine (not the store) decides that a corrupt value lands in chat.
+  const odd = serializeSession({ createdAt: new Date('2026-02-14T10:30:00.000Z'), chunks: CHUNKS, mode: 'wrok' });
+  assert.deepEqual(sessionModeState(odd), { mode: 'wrok', work: false });
 });

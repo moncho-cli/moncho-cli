@@ -24,6 +24,9 @@ Versioned, pretty-printed JSON (one key per line, trailing newline) holding:
 - `version` — the format version; a file with a different version is **refused**,
   never guessed at;
 - `id`, `createdAt`, `updatedAt`, `model`, `cwd` — the metadata a picker shows;
+- `mode`, `work` — the session's intent mode and its execution lock
+  (`docs/interface/modes`). Both are **optional**: a file written before they existed
+  carries no mode and still loads, and the session keeps the state it opened with.
 - `counts` — chunk count and the count per role, so a listing can describe a
   session without loading it;
 - `stats` — the context-window snapshot at save time (`usage`, …);
@@ -57,6 +60,9 @@ it stands. `saveIfUsed()` skips an untouched window, so a session that never
 exchanged a message leaves no file behind. `save(chunks, { stats, usage })` also
 stores the per-model token table, so what the conversation cost is part of the
 record (`docs/context/model-usage`).
+- This save is **host code, not a tool**, so no intent mode gates it: a `chat`
+  session writes no file through a tool but still writes its own session record
+  (`docs/interface/modes`). "Read-only" is a claim about the project tree.
 - `adopt(id, { createdAt, model })` points the recorder at an **existing** session,
   which is what resuming does: the conversation continues in the file it came from
   instead of forking a parallel one, and it keeps the original start date

@@ -11,6 +11,21 @@ implementation is linked below.
 - Every path funnels into `AbortManager.interrupt()`; the front ends only deliver
   keys.
 
+## Where a key's shape is decided
+
+`utils/keys.js` is the one place that knows how a physical key arrives, because the
+two decoders disagree about it: readline reports `{ sequence, name, ctrl }` while
+blessed reports `{ full, name, ctrl }`, and Escape arrives with no byte at all in
+the second case. The predicates therefore never trust a single field.
+
+That module owns the **interrupt pair** (`isEscapeKey`, `isCtrlC`,
+`isInterruptKey`) and the **Tab predicates** (`isTabKey`, `isShiftTabKey`) the mode
+cycle binds. The two families are deliberately disjoint: a Tab is never an
+interrupt and an interrupt is never a Tab, which is what lets both bindings
+coexist on the same screen without one swallowing the other. Shift+Tab is
+recognised as Tab *and* reported separately (`isShiftTabKey`), so a binding can
+walk the mode cycle in either direction from the same predicate.
+
 ## States
 
 - **A task is running, no confirmation armed** → ask for confirmation. A second

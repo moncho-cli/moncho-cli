@@ -5,9 +5,13 @@ import { createTui } from './app/tui.js';
 import { AbortManager } from './app/abort-manager.js';
 import { createSessionRecorder } from './app/session-recorder.js';
 import { createDefaultCommands } from './app/commands.js';
+import { createSessionMode } from './app/session-mode.js';
+import { toolsForMode, gateForMode } from './app/mode-policy.js';
+import { createModeController } from './app/mode-controller.js';
 import { prettyPrintJson } from './app/json-display.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop } from './app/session-loop.js';
+import { createWorkDrive } from './app/work-drive.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
@@ -42,7 +46,18 @@ async function main() {
   // The interrupt hook is late-bound: the TUI is built before the AbortManager
   // exists, and Escape / Ctrl+C are forwarded to it once it is created below.
   let abortManager = null;
-  const tui = createTui({ modelLabel: label, onInterrupt: () => abortManager?.interrupt() });
+  // The session's intent mode (app/session-mode.js) is the one piece of state that
+  // decides what may touch a file, so the TUI paints it and Tab walks it. Both hooks
+  // are late-bound: the key only reports a direction, and app/mode-controller.js turns
+  // that into a cycle() plus a routed refusal, which needs the notice sink built below.
+  const sessionMode = createSessionMode();
+  let modeController = null;
+  const tui = createTui({
+    modelLabel: label,
+    mode: sessionMode,
+    onInterrupt: () => abortManager?.interrupt(),
+    onCycleMode: (options) => modeController?.cycle(options),
+  });
   activeTui = tui;
   const cli = tui || createCLI();
   const log = tui ? (...args) => tui.log(...args) : (...args) => console.log(...args);
@@ -65,6 +80,14 @@ async function main() {
     return null;
   };
 
+  // The refusal route for `Tab` (app/mode-controller.js): the sink above is the only
+  // thing left to plug in, so the cycle hook the TUI was built with can be armed now.
+  // A refused cycle is *news* — it goes to the notice bar (or one plain line) and
+  // never to the transcript, exactly like a recovered provider failure.
+  modeController = createModeController({
+    mode: sessionMode,
+    notify: (kind, text) => notify(kind, text),
+  });
   log("Initializing tools...");
 
   // Tool results are echoed to the screen (with the call's intent) and also
@@ -99,7 +122,9 @@ async function main() {
     log,
   });
 
-  const getTools = () => tools;
+  // Half 1 of the mode policy (app/mode-policy.js): the provider is only offered the
+  // tools the mode allows, so a read-only session is never *invited* to write.
+  const getTools = () => toolsForMode(sessionMode.mode, tools);
   const getAbortSignal = () => abortManager.signal;
   const manager = new ConversationManager(toolFunctions, getTools, getAbortSignal, {
     log,
@@ -115,6 +140,10 @@ async function main() {
     onUserMessage: (text) => log(formatUserEcho(text)),
     // Recovered failures go to the overlay, never to the transcript.
     onNotice: (kind, text, options) => notify(kind, text, options),
+    // Half 2 of the mode policy: every call still passes the pre-dispatch gate
+    // (app/tool-guard.js), so a call named from an older prompt is refused instead of
+    // touching anything. The mode is read live, so a Tab mid-turn bites at once.
+    toolGate: gateForMode({ getMode: () => ({ mode: sessionMode.mode, work: sessionMode.work }) }),
     onContextChange: (stats) => {
       tui?.setTokens(stats.usage);
       tui?.notifyCompaction(stats);
@@ -123,7 +152,10 @@ async function main() {
 
   // The conversation is recorded under agent/sessions/<date>.json: every chunk of
   // the live window, verbatim, so it can be picked up later (`/sessions`).
-  const sessions = createSessionRecorder({ model: label });
+  // `stateOf` is read on every save, so the intent mode and the `work:on` lock travel
+  // with the conversation and a resumed session opens in the state it was left in
+  // (docs/interface/modes).
+  const sessions = createSessionRecorder({ model: label, stateOf: () => sessionMode.toJSON() });
   const saveSession = (reason) => {
     try {
       return sessions.save(manager.chunks, {
@@ -143,6 +175,12 @@ async function main() {
   // change in the loop. Anything that is not `/<name>` stays a prompt.
   const commands = createDefaultCommands();
 
+  // The `work:on` self-drive (app/work-drive.js): while the lock is on, the next prompt
+  // comes from `task.md` instead of the keyboard. It reads the mode live, so a `/work on`
+  // typed mid-session starts driving on the very next turn and `/work off` stops it — no
+  // restart and no second conversation.
+  const drive = createWorkDrive({ mode: sessionMode, log });
+
   tui?.setTokens(manager.contextWindow.usage());
   log(`\nProvider/model: ${label}`);
   log(`Session file: ${sessions.path} (saved after every turn)`);
@@ -159,6 +197,8 @@ async function main() {
     manager,
     commands,
     sessions,
+    mode: sessionMode,
+    drive,
     abortManager,
     saveSession,
     // The turn landed, so whatever the provider recovered from on the way is no

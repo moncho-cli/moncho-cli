@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { runSessionLoop, handleCommand, isExitInput, isAbortError } from '../app/session-loop.js';
 import { createCommandRegistry } from '../app/commands.js';
+import { workCommand } from '../app/work-command.js';
+import { createSessionMode, MODES } from '../app/session-mode.js';
 
 /**
  * The host turn loop, extracted from main.js.
@@ -174,4 +176,94 @@ test('handleCommand() returns false for a prompt and reports an unknown command'
   const consumed = await handleCommand('/nope', { commands: registry, log: (line) => logged.push(line) });
   assert.equal(consumed, true);
   assert.ok(logged.some((line) => line.includes('Unknown command /nope')));
+});
+
+test('handleCommand() hands the live session mode to a command, so /work moves the gate state', async () => {
+  const registry = createCommandRegistry();
+  registry.register(workCommand());
+  // A locked session, so `/work off` needs no checklist on disk: the case is about the
+  // wiring, not about whatever the real task.md happens to hold today.
+  const mode = createSessionMode({ mode: MODES.WORK, work: true });
+  const logged = [];
+
+  const consumed = await handleCommand('/work off', {
+    commands: registry,
+    log: (line) => logged.push(line),
+    mode,
+  });
+
+  assert.equal(consumed, true, 'a command never reaches the model');
+  assert.equal(mode.work, false, 'the very object the tool gate reads was released');
+  assert.equal(mode.mode, MODES.DESIGN, 'and it fell back to Design');
+  assert.ok(logged.some((line) => line.includes('Work is off')));
+});
+
+test('handleCommand() restores the stored mode of a resumed session, the lock included', async () => {
+  const registry = createCommandRegistry();
+  // A `work:on` session: the lock is on, so `setMode()` would be refused. Resuming must
+  // therefore *restore* the state rather than request it.
+  const mode = createSessionMode({ mode: MODES.WORK, work: true });
+  const order = [];
+  registry.register({
+    name: 'resume',
+    description: 'resume',
+    run: () => ({
+      ok: true,
+      code: 'RESUMED',
+      message: 'Resumed s1.',
+      resumed: { id: 's1', model: 'm', chunks: [{ role: 'user', content: 'hi' }] },
+      resumedMode: { mode: MODES.DESIGN, work: false },
+    }),
+  });
+
+  await handleCommand('/resume s1', {
+    commands: registry,
+    log: (line) => order.push(line),
+    mode,
+  });
+
+  assert.equal(mode.mode, MODES.DESIGN, 'the stored mode was adopted, not refused');
+  assert.equal(mode.work, false, 'and the lock came down with it');
+});
+
+test('handleCommand() leaves the mode alone when the session file stored none', async () => {
+  const registry = createCommandRegistry();
+  const mode = createSessionMode();
+  registry.register({
+    name: 'resume',
+    description: 'resume',
+    run: () => ({
+      ok: true,
+      code: 'RESUMED',
+      message: 'Resumed s1.',
+      resumed: { id: 's1', chunks: [] },
+      resumedMode: null,
+    }),
+  });
+
+  await handleCommand('/resume s1', { commands: registry, log: () => {}, mode });
+
+  assert.equal(mode.mode, MODES.WORK, 'an old file restores nothing');
+  assert.equal(mode.work, false);
+});
+
+test('runSessionLoop() saves the conversation in Chat too, because the host writes that file, not a tool', async () => {
+  const saved = [];
+  // The one file a Chat session still produces is its own session record
+  // (docs/interface/modes, docs/runtime/session-store): the save is host code, so no
+  // mode gates it. This case pins the corrected wording — "no tool writes" must never
+  // be read as "nothing lands on disk".
+  const mode = createSessionMode({ mode: MODES.CHAT });
+
+  await runSessionLoop({
+    cli: scriptedCli(['how would we refactor app/tui.js?']),
+    log: () => {},
+    manager: { processInput: async () => {} },
+    commands: createCommandRegistry(),
+    mode,
+    saveSession: (reason) => saved.push(reason),
+  });
+
+  assert.equal(mode.mode, MODES.CHAT, 'the session stayed where the user put it');
+  assert.deepEqual(saved, ['turn', 'exit'], 'the transcript is saved in every mode');
 });

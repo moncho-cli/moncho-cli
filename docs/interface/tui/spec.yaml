@@ -10,7 +10,8 @@ summary: >
   the status or spinner on the left and the context meter pinned to its right edge
   (always visible), compactions are announced in the transcript exactly once, and
   the keys are bound apart from the screen wiring (interrupts on the program,
-  scrolling on the screen). The queue bar right above the input box is the
+  scrolling on the screen, Tab and Shift+Tab on the program so the tab byte never
+  reaches the input box). The queue bar right above the input box is the
   pending-message region (docs/interface/message-queue). An input box with no text
   shows the last prompt over it, greyed out (app/input-hint.js, task-backlog: "if
   the input box is empty, it should have a grayed italic text saying 'Last prompt:
@@ -74,7 +75,7 @@ tests:
       - "createPasteRegistry() collapses a long paste and restores it byte-for-byte"
       - "formatCompactionNotice() describes the split, tokens only when known"
       - "createCompactionNotifier() announces each compaction exactly once"
-      - "bindKeys() forwards interrupts from the program and scrolls from the screen"
+      - "bindKeys() takes interrupts and Tab before blessed dispatches, and scrolls from the screen"
       - "bindKeys() without a screen is a harmless no-op"
   - path: tests/tui-teardown.test.js
     cases:

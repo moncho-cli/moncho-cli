@@ -3,38 +3,96 @@ domain: interface
 title: The session's intent mode — Chat, Design, Work under a work:on lock
 status: active
 summary: >
-  A session carries one intent mode — chat (strictly read-only), design (authors
+  A session carries one intent mode — chat (no writing tool), design (authors
   task.md and implementation_plan.md only) and work (executes them) — kept apart
-  from the work:on execution lock. createSessionMode() is the pure, terminal-free
-  machine both front ends drive: nextMode() walks chat -> design -> work -> chat
-  for Tab, cycle() and setMode() are refused while the lock is on with the
-  WORK_LOCK_NOTICE, setWork(true) pins the mode to work and engages the lock while
-  setWork(false) falls back to design, describe() answers the state key, the label
-  and one bright colour per state (work:on carries its own), accepted changes are
-  announced to subscribe()d listeners, and toJSON() persists mode and lock for a
-  resumed session.
+  from the work:on execution lock. A fresh session opens in work (DEFAULT_MODE),
+  while a stored mode the machine cannot read falls back to chat: the default and
+  the junk fallback are two different rules on purpose. A mode is a policy with two
+  halves — the tool list advertised to the provider is narrowed, and every call still
+  passes the pre-dispatch gate of app/tool-guard.js — because the list is an
+  invitation while the gate is the guarantee. The lock is what makes the session
+  self-drive: with work:on it takes its next prompt from its own task.md instead of
+  the keyboard, so the work runs in the same conversation (one window, one
+  transcript, one session file) rather than in a second agent.
+  app/work-drive.js is that driver: a queued message wins over it, it hands over the
+  first pending item, it stops after WORK_DRIVE_MAX_ATTEMPTS identical hand-outs, and
+  a finished checklist stops it without releasing the lock.
+  app/mode-policy.js holds both halves as one table (toolsForMode() and
+  gateForMode()): chat invokes no writing tool, design also writes task.md and
+  implementation_plan.md, work is unrestricted, and a shell (run_bash, run_npm) is
+  refused in chat and design because it cannot be scoped to two paths.
+  createSessionMode() is the pure, terminal-free machine every front end drives:
+  nextMode() walks chat -> design -> work -> chat and prevMode() walks the same ring
+  backwards (Shift+Tab), Tab is bound pre-dispatch in app/tui-keys.js so the tab byte
+  never reaches the input box, app/mode-controller.js routes a refused cycle to the
+  notice bar (never the transcript), cycle() and setMode() are refused
+  while the lock is on with the WORK_LOCK_NOTICE, setWork(true) pins the mode to work
+  and engages the lock while setWork(false) falls back to design, describe() answers
+  the state key, the label and one bright colour per state (work:on carries its own),
+  accepted changes are announced to subscribe()d listeners, and toJSON() persists
+  mode and lock for a resumed session.
 code:
   - path: app/session-mode.js
-    symbols: [MODE_ORDER, MODES, MODE_LABELS, MODE_COLORS, WORK_ON_LABEL, WORK_LOCK_NOTICE, normalizeMode, nextMode, modeStateKey, formatModeLabel, modeColor, createSessionMode]
+    symbols: [MODE_ORDER, MODES, MODE_LABELS, MODE_COLORS, DEFAULT_MODE, WORK_ON_LABEL, WORK_LOCK_NOTICE, normalizeMode, nextMode, prevMode, modeStateKey, formatModeLabel, modeColor, createSessionMode]
   - path: app/session-mode-label.js
     symbols: [MODE_LABEL_SEPARATOR, defaultModeState, formatModeTag, formatModeRow, createModeRow]
   - path: app/tui-layout.js
     symbols: [createLayout]
+  - path: app/mode-controller.js
+    symbols: [MODE_REFUSAL_KIND, createModeController]
+  - path: app/mode-policy.js
+    symbols: [READ_ONLY_TOOLS, TRACKING_TOOLS, DESIGN_WRITABLE_FILES, SCOPED_WRITER_TOOLS, SHELL_TOOLS, WRITER_TOOLS, normalizeTargetPath, isDesignWritable, refusalForMode, toolsForMode, gateForMode]
+  - path: app/work-drive.js
+    symbols: [WORK_DRIVE_MAX_ATTEMPTS, formatWorkPrompt, nextPendingItem, readChecklist, createWorkDrive]
 tests:
   - path: tests/session-mode.test.js
     cases:
       - "normalizeMode() falls back to chat for anything but the three known names"
       - "nextMode() walks chat -> design -> work -> chat and wraps"
+      - "prevMode() walks the ring backwards and is the exact inverse of nextMode()"
       - "Tab cycles the three intent modes and announces every change once"
       - "the work lock refuses Tab and any mode change, and explains itself"
       - "setWork(true) pins the mode to work, setWork(false) falls back to design"
       - "the state key, the label and one bright colour per state"
       - "toJSON() round-trips the mode and the lock into createSessionMode()"
+      - "a fresh session opens in work, while a junk stored mode stays in chat"
+      - "restore() adopts the state of a resumed session instead of requesting a change"
   - path: tests/session-mode-label.test.js
     cases:
       - "formatModeRow() paints the mode label at the leftmost cell and the model after it"
       - "formatModeTag() uses one bright colour per state and escapes the label"
       - "createModeRow() repaints on an accepted mode change and never on a refused one"
-      - "createModeRow() paints the chat default without a mode, and setState() moves it"
+      - "createModeRow() paints the work default without a mode, and setState() moves it"
+      - "defaultModeState() follows the session default instead of hard-coding chat"
       - "the TUI paints the session mode at the leftmost cell of the model row"
-      - "the TUI without a session mode still shows the read-only chat default"
+      - "Tab in the real TUI moves the mode and never types into the input box"
+      - "the TUI without a session mode still shows the state a session opens in"
+
+  - path: tests/mode-controller.test.js
+    cases:
+      - "a refused Tab under the work lock announces the notice and changes nothing"
+      - "an accepted Tab is silent, so a real mode change raises no notice"
+      - "the controller survives a missing mode, a missing sink and a throwing sink"
+      - "Tab against a locked session shows the refusal in the notice bar, never the transcript"
+  - path: tests/mode-policy.test.js
+    cases:
+      - "the tool families are disjoint, so one table decides every mode"
+      - "normalizeTargetPath collapses the ways one file can be spelled"
+      - "Chat is read-only: every writer is refused and every reader is allowed"
+      - "Design writes the two tracking files and nothing else"
+      - "Work is unrestricted, and an unknown mode falls back to the read-only rule"
+      - "toolsForMode narrows the list the provider is offered"
+      - "gateForMode reads the live mode, so a Tab mid-turn bites the next call"
+      - "gateForMode accepts a fixed mode and a fixed lock"
+      - "a Chat turn advertises the read-only list and refuses the write the model still names"
+  - path: tests/work-drive.test.js
+    cases:
+      - "the drive hands over the first pending item while the lock is on"
+      - "the drive stays silent while the lock is off, so the keyboard is in charge"
+      - "a finished checklist stops the drive, and the lock stays on until /work off"
+      - "an unchanged item is handed over a bounded number of times"
+      - "a different item clears the attempt count, so progress is not punished"
+      - "a missing task.md is told apart from an empty one, and neither drives"
+      - "askForPrompt() asks the drive first and the front end only when it is silent"
+      - "runSessionLoop() runs the driven prompt as one normal turn, then the keyboard again"
+      - "a queued message still steers the drive: the queue is drained first"

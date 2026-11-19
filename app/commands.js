@@ -1,5 +1,6 @@
-import { listSessions, loadSession, describeSession, sessionChunks, sessionUsage } from '../utils/session-store.js';
+import { listSessions, loadSession, describeSession, sessionChunks, sessionUsage, sessionModeState } from '../utils/session-store.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
+import { workCommand } from './work-command.js';
 
 /**
  * Slash commands: the iterable registry behind `/sessions` (task.md item 4).
@@ -65,6 +66,7 @@ export function parseCommand(input) {
 /** The built-in commands, registered into a fresh registry. */
 export function createDefaultCommands() {
   const registry = createCommandRegistry();
+  registry.register(workCommand());
   registry.register(sessionsCommand());
   registry.register(usageCommand());
   registry.register(helpCommand(registry));
@@ -157,7 +159,11 @@ export function sessionsCommand() {
         // The host reloads the conversation view from these and keeps saving into
         // this same file, so resuming continues the conversation instead of
         // starting a parallel one (docs/interface/session-replay).
+        // A resumed `work:on` session opens locked; a file written before the mode
+        // existed carries `null` and leaves the session in the state it opened with
+        // (docs/interface/modes).
         resumed: { id: session.id, createdAt: session.createdAt, model: session.model, chunks },
+        resumedMode: sessionModeState(session),
         message: `Resumed ${session.id} (${chunks.length} chunk(s)).`,
       };
     },
