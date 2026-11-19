@@ -31,6 +31,7 @@ specs:
   - context/context-size
   - context/usage-refresh
   - context/model-usage
+  - context/call-pulse
   - interface/interrupt-controls
   - interface/tui
   - interface/message-queue

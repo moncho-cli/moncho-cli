@@ -4,6 +4,7 @@ import {
 } from '../config/constants.js';
 import { readFileIfExists, writeFileVerified } from '../utils/file-io.js';
 import { defineTool } from '../utils/tool-schema.js';
+import { resetTaskPulse } from '../utils/host.js';
 import {
   parseCheckboxItems,
   findCheckboxItem,
@@ -191,6 +192,12 @@ const { definition, execute } = defineTool({
       notes: Array.isArray(args.notes) ? args.notes : []
     }));
 
+    // A completed item is one of the two moments the model-call pulse starts again
+    // from 0 (docs/context/call-pulse): the counter follows the work, not the
+    // process. `status` is a metadata edit and `step` ticks a step of the item
+    // still in flight, so neither of them resets anything.
+    const pulseReset = action === 'complete' ? resetTaskPulse('item-completed') : false;
+
     return JSON.stringify({
       status: 'success',
       action,
@@ -206,6 +213,8 @@ const { definition, execute } = defineTool({
       },
       taskWritten: Boolean(taskWrite),
       planWritten: Boolean(planWrite),
+      // True when this call put the live model-call pulse back to 0.
+      pulseReset,
       message: completed
         ? `Marked done: ${completed.text}. Next: ${nextItem ? nextItem.text : 'none'}.`
         : `Plan reset for: ${planTarget ? planTarget.text : 'harness work'}.`

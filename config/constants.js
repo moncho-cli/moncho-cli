@@ -86,6 +86,19 @@ export const COMPACTION_KEEP_RATIO = 0.3;
 export const COMPACTION_SUMMARY_PREFIX = "[compacted summary of earlier context]";
 
 // ---------------------------------------------------------------------------
+// Model-call pulse (task-backlog: "keep in the context an incremental pulse on
+// each model call, create a hard limit configurable defaulting to 30")
+// ---------------------------------------------------------------------------
+/** The hard limit of agent model calls between two resets, unless configured. */
+export const PULSE_LIMIT_DEFAULT = 30;
+/**
+ * How many agent model calls one stretch of work may cost before the pulse line
+ * tells the model the budget is spent. Configurable through `PULSE_LIMIT`;
+ * anything that is not a positive integer falls back to the default.
+ */
+export const PULSE_LIMIT = toPositiveInt(process.env.PULSE_LIMIT, PULSE_LIMIT_DEFAULT);
+
+// ---------------------------------------------------------------------------
 // run_npm allow-list
 // ---------------------------------------------------------------------------
 export const NPM_ALLOWED_SUBCOMMANDS = [

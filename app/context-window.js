@@ -16,6 +16,12 @@ import { formatContextLimit, CONTEXT_SIZE_SOURCE } from '../utils/context-size.j
  *
  * Keeping this in its own object (rather than a bare array on the manager) lets
  * the `compact_context` tool reach the *live* window through the host registry.
+ *
+ * The chunks are the *conversation*: what a request sends is assembled by
+ * `request()`, which takes the per-call prelude (the pulse line, see
+ * `utils/task-pulse.js`). That keeps a message the model must see but the session
+ * should not record out of the array, and it is why nothing ever lands between an
+ * assistant `tool_calls` chunk and the `tool` chunks answering it.
  */
 export class ContextWindow {
   #chunks = [];
@@ -66,9 +72,29 @@ export class ContextWindow {
     this.compactions = [];
   }
 
+  /**
+   * The exact messages a provider call sends, `extra` first.
+   *
+   * `api/ollama.js` prepends the agent system prompt, so the order the model reads
+   * is: agent prompt, the prelude (the pulse line), the summary of anything that was
+   * compacted, then the conversation in order.
+   */
+  request(extra = []) {
+    const messages = Array.isArray(extra) ? extra : [extra];
+    return [...messages.filter(Boolean), ...this.#chunks];
+  }
+
   /** Estimated tokens currently used by the window, tool schemas included. */
   estimatedTokens() {
     return estimateRequestTokens(this.#chunks, this.getTools());
+  }
+
+  /**
+   * The estimate of a call that also carries `extra`: measured on the messages the
+   * request really sends, so the meter accounts for the pulse line too.
+   */
+  estimatedTokensWith(extra = []) {
+    return estimateRequestTokens(this.request(extra), this.getTools());
   }
 
   /** Usage string such as "1.2k / 8.0k tokens (15%)". */

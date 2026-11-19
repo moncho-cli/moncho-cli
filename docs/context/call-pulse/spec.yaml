@@ -1,0 +1,47 @@
+id: context/call-pulse
+domain: context
+title: A model-call pulse on every agent request, with a hard limit and two resets
+status: active
+summary: >
+  Every agent provider call carries one line generated per call — "[pulse] model
+  call N of PULSE_LIMIT" — placed right after the agent system prompt, so the model
+  sees the budget it is spending. The limit is configurable and defaults to 30; it is
+  instructive, not enforcing (a past-limit call is still sent, with imperative
+  wording and one transient notice), because the model can only reset the pulse by
+  calling a tool. The line is never a window chunk, so N calls cost one line and the
+  recorded session stays the conversation. The counter resets to 0 when a task.md
+  item is completed through update_task, and when a compaction rewrote the window;
+  the summariser call does not tick it.
+code:
+  - path: utils/task-pulse.js
+    symbols: [PULSE_MARKER, PULSE_RESET_REASONS, normalizePulseLimit, formatPulseText, formatPulseLimitNotice, createTaskPulse]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: app/compaction-runner.js
+    symbols: [createCompactionRunner, createSummaryCallModel]
+  - path: utils/host.js
+    symbols: [registerTaskPulse, getTaskPulse, resetTaskPulse, clearTaskPulse]
+  - path: tools/update_task.js
+    symbols: [parseTaskItems, markItemDone, renderPlan]
+  - path: config/constants.js
+    symbols: [PULSE_LIMIT, PULSE_LIMIT_DEFAULT]
+  - path: api/ollama.js
+    symbols: [callOllama, normalizeUsage]
+tests:
+  - path: tests/call-pulse.test.js
+    cases:
+      - "normalizePulseLimit defaults to 30 and refuses what is not a positive integer"
+      - "formatPulseText is one line, counts calls and names what resets it"
+      - "formatPulseText turns imperative once the hard limit is reached"
+      - "formatPulseLimitNotice says what happened and what to do about it"
+      - "createTaskPulse counts calls, reports the first crossing once, and resets with a reason"
+      - "the pulse message is a system message carrying the line"
+  - path: tests/call-pulse-loop.test.js
+    cases:
+      - "every agent request carries the pulse line right after the agent system prompt"
+      - "the summariser call is not an agent call and does not carry or tick the pulse"
+      - "the pulse counts calls, never refuses them, and warns once past the hard limit"
+      - "completing a task.md item resets the live pulse through the host registry"
+      - "resetTaskPulse reaches the live pulse and refuses an empty registry"

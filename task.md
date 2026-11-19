@@ -1,67 +1,62 @@
 status: done
 
-# Input box focus: a click must not take the caret away, and the focus comes back by itself
+# Model-call pulse: an incremental counter carried by every request, under a hard limit
 
 The backlog item:
 
-> sometimes the input box for the message looses focus and i cant make it come back
-> there, so i cant write anything. clicking should work, and periodically just put the
-> focus back in there
+> keep in the context an incremental pulse on each model call, create a hard limit
+> configurable defaulting to 30, and instruct via prompt.md to honor this value.
+> reset it to 0 after marking an item as completed or running compaction
 
-- [x] sometimes the input box for the message looses focus and i cant make it come back there, so i cant write anything. clicking should work, and periodically just put the focus back in there
+- [x] keep in the context an incremental pulse on each model call, create a hard limit configurable defaulting to 30, and instruct via prompt.md to honor this value. reset it to 0 after marking an item as completed or running compaction
 
-## What is actually wrong
+## What the pulse is
 
-Reproduced on the real TUI with the mouse events the blessed program emits for a
-real click (a one-off probe, since deleted; the proof lives in `tests/`):
+One line, generated fresh for every **agent** model call and sent as the second
+message of the request — right after the agent system prompt, before the
+conversation:
 
-| Step | `screen.focused` | `inputBox._reading` | keypress listeners | typing |
-| ---- | ---------------- | ------------------- | ------------------ | ------ |
-| after `question('> ')` | `inputBox` | `true` | 1 | lands, once |
-| after a click on the transcript | `log` | `false` | 0 | **dropped** |
-| after a click on the input box | `log` | `false` | 0 | **dropped** |
+```
+[pulse] model call 4 of 30 — 26 left. Reset to 0 by completing a task.md item (update_task) or by a compaction.
+```
 
-Two causes, both in the widget layer rather than in our own handlers:
+Three decisions worth stating up front:
 
-1. **A click autofocuses the clicked region.** blessed binds
-   `screen.on('element click', el => el.focus())` for every `clickable` element
-   whose `options.autoFocus !== false` (`lib/widgets/screen.js#Screen`), and the
-   transcript (block toggle) and the queue bar (delete row) are both `clickable`.
-   Focusing the transcript blurs the input box, and the textarea's own
-   `this.on('blur', this.__done)` handler **ends the read cycle**: the keypress
-   listener is removed and `_reading` goes false
-   (`lib/widgets/textarea.js#Textarea`). The armed `question()` promise is never
-   settled, so the host loop also waits forever.
-2. **The input box cannot be clicked back into focus.** A `blessed.textbox` is not
-   `clickable` unless it is asked to be, so there is no click path back to the box,
-   and focusing alone would not resume the read anyway (no `inputOnFocus`).
-
-## The fix
-
-| Piece | What it does |
-| ----- | ------------ |
-| `app/focus-guard.js` | `needsFocus()` (one honest question: does the box own the focus *and* is it reading?) and `createFocusGuard()`: focus the box and re-arm its read when the answer is no, stand down while `screen.lockKeys` says a modal owns the keyboard, and run that check on an unref'd timer — the "periodically just put the focus back in there" clause. |
-| `app/tui-layout.js` | `autoFocus: false` on the transcript and the queue bar, so a click there toggles/deletes and *never* moves the caret; `clickable: true, autoFocus: false` on the input box, so it can be clicked. |
-| `app/tui.js` | a click on the input box re-arms it (`promptInput.arm()`), the guard is created with `hold: () => armed or in flight`, started, closed with the screen, and exposed on the surface. |
-| `app/prompt-input.js` | an `isReading` view of the box's read cycle, so the guard can tell a healthy box from a silently-killed one without reaching into blessed's privates in two places. |
+| Decision | Why |
+| -------- | ----------------------------------------------------------------------- |
+| It is generated per call, **not stored as a window chunk** | N calls then cost one line of context instead of N chunks, the recorded session stays the conversation, and the line can never land between an assistant `tool_calls` message and its `tool` results |
+| The limit is **instructive, not enforced** | The backlog asks prompt.md to make the model honour it; the model can only reset the pulse by calling a tool, so refusing the call would turn a nudge into a deadlock |
+| It resets on a **completed item** or a **compaction** only | Those are the two moments the backlog names, and they are exactly where a budget of calls should start again |
 
 ## Done when — verified
 
-- [x] a click on the transcript or the queue bar leaves the input box focused,
-      reading and accepting keystrokes — proven on the real TUI with mouse events on
-      the program (`tests/input-focus.test.js`).
-- [x] clicking the input box focuses it and re-arms its read from any state, and a
-      keyboard drift is repaired by the watchdog within one interval while a question
-      is armed; the guard stands down while a modal holds the keys.
-- [x] `docs/interface/input-focus` states the contract and `docs/index.yaml`
+- [x] every agent model call carries the line, the count climbs by exactly one per
+      call, and the whole turn adds one line of context, not one chunk per call.
+- [x] `PULSE_LIMIT` is configurable, defaults to 30, and reaches the container
+      (`start.sh`, `.env.example`, `README.md`).
+- [x] crossing the limit is announced once (a transient notice) and the line tells
+      the model the budget is spent.
+- [x] the count resets to 0 after `update_task` marks an item done and after a
+      compaction that actually ran; the summariser call itself does not tick.
+- [x] `prompt.md` instructs the model to honour the value (§9).
+- [x] `docs/context/call-pulse` states the contract and `docs/index.yaml`
       registers it, so `tests/docs-realm.test.js` passes.
-- [x] `npm test` is green, every touched file is under 300 lines, and the one-off
-      probe is deleted once it has answered its question.
+- [x] `npm test` is green (334 tests, 0 failing) and every touched file stays under
+      300 lines.
 
 ## Files
 
 | Action | Path |
 | ------ | ---- |
-| added | `app/focus-guard.js`, `tests/input-focus.test.js`, `docs/interface/input-focus/*` |
-| edited | `app/tui-layout.js` (clickable + `autoFocus: false`), `app/tui.js` (the guard, the box click), `app/prompt-input.js` (`isReading`), `app/tui-surface.js` (the guard view), `docs/index.yaml`, `tests/README.md` |
-| deleted | `agent/utils/probe-input-focus.mjs` |
+| added | `utils/task-pulse.js`, `app/compaction-runner.js`, `tests/call-pulse.test.js`, `tests/call-pulse-loop.test.js`, `docs/context/call-pulse/*` |
+| edited | `config/constants.js`, `app/conversation-manager.js`, `app/context-window.js`, `utils/host.js`, `tools/update_task.js`, `prompt.md`, `README.md`, `.env.example`, `start.sh`, `docs/index.yaml`, `docs/README.md`, `docs/context/compaction/spec.yaml`, `tests/README.md` |
+
+## Notes
+
+- The two pulse suites are split along the same seam as the code: `call-pulse.test.js`
+  proves the pure counter and its wording, `call-pulse-loop.test.js` proves the
+  wiring against a stub provider (position in the request, never a chunk, the
+  summariser not ticking, and both resets).
+- `app/compaction-runner.js` was extracted from `app/conversation-manager.js` while
+  wiring the compaction reset, to keep the manager under the 300-line budget; the
+  behaviour is unchanged, and the module is covered by `docs/context/compaction`.

@@ -14,6 +14,8 @@ code:
     symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, compactChunks, needsCompaction]
   - path: app/context-window.js
     symbols: [ContextWindow]
+  - path: app/compaction-runner.js
+    symbols: [createCompactionRunner, createSummaryCallModel]
   - path: tools/compact_context.js
     symbols: [planCompaction, definition, execute]
   - path: utils/host.js

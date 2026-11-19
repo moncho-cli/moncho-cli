@@ -1,6 +1,6 @@
 {
   "name": "moncho-cli",
-  "version": "1.0.1",
+  "version": "0.0.1",
   "type": "module",
   "description": "Opinionated, permission-less, pluricontextual agentic suite for software development",
   "main": "main.js",

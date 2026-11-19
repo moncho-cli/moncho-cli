@@ -40,6 +40,8 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `context-size.test.js` | Resolving the context size from config, provider or default. |
 | `context-usage-refresh.test.js` | The live token meter: every window change and every call announces the usage, a broken listener is swallowed, and the compaction marker stays once-per-event. |
 | `model-usage.test.js` | Token accounting per model: provider counters normalised from both shapes, the exact/estimated split, the session file's usage block, and `/usage`. |
+| `call-pulse.test.js` | The model-call pulse as a value: the limit's default and its validation, the one-line wording before and past the cap, and the reasons a reset records. |
+| `call-pulse-loop.test.js` | The pulse in the loop: the line rides every agent request right after the agent prompt, is never a chunk, the summariser does not tick it, and a completed item or a compaction resets it. |
 | `brand.test.js` | The brand line: `MONCHO (v x.y.z)` formatted from the manifest, the one-row all-or-nothing fit rule, the reserved band, and the floating box in the top right of the conversation. |
 | `queue-rows.test.js` | How a queued message is drawn: the cell counting (wide glyphs two, combining marks none), the preview budget that keeps the `✕ N. ` marker, and the rule that a row is fitted to the bar it is painted in. |
 

@@ -181,13 +181,35 @@ When `task.md` holds a list of unchecked items:
 4. Set the context to the updated `task.md` before starting the next item, and only
    advance once the current item is completed and verified.
 
-### 9. Context window
+### 9. Model-call pulse (honour the limit)
+Every request carries a `[pulse]` line right after this system prompt. It counts the
+model calls the current stretch of work has cost, against the configured limit
+(`PULSE_LIMIT`, **30** by default):
+
+```
+[pulse] model call 4 of 30 — 26 left. Reset to 0 by completing a task.md item (update_task) or by a compaction.
+```
+
+- **The limit is a budget for actions**, not a measure of effort: it exists so the
+  whole window is not spent on probes, retries and small steps.
+- **While calls remain**, keep working normally, but take the shortest path that
+  answers a question: one `grep` before a `read_file`, a batch of up to five
+  independent calls in one message (4.3), and never re-read a file you already hold.
+- **When the line says the hard limit is reached**, stop starting new exploration
+  and finish what you were doing: `update_task` with `action: "complete"` as soon as
+  the item is verified, or `compact_context`. Either one resets the counter to 0,
+  and the next stretch of work starts with a fresh budget.
+- The pulse is your own budget, not a property of the environment: never report it
+  to the user as a limitation, and never use it as an excuse to leave the plan half
+  done.
+
+### 10. Context window
 The context is an array of chunks. `main.js` reports its token usage after every
 exchange against `CONTEXT_MAX_LENGTH`. When it exceeds the budget the older 80% of
 the window is summarised into a single chunk and the newest 20% is kept verbatim
 (`compact_context` reports the split; the host loop performs the summarisation).
 
-### 10. Planning rules
+### 11. Planning rules
 When investigating to create the task.md contents and implementation-plan.md prefer shorter planning rounds to lock in sooner rather than later.
 
 ## Response Format

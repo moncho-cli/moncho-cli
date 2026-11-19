@@ -1,36 +1,30 @@
 import { callOllama } from '../api/ollama.js';
 import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
-import { registerContextWindow } from '../utils/host.js';
+import { registerContextWindow, registerTaskPulse } from '../utils/host.js';
+import { createTaskPulse, formatPulseLimitNotice } from '../utils/task-pulse.js';
 import { createUsageMeter, recordProviderCall } from '../utils/usage-stats.js';
-import { estimateMessagesTokens } from '../utils/tokens.js';
-import { formatArgs as summarizeArgs } from './tool-call-format.js';
 import { handleToolBatch } from './tool-batch.js';
+import { createCompactionRunner, createSummaryCallModel } from './compaction-runner.js';
 import { formatRetryNotice, formatFailureNotice } from './notice-overlay.js';
 
 /**
  * The conversation loop.
  *
- * The context is an array of chunks (see app/context-window.js) rather than the
- * historical `messages` array, so task.md item 3 (token count of the window) and
- * item 8 (compaction at CONTEXT_MAX_LENGTH) are backed by real state instead of
- * ad-hoc bookkeeping. `getMessages()`/`reset()` remain as compatibility shims.
+ * The context is an array of chunks (app/context-window.js), so the token count of
+ * the window and its compaction at CONTEXT_MAX_LENGTH are backed by real state;
+ * `getMessages()`/`reset()` remain as compatibility shims. Four responsibilities
+ * live here, each documented where it is used:
  *
- * Task.md item 6 is enforced here too: every tool call's `intent` is printed to
- * the terminal *and* persisted in the chunk that carries the tool result, so the
- * reason for a call is both visible to the user and part of the model context.
- *
- * Failures are told apart by whether they were *recovered*: an attempt that is
- * retried is news and goes to the transient notice overlay (`onNotice`, see
- * app/notice-overlay.js) where it disappears on its own, while the failure that
- * ends the task keeps a line in the transcript. Writing a retried attempt to the
- * transcript is what left a stale "Error calling Ollama" line behind after a 502
- * had already been recovered from (task-backlog: "clean up failed attempts").
- *
- * The tool calls of one message are a *batch*: `handleToolCalls` delegates to
- * `app/tool-batch.js`, which caps the batch at `MAX_PARALLEL_TOOL_CALLS`, runs the
- * accepted calls simultaneously and stores one chunk per call in call order
- * (`docs/agent/tool-multicall`).
+ *  - the tool-call `intent` is printed *and* persisted in the result chunk, so the
+ *    reason for a call is both visible and part of the model's context;
+ *  - a failure is told apart by whether it was *recovered*: a retried attempt is a
+ *    transient notice (app/notice-overlay.js) while the one that ends the task also
+ *    keeps a transcript line;
+ *  - one assistant message's tool calls are a batch (app/tool-batch.js): capped,
+ *    dispatched simultaneously, one chunk per call in call order;
+ *  - every agent call carries the model-call pulse (`docs/context/call-pulse`),
+ *    generated per call, never stored as a chunk.
  */
 export class ConversationManager {
   constructor(toolFunctions, getTools, getAbortSignal = () => null, options = {}) {
@@ -51,6 +45,10 @@ export class ConversationManager {
     this.usage = createUsageMeter({ models: options.usage || {} });
     // How many tool calls of one assistant message run at once.
     this.maxParallelToolCalls = options.maxParallelToolCalls ?? null;
+    // The model-call pulse (utils/task-pulse.js): an injected counter keeps the
+    // tests deterministic, and it is the object `update_task` resets through the
+    // host registry.
+    this.pulse = options.pulse || createTaskPulse(options.pulseLimit ? { limit: options.pulseLimit } : {});
 
     this.contextWindow = options.contextWindow || new ContextWindow({
       maxTokens: options.maxTokens || CONTEXT_MAX_LENGTH,
@@ -59,8 +57,16 @@ export class ConversationManager {
       source: options.contextSizeSource,
       tools: () => this.getTools()
     });
-    // Expose the live window to stateless tools (compact_context).
+    // Expose the live window and the live pulse to stateless tools
+    // (compact_context, update_task).
     registerContextWindow(this.contextWindow);
+    registerTaskPulse(this.pulse);
+    this.compactionRunner = createCompactionRunner({
+      window: this.contextWindow,
+      log: (line) => this.log(line),
+      notify: () => this.notifyContextChange(),
+      callModel: createSummaryCallModel({ meter: (response, promptTokens) => this.recordUsage(response, promptTokens) }),
+    });
   }
 
   /** Ordered array of context chunks (task.md items 3 & 8). */
@@ -73,14 +79,18 @@ export class ConversationManager {
     return this.usage.table();
   }
 
+  /** The pulse's view for the host: count, limit and remaining calls. */
+  pulseStats() {
+    return this.pulse.stats();
+  }
+
   /**
    * Count one finished provider call against the model that answered it.
    *
-   * The context window says how full the request is; this is the accounting
-   * record the session keeps (`utils/usage-stats.js`). The provider's own
-   * counters are used when it reports them, and the measured prompt plus the
-   * answered text are the fallback — flagged as an estimate, never passed off as
-   * exact.
+   * The context window says how full the request is; this is the accounting record
+   * the session keeps (`utils/usage-stats.js`). The provider's own counters are
+   * used when it reports them, and the measured prompt plus answered text are the
+   * fallback — flagged as an estimate, never passed off as exact.
    */
   recordUsage(response, promptTokens = 0) {
     return recordProviderCall(this.usage, this.model, { response, promptTokens });
@@ -89,14 +99,10 @@ export class ConversationManager {
   /**
    * Announce the window's current stats to the host.
    *
-   * The token meter is a *view* of the window, so it must follow every change to
-   * it instead of being repainted once per turn by the host loop: the user has to
-   * see a turn approach the budget while it is still running. Every mutation of
-   * the window and every provider call goes through this one helper, so no call
-   * site can forget the hook.
-   *
-   * The hook is presentation only — a listener that throws must never cost the
-   * user their turn, exactly like `onUserMessage`.
+   * The token meter is a *view* of the window, so it must follow every change to it
+   * instead of being repainted once per turn by the host loop: the user has to see a
+   * turn approach the budget while it is still running. Presentation only — a
+   * listener that throws must never cost the user their turn.
    */
   notifyContextChange() {
     if (!this.onContextChange) return null;
@@ -132,17 +138,19 @@ export class ConversationManager {
   }
 
   /**
-   * Creates a simple string representation of the function arguments.
-   * - If the argument is a short string, number, or boolean (length <= 20),
-   *   it shows "paramName: value".
-   * - If the argument is a long string (length > 20),
-   *   it shows "paramName: string(Nchars)".
-   * - Otherwise, it shows "paramName: [object Object]" or similar.
+   * One agent model call: count it for the pulse, and raise the single notice that
+   * says the hard limit has been passed. The call is *counted*, never refused — the
+   * only way the model can reset the pulse is by calling a tool, so refusing the
+   * call would deadlock the turn (`docs/context/call-pulse`).
+   *
+   * @returns {object[]} the call's prelude messages (the pulse line)
    */
-  formatArgs(args) {
-    // The call's shape lives in ./tool-call-format.js, so the session replay
-    // prints the very same summary when it reloads a conversation.
-    return summarizeArgs(args);
+  beginModelCall() {
+    const state = this.pulse.tick();
+    if (state.crossed) {
+      this.notifyNotice('warn', formatPulseLimitNotice(state), { code: 'pulse-limit' });
+    }
+    return [this.pulse.message()];
   }
 
   async processInput(userInput) {
@@ -160,19 +168,22 @@ export class ConversationManager {
     while (true) {
       const signal = this.getAbortSignal();
 
-      // Task.md item 8: never call the model with an over-budget window.
-      await this.maybeCompact(signal);
+      // Task.md item 8: never call the model with an over-budget window. A
+      // compaction rewrote the window, so the pulse starts again from 0.
+      const compaction = await this.maybeCompact(signal);
+      if (compaction?.compacted) this.resetPulse('compaction');
 
-      // Everything the window holds at this instant is about to be sent, so
-      // paint exactly that: the meter is current for the call that can still be
-      // rejected for being over budget.
+      // Everything the window holds at this instant is about to be sent, so paint
+      // exactly that: the meter is current for the call that is sent next.
       this.notifyContextChange();
 
       try {
+        // Count the call about to be sent, and take the line it carries.
+        const prelude = this.beginModelCall();
         // What the request is about to cost, measured before it is sent: used
         // only when the provider answers without counters of its own.
-        const promptTokens = this.contextWindow.estimatedTokens();
-        const data = await callOllama(this.contextWindow.chunks, this.getTools(), false, signal, {
+        const promptTokens = this.contextWindow.estimatedTokensWith(prelude);
+        const data = await callOllama(this.contextWindow.request(prelude), this.getTools(), false, signal, {
           // A retried attempt is a transient notice, not a transcript line.
           onRetry: (report) => this.notifyRetry(report),
         });
@@ -187,7 +198,10 @@ export class ConversationManager {
 
         if (data.message.tool_calls) {
           const wantsCompaction = await this.handleToolCalls(data.message.tool_calls, signal);
-          if (wantsCompaction) await this.maybeCompact(signal, { force: true, reason: 'tool-request' });
+          if (wantsCompaction) {
+            const forced = await this.maybeCompact(signal, { force: true, reason: 'tool-request' });
+            if (forced?.compacted) this.resetPulse('compaction');
+          }
         } else {
           const content = data.message.content;
           await this.handleFinalResponse(content !== undefined && content !== null ? content : "");
@@ -207,54 +221,30 @@ export class ConversationManager {
     }
   }
 
+  /** Put the model-call pulse back to 0 (an item completed, a compaction, …). */
+  resetPulse(reason = 'manual') {
+    return this.pulse.reset(reason);
+  }
+
   /**
    * Compact the window when it exceeds CONTEXT_MAX_LENGTH (or when forced).
-   * The summary call deliberately opts out of the agent system prompt.
+   *
+   * The step itself lives in `app/compaction-runner.js`; the summary call is a
+   * *neutral* one (it opts out of the agent system prompt), so the summariser does
+   * not answer as the agent, and it is metered like any other provider call.
    */
-  async maybeCompact(signal, { force = false, reason = 'over-budget' } = {}) {
-    if (!force && !this.contextWindow.needsCompaction()) return null;
-
-    try {
-      const result = await this.contextWindow.compact({
-        force,
-        reason,
-        signal,
-        // callOllama resolves to the normalised response object, so unwrap the
-        // summary text before handing it to the compactor.
-        callModel: async (messages, ctx) => {
-          const promptTokens = estimateMessagesTokens(messages);
-          const response = await callOllama(messages, [], false, ctx.signal, { systemPrompt: false });
-          // The summariser is a provider call like any other: it is billed, so it
-          // is counted against the same model.
-          this.recordUsage(response, promptTokens);
-          return response?.message?.content ?? '';
-        }
-      });
-
-      if (result.compacted) {
-        this.log(`\n[Context] Compacted ${result.olderChunks} older chunk(s) into a summary (${result.olderTokens} -> ${result.afterTokens} tokens).`);
-        this.log(`[Context] Window: ${result.usage}`);
-        // The window was rewritten underneath the chunks, so the meter has to
-        // be repainted with the smaller number straight away.
-        this.notifyContextChange();
-      }
-      return result;
-    } catch (error) {
-      // A failed compaction must never break the task; the window is unchanged.
-      this.log(`\n[Context] Compaction skipped: ${error.message}`);
-      return { compacted: false, reason: 'error', error: error.message };
-    }
+  async maybeCompact(signal, options = {}) {
+    return this.compactionRunner.run(signal, options);
   }
 
   /**
    * Run the tool calls of one assistant message as a batch.
    *
-   * The batch itself lives in `app/tool-batch.js`: the accepted calls are capped
-   * at `MAX_PARALLEL_TOOL_CALLS`, dispatched simultaneously, and stored one chunk
-   * per call in call order — each result inside the `<tool-multicall result>`
-   * envelope that carries the call's signature (`docs/agent/tool-multicall`).
-   * Passing the window, the log and the tool map in keeps this method the wiring
-   * only, and keeps the batch unit testable without a provider.
+   * The batch itself lives in `app/tool-batch.js`: the accepted calls are capped at
+   * `MAX_PARALLEL_TOOL_CALLS`, dispatched simultaneously, and stored one chunk per
+   * call in call order — each result inside the `<tool-multicall result>` envelope
+   * that carries the call's signature (`docs/agent/tool-multicall`). Passing the
+   * window, the log and the tool map in keeps this method the wiring only.
    *
    * @returns {Promise<boolean>} true when a tool asked for a deferred compaction.
    */

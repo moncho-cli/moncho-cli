@@ -23,3 +23,36 @@ export function getContextWindow() {
 export function clearContextWindow() {
   contextWindow = null;
 }
+
+// ---------------------------------------------------------------------------
+// The model-call pulse (utils/task-pulse.js)
+// ---------------------------------------------------------------------------
+// The pulse counts the agent model calls of the current stretch of work and
+// resets when an item is completed or the window is compacted. The reset has to
+// reach the *live* counter from a tool call (`update_task`), which is exactly the
+// situation this registry exists for.
+
+let taskPulse = null;
+
+/** Register the live pulse (called by the ConversationManager). */
+export function registerTaskPulse(pulse) {
+  taskPulse = pulse;
+  return taskPulse;
+}
+
+/** @returns {import('./task-pulse.js').TaskPulse|null} */
+export function getTaskPulse() {
+  return taskPulse;
+}
+
+/** Put the live pulse back to 0; false when there is none to reset. */
+export function resetTaskPulse(reason = 'manual') {
+  if (!taskPulse || typeof taskPulse.reset !== 'function') return false;
+  taskPulse.reset(reason);
+  return true;
+}
+
+export function clearTaskPulse() {
+  taskPulse = null;
+}
+

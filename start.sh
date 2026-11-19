@@ -17,6 +17,7 @@ ENV_FLAGS=()
 [ -n "${OPENAI_API_KEY:-}" ]  && ENV_FLAGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY")
 [ -n "${OPENAI_MODEL:-}" ]    && ENV_FLAGS+=(-e "OPENAI_MODEL=$OPENAI_MODEL")
 [ -n "${CONTEXT_MAX_LENGTH:-}" ] && ENV_FLAGS+=(-e "CONTEXT_MAX_LENGTH=$CONTEXT_MAX_LENGTH")
+[ -n "${PULSE_LIMIT:-}" ]     && ENV_FLAGS+=(-e "PULSE_LIMIT=$PULSE_LIMIT")
 
 # Build the application image from ./Dockerfile (installs deps incl. `diff`).
 build_image() {

@@ -33,6 +33,11 @@ to Ollama, chosen entirely through environment variables.
   beyond the cap is refused with a structured error instead of being dropped.
 - **Token usage accounted per model.** Every provider call is counted against the
   model that answered it, saved with the session, and reported by `/usage`.
+- **A pulse on every model call.** Each request carries a one-line count of the
+  agent calls the current stretch of work has cost, against `PULSE_LIMIT` (30 by
+  default). Past the hard limit `prompt.md` makes the model stop starting new work
+  and complete the item — and finishing a `task.md` item or compacting the context
+  resets the counter to 0.
 - **Both front ends.** A neo-blessed TUI on a pty, a plain line chat when there is
   none — with the same commands and the same interrupt keys.
 - **A brand line, not a mosaic.** The first row of the screen carries
@@ -71,7 +76,7 @@ Node 22+. There is no build step: the project is plain ES modules.
 
 ## Configuration
 
-Everything is environment-driven; `start.sh` forwards the four variables below from
+Everything is environment-driven; `start.sh` forwards the five variables below from
 `.env` when they are set.
 
 | Variable | Default | Purpose |
@@ -80,12 +85,17 @@ Everything is environment-driven; `start.sh` forwards the four variables below f
 | `OPENAI_API_KEY` | *(empty)* | Bearer token; omitted from headers when unset |
 | `OPENAI_MODEL` | `qwen3.6:35b-a3b-q4_K_M` | Model id sent with every request |
 | `CONTEXT_MAX_LENGTH` | the provider's real total, else `128000` | Working token budget; the override wins but both numbers are shown |
+| `PULSE_LIMIT` | `30` | Hard limit of agent model calls between two resets (a completed `task.md` item or a compaction) |
 
 The provider label (`openrouter · deepseek/…`) is derived from the base URL, so
 switching providers is a `.env` change and nothing else. The context budget is
 resolved at startup: a config override first, then the real context length the
 provider reports over HTTP, then the 128k default — and the UI shows the override
 next to the provider total when the two differ.
+The model-call pulse is governed by `PULSE_LIMIT`: every request carries a
+`[pulse] model call N of …` line, and `prompt.md` instructs the model to honour it.
+Completing a `task.md` item (`update_task`, `action: "complete"`) or running a
+compaction resets the counter to 0.
 
 ## Using it
 
