@@ -3,7 +3,7 @@
 # Installer: stage the Moncho agent into a user-scoped directory.
 #
 #   curl -fsSL https://raw.githubusercontent.com/moncho-cli/moncho-cli/<ref>/scripts/install.sh | bash
-#   ./scripts/install.sh --ref v0.1.0
+#   ./scripts/install.sh --ref v0.1.1
 #
 # What it does, in order: checks the host, downloads the release tarball into a
 # temporary directory, verifies its checksum when the release publishes one, extracts

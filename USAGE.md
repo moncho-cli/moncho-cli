@@ -172,17 +172,18 @@ all.
 
 Type a prompt and press Enter. A task runs until the model stops asking for tools.
 
+The session opens in **`work`** mode, where the work happens: talk it through and the
+agent acts on what you say. **Tab** narrows the intent mode when you want to —
+`chat` → `design` → `work` — and **Shift+Tab** walks back. `chat` is read-only (no
+writer, no shell), `design` also writes the two tracking files, `work` is unrestricted.
+
 | Command | What it does |
 | ------- | ------------ |
 | `/help` | List the commands |
 | `/sessions` | List stored conversations, or resume one |
 | `/usage` | Print the token breakdown for the session |
-| `/work on` | Lock the session into autonomous execution over `task.md` |
-| `/work off` | Release the lock and land on `design` |
 | `exit` | Quit |
 
-**Tab** walks the intent mode: `chat` → `design` → `work`. `chat` is read-only, `design`
-also writes the two tracking files, `work` is unrestricted. **Shift+Tab** walks back.
 **ESC** or **Ctrl+C** cancels a running task; press twice to confirm. When idle, the same
 key quits.
 
@@ -190,7 +191,6 @@ key quits.
 
 In `design` and `work` mode the agent keeps `task.md` and `implementation_plan.md` up to
 date. The plan is reset when an item starts and ticked as each verified step lands.
-`/work on` refuses a session with no `task.md`, no items, or every item already done.
 
 ### The status line
 

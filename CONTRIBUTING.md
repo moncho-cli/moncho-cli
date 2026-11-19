@@ -20,7 +20,7 @@ installer fetches your tag, stages your payload and links your command.
 
 A fork you intend to keep needs a release of its own: the installer downloads
 `archive/refs/tags/<ref>.tar.gz`, so a tag in your repository is what makes
-`MONCHO_REF=v0.1.0` mean something. A branch ref works too, and installs whatever is on
+`MONCHO_REF=v0.1.1` mean something. A branch ref works too, and installs whatever is on
 the branch at that moment.
 
 ## The maintainer loop

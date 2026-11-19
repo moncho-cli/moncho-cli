@@ -11,9 +11,10 @@ summary: >
   halves — the tool list advertised to the provider is narrowed, and every call still
   passes the pre-dispatch gate of app/tool-guard.js — because the list is an
   invitation while the gate is the guarantee. The lock is what makes the session
-  self-drive: with work:on it takes its next prompt from its own task.md instead of
-  the keyboard, so the work runs in the same conversation (one window, one
-  transcript, one session file) rather than in a second agent.
+  self-drive, and it is optional: work mode already executes what the user talks
+  through. With work:on the session takes its next prompt from its own task.md
+  instead of the keyboard, so the work runs in the same conversation (one window,
+  one transcript, one session file) rather than in a second agent.
   app/work-drive.js is that driver: a queued message wins over it, it hands over the
   first pending item, it stops after WORK_DRIVE_MAX_ATTEMPTS identical hand-outs, and
   a finished checklist stops it without releasing the lock.

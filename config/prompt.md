@@ -174,27 +174,12 @@ The project is organised in three realms that must stay clear, factual and linke
   the capability they prove, and update `docs/index.yaml` when adding or removing a
   spec. Read `docs/README.md` and `tests/README.md` before working in either realm.
 
-#### 6.2 The session's intent mode
-Every session carries one intent mode, and it is what decides which tools a call may
-use (`docs/interface/modes`):
+#### 6.2 Mode refusals are policy, not errors
 
-| Mode | What it may touch |
-| ---- | ----------------- |
-| **`chat`** | Read-only: no writer, and no shell either (a shell cannot be scoped to a path). |
-| **`design`** | Also authors `task.md` and `implementation_plan.md` — and nothing else. |
-| **`work`** | Unrestricted: the mode a session opens in (`DEFAULT_MODE`), which is what executes a written plan. |
-
-- `Tab` walks `chat → design → work → chat`, and `Shift+Tab` walks the same ring
-  backwards. The mode is chosen by the user, never derived from a prompt.
-- A mode is enforced in **two halves**, never one: the narrowed tool list the provider
-  is offered, **and** the pre-dispatch gate every call still passes. A refusal comes
-  back to the model as a structured `TOOL_REFUSED_BY_MODE` result naming the mode.
-- `work:on` (`/work on`) is an **execution lock, not a sandbox, and not a mode**: while
-  it is on the mode cannot move, chat messages still steer the session, and the host
-  takes its next prompt from `task.md` instead of the keyboard. `/work off` releases
-  it and lands on `design` — never `chat`, so the tracking files stay writable.
-  `/work on` refuses a session with no `task.md`, with no checklist items, or with
-  every item already done; a refused `on` changes nothing.
+The session's intent mode is enforced outside this prompt: the tool list you are
+offered is narrowed, and a call outside it returns `TOOL_REFUSED_BY_MODE`. Do not
+retry a refused tool — say what you would need instead. While the work lock is on,
+your prompts may come from `task.md` rather than from the user.
 
 ### 7. Communication Style
 - Be concise and precise in your explanations

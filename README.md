@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/moncho-cli/moncho-cli/main/scripts/
 The installer stages the payload under `~/.config/moncho-cli` and links `moncho-cli`
 onto your `PATH`. It needs `curl`, `tar` and a working Docker daemon — and no Node.js
 on the host, because the agent runs in a container. Pin a release with
-`MONCHO_REF=v0.1.0`; install elsewhere with `MONCHO_HOME=/opt/moncho`.
+`MONCHO_REF=v0.1.1`; install elsewhere with `MONCHO_HOME=/opt/moncho`.
 
 Then, in any project directory:
 

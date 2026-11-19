@@ -23,8 +23,10 @@ registry and the commands that ship with it; the implementation is linked below.
 ## The commands
 
 - **`/work [on|off]`** — the execution lock (`docs/interface/modes`). It moves the
-  *live* session state, not a copy: `run(ctx)` receives the `createSessionMode()` the
-  tool gate already reads, so a typed `/work on` tightens the very next call.
+  *live* session state, not a copy. It is an **optional** switch: `work` mode already
+  executes what the user talks through, and the lock only adds the self-drive. `run(ctx)`
+  receives the `createSessionMode()` the tool gate already reads, so a typed `/work on`
+  tightens the very next call.
   - `/work on` refuses when there is nothing to drive: no `task.md`, a file with no
     checkbox items, or one whose items are all done. A refused `on` leaves the mode
     and the lock exactly where they were.

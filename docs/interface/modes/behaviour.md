@@ -34,8 +34,9 @@ nothing it cannot describe.
 - Those two files live **in the session folder** (`agent/sessions/<id>/`, see
   `docs/agent/task-tracking`), so `design` may write them there as well as at the
   project root — one folder deep, and only under those two names.
-- `work` executes the backlog. On its own it is a *mode* like the others; it is the
-  `work:on` **lock** that makes it run without being asked.
+- `work` executes the backlog: talk the work through and the agent acts on it. The
+  `work:on` **lock** is an optional extra, not how a session normally works — see
+  *The work lock* below.
 
 The mode is a *policy*, and the policy has two halves — both are needed, and neither
 substitutes for the other:
@@ -115,8 +116,9 @@ session start read-only, and both are wrong.
   *mode* cannot move behind the user's back.
 - Turning the lock on when it is already on (or off when it is already off) is a
   no-op, so a doubling of the order is harmless.
-- The lock is what starts and stops the session's **self-drive**: with `work:on` the
-  session takes its next prompt from its own `task.md` instead of from the keyboard,
+- The lock is an **optional** switch, not the normal way to work: `work` mode already
+  executes what the user talks through. With `work:on` the session additionally starts
+  its **self-drive**: it takes its next prompt from its own `task.md` instead of the keyboard,
   so it walks the checklist one item at a time in the *same* conversation — one
   window, one transcript, one session file. Nothing runs in a second process and
   nothing is written to a second context: the work product is the tracking files on
