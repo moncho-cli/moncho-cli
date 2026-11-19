@@ -94,12 +94,30 @@ case "$1" in
       exit 1
     fi
     ;;
+  exec)
+    # One command inside the running container, the suite being the usual one:
+    # ./start.sh exec npm test. Node, npm and the dev dependencies live in the image.
+    shift
+    if [ "$#" -eq 0 ]; then
+      echo "Usage: $0 exec <command> [args...]" >&2
+      exit 1
+    fi
+    if [ -z "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+      echo "Error: Container '$CONTAINER_NAME' is not running. Use './start.sh start' first." >&2
+      exit 1
+    fi
+    if [ -t 0 ]; then
+      exec docker exec -it -u "$(id -u)" "$CONTAINER_NAME" "$@"
+    fi
+    exec docker exec -i -u "$(id -u)" "$CONTAINER_NAME" "$@"
+    ;;
   *)
-    echo "Usage: $0 {start|stop|run|shell|build}"
+    echo "Usage: $0 {start|stop|run|shell|exec|build}"
     echo "  start: Runs in background"
     echo "  stop:  Stops and removes the container"
     echo "  run:   Runs in foreground (interactive)"
     echo "  shell: Opens a terminal inside the running container"
+    echo "  exec:  Runs one command inside it (e.g. exec npm test)"
     echo "  build: Builds the application image from the Dockerfile"
     exit 1
     ;;

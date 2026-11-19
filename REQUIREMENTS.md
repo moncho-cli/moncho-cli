@@ -27,11 +27,11 @@ agent exactly as a host with it does.
 ### Required, for the maintainer flow
 
 The maintainer's loop runs the same image, so it needs the same Docker daemon and
-nothing more. The suite runs there too, through the helper in `bin/moncho`:
+nothing more. The suite runs there too, through the runner's own `exec`:
 
 ```bash
 ./start.sh start
-moncho npm test
+./start.sh exec npm test
 ```
 
 A host run needs Node 22 and `npm ci` in the checkout, and is the opt-out rather than

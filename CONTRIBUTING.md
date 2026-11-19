@@ -34,13 +34,14 @@ the agent runs in and it needs nothing on the host but a daemon.
 ```bash
 ./start.sh run        # foreground
 ./start.sh start      # detached
-moncho npm test       # the suite, in the running container
+./start.sh exec npm test   # the suite, in the running container
 ./start.sh stop
 ```
 
-`make dev` is the same thing as `./start.sh run`. `bin/moncho` is the helper that
-executes a command in the container the loop started; it is a maintainer's tool and is
-not installed by `scripts/install.sh`.
+`make dev` is the same thing as `./start.sh run`, and `./start.sh exec <command>` runs
+one command inside the container the loop started. `moncho-cli` is the *user's* entry
+point: it prepares a project directory and drives its own container. The two flows stay
+separate, so neither command is a shorthand for the other.
 
 A host run is the alternative, and it needs Node 22 and `npm ci` in the checkout:
 
@@ -83,8 +84,8 @@ it — the agent loads no spec at run time.
    responsibility and keep the import path working.
 3. Update the spec: the behaviour, and the `path#symbol` references if a symbol moved.
 4. Add or update the case in `tests/`, named after the capability.
-5. Run the suite in the container: `moncho npm test`. A failing case is a real failure,
-   not a flake; the suite is deterministic and uses no network.
+5. Run the suite in the container: `./start.sh exec npm test`. A failing case is a real
+   failure, not a flake; the suite is deterministic and uses no network.
 
 ### What the suite covers
 

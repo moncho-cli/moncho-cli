@@ -69,22 +69,24 @@ OpenRouter dashboard. The cache-hit rate is the reason a long session stays affo
 the request prefix never changes between calls, so the prompt cache is hit on every
 turn after the first.
 
-| Window | Requests | Tokens | Cache hit rate |
-| ------ | -------- | ------ | -------------- |
-| Half an hour | 201 | 28.7M | 98.8% |
-| One hour | 526 | 79.1M | 98.1% |
-| Three hours | over 1k | 170M | 96% |
+### Half an hour — 201 requests, 28.7M tokens, 98.8% cached
 
-![Half an hour, 201 requests, 28.7M tokens, 98.8% cache hit rate](docs/metrics/screenshots/openrouter.com-half-hour-201-requests-28.7Mtok-98.8%-cache-hit-rate.png)
+![The OpenRouter dashboard after half an hour: 201 requests, 28.7M tokens, a 98.8% cache hit rate](docs/metrics/screenshots/cache-hit-rate-half-hour.png)
 
-![One hour, 526 requests, 79.1M tokens, 98.1% cache hit rate](docs/metrics/screenshots/openrouter.com-1-hour-526-requests-79.1Mtok-98.1%c-cache-hit-rate.png)
+### One hour — 526 requests, 79.1M tokens, 98.1% cached
 
-![Three hours, over 1k requests, 170M tokens, 96% cache hit rate](docs/metrics/screenshots/openrouter.com-3-hours-metrics-over-1k-requests-170Mtok-96%-cache-hit-rate.jpeg)
+![The OpenRouter dashboard after one hour: 526 requests, 79.1M tokens, a 98.1% cache hit rate](docs/metrics/screenshots/cache-hit-rate-one-hour.png)
 
-A session that has been compacted shows the same accounting in the transcript, with the
-summary chunk in place of the block it replaced:
+### Three hours — over 1k requests, 170M tokens, 96% cached
 
-![A compacted session](docs/metrics/memento-you-have-been-previously-compacted.jpeg)
+![The OpenRouter dashboard after three hours: over 1k requests, 170M tokens, a 96% cache hit rate](docs/metrics/screenshots/cache-hit-rate-three-hours.jpeg)
+
+### What a compacted session looks like
+
+The same accounting appears in the transcript, with the summary chunk in place of the
+block it replaced — the conversation above it is gone, its essence is not.
+
+![A transcript where the older 80% of the conversation has been replaced by one summary chunk](docs/metrics/memento-you-have-been-previously-compacted.jpeg)
 
 ## The three realms
 
@@ -116,9 +118,10 @@ disposable: delete it and the next run starts clean.
 
 ## Developing the agent
 
-The maintainer loop runs this checkout in its own container. See
+The maintainer loop runs this checkout in its own container, through `./start.sh`. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the full instructions; the short version is
-`./start.sh run` (or `make dev`), and `npm test` for the suite — inside the container.
+`./start.sh run` (or `make dev`) to run it, and `./start.sh exec npm test` for the
+suite — inside that container.
 
 ## Licence
 

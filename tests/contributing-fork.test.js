@@ -132,7 +132,11 @@ test('the suite runs in the container too, so the host needs no Node.js at all',
 
   // Both documents hand the reader the in-container command, and call the host the opt-out.
   for (const [name, doc] of [['CONTRIBUTING.md', contributing], ['USAGE.md', usage]]) {
-    assert.match(doc, /moncho npm test/, `${name} must give the in-container suite command`);
+    // The maintainer's entry point is ./start.sh, not `moncho-cli`: that command is the
+    // user's, and it prepares a *project* directory. Coupling the assertion to start.sh
+    // is what keeps the two flows from drifting into each other again.
+    assert.match(doc, /start\.sh exec npm test/, `${name} must give the in-container suite command`);
+    assert.match(start, /exec npm test/, 'start.sh exec is the command the documents quote');
     assert.match(doc, /is the opt-out, not the flow/, `${name} must call the host run the opt-out`);
   }
   assert.match(requirements, /the suite runs there too/);

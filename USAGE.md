@@ -213,7 +213,7 @@ That is the loop to prefer, because it is the same image the agent runs in.
 
 ```bash
 ./start.sh start
-moncho npm test
+./start.sh exec npm test
 ```
 
 A host run — `npm test` with Node installed on your machine — is the opt-out, not the
