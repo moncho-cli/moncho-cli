@@ -1,28 +1,54 @@
 # Runtime — conversation sessions on disk
 
-A conversation is worth more than the process that produced it: the agent stores
-the **full context** of every session as a dated file under `agent/sessions/`, so a
-later run (or the `/sessions` command) can list the stored conversations and pick
-one up again. This spec fixes the format and the store; the implementation is
-linked below.
+A conversation is worth more than the process that produced it: the agent stores the
+**full context** of every session on disk, so a later run (or the `/sessions` command)
+can list the stored conversations and pick one up again. This spec fixes the layout,
+the format and the store; the implementation is linked below.
 
 ## Where sessions live
 
 - The directory is `agent/sessions/` — inside the gitignored `agent/` tree, so
   sessions are disposable local state and never ship in a commit.
-- One file per conversation, named after the date it started:
-  `<ISO timestamp with ':' and '.' replaced by '-'>.json`
-  (e.g. `2026-02-14T10-30-00-000Z.json`). The name is therefore unique, sortable
-  and readable at a glance.
-- `sessionPath()` refuses any id that could escape the directory (slashes, `..`,
-  empty), so a session id can never become a path traversal.
-- **`sessionDir()`** is the same id under the same rule, without the extension:
-  `agent/sessions/<id>/`. It is the folder of *that* conversation, where the files
-  that belong to it live — its checklist (`task.md`) and its plan
-  (`implementation_plan.md`), see `docs/agent/task-tracking`. The id is validated by
-  the same rule as `sessionPath()`, so a folder can never become a path traversal
-  either, and the two can never drift apart: the folder is the session file without
-  its `.json`.
+- **One folder per conversation**, named after the date it started:
+  `agent/sessions/<ISO timestamp with ':' and '.' replaced by '-'>/`
+  (e.g. `2026-02-14T10-30-00-000Z/`). The name is therefore unique, sortable and
+  readable at a glance.
+- The conversation itself is **`context.json`** inside that folder, next to the two
+  tracking files the same conversation owns:
+
+  ```
+  agent/sessions/<id>/context.json            the conversation (this spec)
+  agent/sessions/<id>/task.md                 its checklist (docs/agent/task-tracking)
+  agent/sessions/<id>/implementation_plan.md  its plan      (docs/agent/task-tracking)
+  ```
+
+  Everything belonging to one conversation sits together, and a resumed session keeps
+  updating the same three files. Before the folder existed the conversation was the
+  flat file `agent/sessions/<id>.json` — *beside* a folder of the same name, which is
+  why the record disappeared as soon as the folder was created. There is now one path
+  per session and one meaning per path.
+- `sessionDir()` and `sessionPath()` (`…/<id>/context.json`) share one validation
+  rule: an id containing a slash, a backslash, `..` or nothing at all is refused with
+  `INVALID_ID`, so neither a folder nor a record can ever become a path traversal.
+- `legacySessionPath()` names where the old layout kept the record, so the migration
+  is one explicit rule instead of a special case buried in the readers.
+
+## Reading a session stored by the older layout
+
+The two layouts coexist without a migration step the user has to run:
+
+| Situation | `listSessions()` | `loadSession()` |
+| --------- | ---------------- | --------------- |
+| only `<id>/context.json` exists | the folder record, `layout: 'folder'` | the folder record |
+| only `<id>.json` exists (old tree) | the flat record, `layout: 'flat'` | the flat record — the conversation still resumes |
+| both exist for one id | **one** row, the folder one | the folder record (the live one) |
+
+Writing converges the tree on `writeSession()`: the record lands in the folder and the
+now-stale flat file of the same id is removed, so a conversation never ends up with two
+records that can disagree. Removing that file is housekeeping — it can never fail a
+good save. `migrateSession(id)` is the explicit form for a caller that wants the whole
+tree on the current layout at once; it re-lays-out the bytes it read, never
+re-serialising from a guess, and answers `false` when there is nothing to move.
 
 ## The file format
 
@@ -49,11 +75,12 @@ what was written, raising a coded `SessionStoreError` (`INVALID_JSON`,
 
 ## The store
 
-- `writeSession()` writes through `writeFileVerified()`, so the file on disk is
+- `writeSession()` writes through `writeFileVerified()`, so the record on disk is
   verified byte-for-byte before the write reports success.
-- `listSessions()` returns light summaries, newest first (unreadable files are
-  reported with their error code and sorted last, never dropped).
-- `loadSession(id)` / `latestSession()` read one session back;
+- `listSessions()` returns light summaries, newest first (unreadable records are
+  reported with their error code and sorted last, never dropped), and a folder without
+  a `context.json` is simply not a session.
+- `loadSession(id)` / `latestSession()` read one record back;
   `sessionChunks(session)` yields the chunks to replay into a window.
 - `describeSession(summary)` renders the one-line label used by the picker.
 
@@ -61,22 +88,24 @@ what was written, raising a coded `SessionStoreError` (`INVALID_JSON`,
 
 `createSessionRecorder()` (`app/session-recorder.js`) owns the *current* session:
 its id, start time and model. The host loop calls `save(chunks)` after every
-completed turn and once more when the user exits, so the file always reflects the
+completed turn and once more when the user exits, so the record always reflects the
 live window — including after a compaction, because the snapshot is the window as
 it stands. `saveIfUsed()` skips an untouched window, so a session that never
-exchanged a message leaves no file behind. `save(chunks, { stats, usage })` also
+exchanged a message leaves no folder behind. `save(chunks, { stats, usage })` also
 stores the per-model token table, so what the conversation cost is part of the
 record (`docs/context/model-usage`).
 - This save is **host code, not a tool**, so no intent mode gates it: a `chat`
   session writes no file through a tool but still writes its own session record
   (`docs/interface/modes`). "Read-only" is a claim about the project tree.
 - `adopt(id, { createdAt, model })` points the recorder at an **existing** session,
-  which is what resuming does: the conversation continues in the file it came from
+  which is what resuming does: the conversation continues in the folder it came from
   instead of forking a parallel one, and it keeps the original start date
   (`docs/interface/session-replay`).
 
 ## See also
 
-- Implementation: `utils/session-store.js`, `app/session-recorder.js`, `main.js`
+- Implementation: `utils/session-store.js` (the layout, the scan, the migration),
+  `utils/session-format.js` (the record shape), `app/session-recorder.js`, `main.js`
+- The folder the tracking files share: `docs/agent/task-tracking`
 - Spec of the reload after a resume: `docs/interface/session-replay`
-- Proof: `tests/session-store.test.js`
+- Proof: `tests/session-store.test.js`, `tests/session-layout.test.js`

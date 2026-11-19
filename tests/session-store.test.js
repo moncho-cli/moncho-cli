@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   SESSION_DIR,
   SESSION_FORMAT_VERSION,
+  SESSION_RECORD_FILE,
   SessionStoreError,
   sessionId,
   sessionPath,
@@ -21,19 +22,17 @@ import {
   latestSession,
   describeSession,
   sessionModeState,
+  legacySessionPath,
+  migrateSession,
 } from '../utils/session-store.js';
 import { createSessionRecorder } from '../app/session-recorder.js';
 
-/** A throw-away sessions directory inside the project (cleaned up afterwards). */
-function tempDir(name) {
+/** A throw-away sessions directory inside the project, cleaned up afterwards. */
+const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
+const tempDir = (name) => {
   const dir = `agent/sessions-test-${process.pid}-${name}`;
-  fs.rmSync(dir, { recursive: true, force: true });
-  return dir;
-}
-
-function cleanup(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+  return cleanup(dir) ?? dir;
+};
 
 const CHUNKS = [
   { role: 'system', content: 'you are moncho' },
@@ -45,7 +44,10 @@ const CHUNKS = [
 
 test('sessions live under the gitignored agent/ tree by default', () => {
   assert.equal(SESSION_DIR, 'agent/sessions');
-  assert.equal(sessionPath('2026-02-14T10-30-00-000Z'), 'agent/sessions/2026-02-14T10-30-00-000Z.json');
+  // One conversation is one folder, and the conversation itself is context.json inside
+  // it — next to the task.md / implementation_plan.md that folder already owns.
+  assert.equal(sessionPath('2026-02-14T10-30-00-000Z'), 'agent/sessions/2026-02-14T10-30-00-000Z/context.json');
+  assert.equal(SESSION_RECORD_FILE, 'context.json');
   // the agent/ tree is disposable by design: sessions never ship in a commit
   const ignore = fs.readFileSync('.gitignore', 'utf-8');
   // The rule must be root-anchored: a bare `agent/` would also hide the docs
@@ -69,16 +71,16 @@ test('sessionPath() refuses ids that could escape the sessions directory', () =>
       `expected ${JSON.stringify(bad)} to be rejected`,
     );
   }
-  assert.equal(sessionPath('ok', { dir: 'agent/sessions/' }), 'agent/sessions/ok.json');
+  assert.equal(sessionPath('ok', { dir: 'agent/sessions/' }), 'agent/sessions/ok/context.json');
 });
 
-test('sessionDir() names the folder of one session, next to its file', () => {
+test('sessionDir() names the folder that holds one session record', () => {
   assert.equal(sessionDir('2026-02-14T10-30-00-000Z'), 'agent/sessions/2026-02-14T10-30-00-000Z');
-  // The folder is the file name without the extension, so the two never drift apart.
+  // The record path is the folder plus the record name, so the two never drift apart.
   assert.equal(
     sessionDir('s1'),
-    sessionPath('s1').replace(/\.json$/, ''),
-    'the folder is the session file without its extension',
+    sessionPath('s1').replace(/\/context\.json$/, ''),
+    'the record path is the folder plus context.json',
   );
   assert.equal(sessionDir('ok', { dir: 'agent/sessions/' }), 'agent/sessions/ok');
 
@@ -212,7 +214,7 @@ test('the session recorder snapshots the live window under a dated name', () => 
     });
 
     assert.equal(recorder.id, '2026-02-14T10-30-00-000Z');
-    assert.equal(recorder.path, `${dir}/2026-02-14T10-30-00-000Z.json`);
+    assert.equal(recorder.path, `${dir}/2026-02-14T10-30-00-000Z/context.json`);
     assert.equal(recorder.saves, 0);
     assert.equal(recorder.saveIfUsed([], {}), null, 'an empty window is not worth a file');
     assert.equal(recorder.saves, 0);
@@ -232,7 +234,7 @@ test('the session recorder snapshots the live window under a dated name', () => 
     assert.equal(stored.counts.chunks, 6);
     assert.deepEqual(stored.chunks.at(-1), { role: 'user', content: 'one more' });
     assert.equal(stored.stats.usage, '2.0k / 8.0k tokens (25%)');
-    assert.equal(listSessions({ dir }).length, 1, 'one conversation, one file');
+    assert.equal(listSessions({ dir }).length, 1, 'one conversation, one folder');
 
     const resumed = recorder.saveIfUsed(longer, { reason: 'exit' });
     assert.equal(resumed.id, recorder.id);

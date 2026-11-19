@@ -18,6 +18,10 @@ ENV_FLAGS=()
 [ -n "${OPENAI_MODEL:-}" ]    && ENV_FLAGS+=(-e "OPENAI_MODEL=$OPENAI_MODEL")
 [ -n "${CONTEXT_MAX_LENGTH:-}" ] && ENV_FLAGS+=(-e "CONTEXT_MAX_LENGTH=$CONTEXT_MAX_LENGTH")
 [ -n "${PULSE_LIMIT:-}" ]     && ENV_FLAGS+=(-e "PULSE_LIMIT=$PULSE_LIMIT")
+[ -n "${LOG_LEVEL:-}" ]       && ENV_FLAGS+=(-e "LOG_LEVEL=$LOG_LEVEL")
+[ -n "${LOG_FILE:-}" ]        && ENV_FLAGS+=(-e "LOG_FILE=$LOG_FILE")
+[ -n "${LOG_MAX_BYTES:-}" ]   && ENV_FLAGS+=(-e "LOG_MAX_BYTES=$LOG_MAX_BYTES")
+[ -n "${LOG_MAX_FILES:-}" ]   && ENV_FLAGS+=(-e "LOG_MAX_FILES=$LOG_MAX_FILES")
 
 # Build the application image from ./Dockerfile (installs deps incl. `diff`).
 build_image() {

@@ -75,7 +75,7 @@ that seam with a stub provider.
 ## Recording the conversation
 
 - After every completed turn — and once more when the user exits — the live window
-  is snapshotted to `agent/sessions/<date>.json` (see
+  is snapshotted to `agent/sessions/<id>/context.json` (see
   `docs/runtime/session-store`), so the stored context matches what the model saw,
   compaction included.
 - A failed save is reported as a line and never breaks the loop: losing the record

@@ -1,0 +1,63 @@
+id: runtime/logging
+domain: runtime
+title: The operational log — three levels, a threshold from the environment and deterministic self-rotation
+status: active
+summary: >
+  The harness keeps a local log file of what it *did*, not of what was said: the
+  session file already holds the conversation, so the log records the events around
+  it — a retried provider attempt, a tool that threw, a session save that failed, a
+  fatal startup error. The module is split in two: utils/log-record.js is the pure
+  record half (the three levels error/warn/info, and the exact bytes of a line) while
+  utils/logger.js is the sink half that decides where the line goes and when the file
+  rotates. A line is written when its rank is at or below the threshold, which comes from
+  LOG_LEVEL (defaulting to info, accepting the full spelling `warning` as warn and
+  `off`/`none` as the one silent threshold that writes nothing at all). A line is one
+  complete record — an ISO timestamp, the padded level, an optional [scope], a
+  flattened message and optional JSON details — so a newline inside a message can
+  never split it. Rotation is deterministic and synchronous, performed by the same
+  code that writes: when the next line would push the file past LOG_MAX_BYTES
+  (512 KiB by default), rotateLog() shifts the chain (<file> → <file>.1 → …) and
+  drops the oldest, keeping at most LOG_MAX_FILES files in total with the live file
+  counted; an empty file is never rotated, and a single kept file restarts the log
+  instead of archiving it. The path is resolved through the same sandbox every file
+  tool uses and defaults into the gitignored agent/ tree. Writing can never cost the
+  turn it describes: every failure is captured in logger.getFailure(), and the deep
+  call sites reach the logger through the host registry (logEvent()), which is a
+  silent no-op when no logger is registered, so the suites create no files.
+code:
+  - path: utils/logger.js
+    symbols: [LOG_LEVELS, SILENT_LEVEL, LOG_LEVEL_ORDER, normalizeLogLevel, normalizeLogLimit, serializeLogError, formatLogLine, rotateLog, createLogger, logEvent]
+  - path: utils/log-record.js
+    symbols: [LOG_LEVELS, SILENT_LEVEL, LOG_LEVEL_ORDER, normalizeLogLevel, normalizeLogLimit, levelEnabled, flattenLogValue, serializeLogError, formatLogLine]
+  - path: config/constants.js
+    symbols: [LOG_FILE, LOG_LEVEL, LOG_MAX_BYTES_DEFAULT, LOG_MAX_BYTES, LOG_MAX_FILES_DEFAULT, LOG_MAX_FILES]
+  - path: utils/host.js
+    symbols: [registerLogger, getLogger, clearLogger]
+  - path: main.js
+    symbols: [main]
+  - path: api/ollama.js
+    symbols: [callOllama, normalizeUsage]
+  - path: app/turn-runner.js
+    symbols: [runTurn, isAbortFailure]
+  - path: app/tool-batch.js
+    symbols: [dispatchToolCalls, handleToolBatch]
+tests:
+  - path: tests/logging.test.js
+    cases:
+      - "levelEnabled() decides for any level against any threshold, with no filesystem"
+      - "normalizeLogLevel keeps the three levels, the warning alias and a silent switch"
+      - "the threshold and the budgets come from the environment with safe defaults"
+      - "formatLogLine() writes one line with the stamp, the level, the scope and JSON details"
+      - "serializeLogError() escapes an Error into one plain record"
+      - "createLogger() keeps a line out of the file below the threshold"
+      - "a silent threshold writes nothing at all"
+      - "the file rotates when the next line would pass the byte budget"
+      - "rotation keeps at most maxFiles files, newest first, without losing the live one"
+      - "a single kept file restarts the log instead of archiving it"
+      - "a log path that cannot be written never throws and reports why"
+      - "logEvent() writes through the registered logger and is silent without one"
+  - path: tests/logging-sites.test.js
+    cases:
+      - "a provider failure and a throwing tool are recorded without changing the outcome"
+      - "an aborted call is recorded as info, below an error threshold"
+      - "the log is written through the path sandbox, so it cannot escape the project"

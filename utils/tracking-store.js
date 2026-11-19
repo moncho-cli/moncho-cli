@@ -28,8 +28,8 @@ import { canonicalizeTrackingFile } from './tracking-format.js';
  *
  *  1. the **session file** — the copy a human can hot-edit, the escape hatch
  *     `docs/interface/modes` names;
- *  2. the **session record** — the snapshot inside `<session-id>.json`, used only when
- *     the file is gone (a resumed conversation whose folder was cleaned);
+ *  2. the **session record** — the snapshot inside `<session-id>/context.json`, used
+ *     only when the file is gone (a resumed conversation whose folder was cleaned);
  *  3. the **project-root file** — only when no session is registered at all.
  *
  * Writes always land in the session file and are mirrored into the session record, so a

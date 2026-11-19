@@ -29,6 +29,8 @@
  *   - `handleFinalResponse(content)`    — store and print the tool-free reply
  */
 
+import { logEvent } from '../utils/logger.js';
+
 /** True when a provider failure is an abort in any of the shapes it arrives in. */
 export function isAbortFailure(error) {
   return error?.name === 'AbortError'
@@ -86,6 +88,7 @@ export async function runTurn(session, userInput) {
 
       // Treat null or empty response as an error and retry.
       if (!data || !data.message) {
+        logEvent('warn', 'provider', 'empty response; retrying this turn');
         session.notifyNotice('warn', 'Provider answered with an empty response. Retrying…', { code: 'empty-response' });
         continue;
       }
@@ -104,11 +107,14 @@ export async function runTurn(session, userInput) {
       }
     } catch (error) {
       if (isAbortFailure(error)) {
+        logEvent('info', 'provider', 'request aborted; stopping this task', error.message);
         session.log('\n[Info] Request aborted; stopping this task.');
         return { ended: 'abort' };
       }
       // Nothing recovered from this one: it ends the task, so it keeps its
       // transcript line *and* is raised as a notice while the turn winds down.
+      // It is also the failure most worth finding in the log afterwards.
+      logEvent('error', 'provider', 'provider call failed; ending the turn', error);
       session.notifyNotice('error', session.formatFailure(error), { code: 'provider-failure' });
       session.log(`\nError calling Ollama: ${error.message}`);
       return { ended: 'error' };

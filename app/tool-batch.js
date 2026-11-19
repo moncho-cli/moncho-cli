@@ -5,6 +5,7 @@ import {
 } from '../config/constants.js';
 import { detectCompactionRequest } from './compaction-request.js';
 import { guardToolCall, formatGuardRefusal } from './tool-guard.js';
+import { logEvent } from '../utils/logger.js';
 import {
   formatCallLines,
   formatCallSignature,
@@ -132,6 +133,9 @@ export async function dispatchToolCalls(entries = [], toolFunctions = {}, { sign
       outcome.result = await run(rawArgs);
       outcome.succeeded = true;
     } catch (error) {
+      // The failure becomes an `[error]` chunk so the model can react to it; the
+      // log keeps the stack, which the chunk does not carry.
+      logEvent('warn', 'tool', `tool ${name} threw`, error);
       outcome.isError = true;
       outcome.result = `Error executing ${name}: ${error.message}`;
     }

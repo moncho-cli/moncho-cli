@@ -256,8 +256,8 @@ test('resuming keeps saving into the session it opened', async () => {
     assert.equal(stored.createdAt, '2026-02-14T10:00:00.000Z');
     assert.deepEqual(
       fs.readdirSync(dir).sort(),
-      ['2026-02-14T10-00-00-000Z.json'],
-      'no parallel session file is left behind',
+      ['2026-02-14T10-00-00-000Z'],
+      'no parallel session folder is left behind',
     );
 
     assert.throws(() => recorder.adopt(''), /requires a session id/);

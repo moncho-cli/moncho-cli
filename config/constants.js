@@ -122,6 +122,27 @@ export const NPM_DEFAULT_TIMEOUT_MS = 300000;
 export const NPM_MAX_TIMEOUT_MS = 900000;
 
 // ---------------------------------------------------------------------------
+// Operational log (task-backlog: "save logs in some internal local log file that
+// gets auto rotated by this same deterministic code ... the usual 3 levels:
+// error, warning, info and a level threshold via environment")
+// ---------------------------------------------------------------------------
+/**
+ * Where the operational log lives. It defaults into the gitignored `agent/` tree,
+ * next to the sessions, because an operational log describes the workspace it is
+ * written in; the path is still resolved through the sandbox every file tool uses
+ * (utils/logger.js#createLogger).
+ */
+export const LOG_FILE = process.env.LOG_FILE || "agent/logs/moncho.log";
+/** The raw threshold; utils/logger.js#normalizeLogLevel maps `warning` → `warn`, `off` → silent. */
+export const LOG_LEVEL = process.env.LOG_LEVEL || "info";
+/** Bytes the live file may hold before the next line rotates it (512 KiB). */
+export const LOG_MAX_BYTES_DEFAULT = 512 * 1024;
+export const LOG_MAX_BYTES = toPositiveInt(process.env.LOG_MAX_BYTES, LOG_MAX_BYTES_DEFAULT);
+/** Files kept in the rotation chain, the live one included. */
+export const LOG_MAX_FILES_DEFAULT = 5;
+export const LOG_MAX_FILES = toPositiveInt(process.env.LOG_MAX_FILES, LOG_MAX_FILES_DEFAULT);
+
+// ---------------------------------------------------------------------------
 // Task tracking files (task.md protocol: mark done, reset the plan, next item)
 // ---------------------------------------------------------------------------
 export const TASK_FILE = process.env.TASK_FILE || "task.md";

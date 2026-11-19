@@ -85,6 +85,31 @@ export function clearTrackingNotifier() {
   trackingNotifier = null;
 }
 
+// ---------------------------------------------------------------------------
+// The operational log (utils/logger.js)
+// ---------------------------------------------------------------------------
+// The logger is built once at startup, in main.js, and registered here so a deep
+// module (`api/ollama.js`, `app/turn-runner.js`, `app/tool-batch.js`) can record an
+// event without being handed an object it has no other use for. With nothing
+// registered — a unit test, a bare tool call — `logEvent()` is a silent no-op that
+// creates no file, which is what keeps the suites free of side effects.
+
+let logger = null;
+
+/** Register the live logger (called by main.js). */
+export function registerLogger(instance) {
+  logger = instance || null;
+  return logger;
+}
+
+/** @returns {import('./logger.js').Logger|null} */
+export function getLogger() {
+  return logger;
+}
+
+export function clearLogger() {
+  logger = null;
+}
 
 // ---------------------------------------------------------------------------
 // Session registry (session-specific task/plan files)

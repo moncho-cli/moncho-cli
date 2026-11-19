@@ -52,3 +52,4 @@ specs:
   - runtime/provider-calls
   - runtime/startup-wiring
   - runtime/session-store
+  - runtime/logging

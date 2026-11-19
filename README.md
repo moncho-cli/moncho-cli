@@ -44,6 +44,10 @@ to Ollama, chosen entirely through environment variables.
   `MONCHO (v x.y.z)`, right-aligned and read from `package.json`. A cell carries one
   colour and no alpha, so a raster logo cannot be composited here (the half-block
   attempt degenerated into a ~24x24 stencil); a line is what renders faithfully.
+- **An operational log that rotates itself.** A local file under the gitignored
+  `agent/logs/` records what the harness *did* — a retried provider attempt, a tool
+  that threw, a save that failed — at three levels (`error`, `warn`, `info`), with
+  the threshold, the path and the rotation budget all set by the environment.
 
 ## Quick start (Docker)
 
@@ -76,7 +80,7 @@ Node 22+. There is no build step: the project is plain ES modules.
 
 ## Configuration
 
-Everything is environment-driven; `start.sh` forwards the five variables below from
+Everything is environment-driven; `start.sh` forwards the variables below from
 `.env` when they are set.
 
 | Variable | Default | Purpose |
@@ -86,6 +90,10 @@ Everything is environment-driven; `start.sh` forwards the five variables below f
 | `OPENAI_MODEL` | `qwen3.6:35b-a3b-q4_K_M` | Model id sent with every request |
 | `CONTEXT_MAX_LENGTH` | the provider's real total, else `128000` | Working token budget; the override wins but both numbers are shown |
 | `PULSE_LIMIT` | `30` | Hard limit of agent model calls between two resets (a completed `task.md` item or a compaction) |
+| `LOG_LEVEL` | `info` | Operational-log threshold: `error`, `warn`, `info` (also `warning`/`off`) |
+| `LOG_FILE` | `agent/logs/moncho.log` | Where the local log is written; resolved inside the project root |
+| `LOG_MAX_BYTES` | `524288` (512 KiB) | The live file is rotated when the next line would pass this |
+| `LOG_MAX_FILES` | `5` | Files kept in the rotation chain, the live one included |
 
 The provider label (`openrouter · deepseek/…`) is derived from the base URL, so
 switching providers is a `.env` change and nothing else. The context budget is
@@ -144,11 +152,14 @@ main.js                the host loop: front end, tools, sessions, commands
 ├── api/               provider call (streaming, retries, normalised responses)
 ├── config/            provider + budget constants, read from the environment
 ├── tools/             the auto-loaded agent tools
-├── utils/             token accountancy (meter + per-model totals), compaction, sandbox, patch, sessions
+├── utils/             token accountancy (meter + per-model totals), compaction, sandbox, patch, sessions, the rotating log
 ├── docs/              the behavioural contract (see below)
 └── tests/             executable proof that the code honours the docs
 ```
 
+`agent/` stays out of that tree on purpose: it is gitignored and holds the local
+state the app writes as it runs — the stored sessions and the rotating operational
+log under `agent/logs/moncho.log` — never anything that ships.
 Requests flow one way: the host loop appends the prompt as a chunk, the
 `ConversationManager` calls the provider, tool calls are executed and their results
 become chunks, and the loop repeats until a tool-free reply arrives. Sessions are

@@ -12,7 +12,8 @@ import { prettyPrintJson } from './app/json-display.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
-import { registerSession, registerTrackingNotifier } from './utils/host.js';
+import { registerSession, registerTrackingNotifier, registerLogger } from './utils/host.js';
+import { createLogger, logEvent } from './utils/logger.js';
 import { createTrackingNotifier } from './app/tracking-notice.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
@@ -30,6 +31,17 @@ import { resolveContextSize, formatContextLimit } from './utils/context-size.js'
  * under the line budget as the session surface grows (see
  * `docs/runtime/startup-wiring`).
  */
+
+// The operational log (utils/logger.js, docs/runtime/logging) is built once, at
+// module scope, and registered in the host registry before the session is wired: a
+// startup failure then lands in the log too, which is exactly the failure an
+// operator has no other record of. The deep modules (api/ollama.js,
+// app/turn-runner.js, app/tool-batch.js) record what the harness *did* through
+// `logEvent()`, so they never hold a logger they have no other use for.
+// `LOG_LEVEL`, `LOG_FILE`, `LOG_MAX_BYTES` and `LOG_MAX_FILES` come from the
+// environment; with no logger registered `logEvent()` is a silent no-op, which is
+// what keeps the test suites free of side effects.
+const logger = registerLogger(createLogger());
 
 let activeTui = null;
 
@@ -64,6 +76,12 @@ async function main() {
   activeTui = tui;
   const cli = tui || createCLI();
   const log = tui ? (...args) => tui.log(...args) : (...args) => console.log(...args);
+
+  logger.info('startup', `moncho ${label} starting; log threshold ${logger.level}`, {
+    file: logger.file,
+    maxBytes: logger.maxBytes,
+    maxFiles: logger.maxFiles,
+  });
 
   // Transient notices (app/notice-overlay.js): a retried provider failure is *news*,
   // not history, so it floats over the top of the transcript and hides itself after
@@ -153,8 +171,9 @@ async function main() {
     },
   });
 
-  // The conversation is recorded under agent/sessions/<date>.json: every chunk of
-  // the live window, verbatim, so it can be picked up later (`/sessions`).
+  // The conversation is recorded in agent/sessions/<id>/context.json — the record
+  // inside the conversation's own folder: every chunk of the live window, verbatim,
+  // so it can be picked up later (`/sessions`, docs/runtime/session-store).
   // `stateOf` is read on every save, so the intent mode and the `work:on` lock travel
   // with the conversation and a resumed session opens in the state it was left in
   // (docs/interface/modes).
@@ -183,6 +202,7 @@ async function main() {
         usage: manager.usageTable(),
       });
     } catch (error) {
+      logger.error('session', `could not save ${sessions.path}`, error);
       log(`\n[Session] Could not save ${sessions.path}: ${error.message}`);
       return null;
     }
@@ -233,6 +253,7 @@ async function main() {
 }
 
 main().catch((error) => {
+  logEvent('error', 'startup', 'fatal error; the session could not start', error);
   if (activeTui) activeTui.close();
   console.error(error);
   process.exitCode = 1;

@@ -3,16 +3,21 @@ domain: runtime
 title: Conversation sessions stored on disk
 status: active
 summary: >
-  The full context of a conversation is stored as a dated, versioned JSON file
-  under the gitignored agent/sessions/ directory. The store writes verified,
-  parses strictly (refusing junk and unsupported versions), lists summaries newest
-  first, and lets a session be loaded back for pickup; the host loop records the
-  live window after every turn, together with the per-model token table
-  (docs/context/model-usage), which an older file may lack without becoming
-  unreadable.
+  The full context of a conversation is stored as a versioned JSON record —
+  context.json — inside a folder of its own under the gitignored agent/sessions/
+  directory, beside the task.md and implementation_plan.md that same conversation
+  owns. The store writes verified, parses strictly (refusing junk and unsupported
+  versions), lists summaries newest first, and lets a session be loaded back for
+  pickup; the older flat <id>.json layout is still read and is retired by the next
+  save, so the tree converges on one path per session without losing a conversation.
+  The host loop records the live window after every turn, together with the
+  per-model token table (docs/context/model-usage), which an older record may lack
+  without becoming unreadable.
 code:
   - path: utils/session-store.js
-    symbols: [SESSION_DIR, SESSION_FORMAT_VERSION, SessionStoreError, sessionId, sessionPath, sessionDir, serializeSession, countRoles, formatSession, parseSession, sessionChunks, sessionUsage, sessionModeState, writeSession, sessionsDirExists, listSessions, loadSession, latestSession, describeSession]
+    symbols: [SESSION_DIR, SESSION_RECORD_FILE, SessionStoreError, sessionId, sessionDir, sessionPath, legacySessionPath, formatSession, parseSession, serializeSession, countRoles, writeSession, sessionsDirExists, listSessions, loadSession, migrateSession, latestSession, describeSession]
+  - path: utils/session-format.js
+    symbols: [SESSION_FORMAT_VERSION, SessionStoreError, sessionId, serializeSession, countRoles, formatSession, parseSession, sessionTaskContent, sessionPlanContent, sessionChunks, sessionUsage, sessionModeState]
   - path: app/session-recorder.js
     symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
   - path: utils/file-io.js
@@ -25,7 +30,7 @@ tests:
       - "sessions live under the gitignored agent/ tree by default"
       - "sessionId() derives a sortable, date-named id from a Date"
       - "sessionPath() refuses ids that could escape the sessions directory"
-      - "sessionDir() names the folder of one session, next to its file"
+      - "sessionDir() names the folder that holds one session record"
       - "serializeSession() records the metadata and the chunks verbatim"
       - "the file on disk is pretty-printed JSON ending in a newline"
       - "parseSession() rejects junk and unsupported versions instead of guessing"
@@ -36,3 +41,11 @@ tests:
       - "a recorded session can be replayed into a context window"
       - "the mode and the lock sail with the session file, so a resumed session opens as it was left"
       - "a session file written before the mode existed still resumes"
+  - path: tests/session-layout.test.js
+    cases:
+      - "the conversation record lives inside the session folder, next to its tracking files"
+      - "a session stored by the older flat layout is still listed and loaded"
+      - "when both layouts hold one id, the folder is the record that is listed and read"
+      - "migrateSession() moves a flat record into its folder, byte for byte"
+      - "the next save retires the flat record, so one session keeps one record"
+      - "a folder without context.json is not a session, and a broken record is reported"

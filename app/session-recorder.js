@@ -16,8 +16,9 @@ import { getSessionTaskContent, getSessionPlanContent } from '../utils/host.js';
  *
  * The recorder owns the *current* session: its id, when it started and the
  * model it is talking to. `save(chunks)` snapshots the live context window —
- * every chunk, verbatim — into `agent/sessions/<date>.json`, so a conversation
- * can be listed, inspected and picked up again later (`/sessions`).
+ * every chunk, verbatim — into `agent/sessions/<id>/context.json`, the record
+ * inside the conversation's own folder, so a conversation can be listed,
+ * inspected and picked up again later (`/sessions`).
  *
  * It is deliberately dumb about *when* to save: the host loop calls `save()` at
  * the moments that matter (after each turn, before exiting).

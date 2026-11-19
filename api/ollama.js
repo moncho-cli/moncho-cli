@@ -1,4 +1,5 @@
 import { BASE_URL, API_KEY, MODEL } from '../config/constants.js';
+import { logEvent } from '../utils/logger.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,6 +13,9 @@ async function loadSystemPrompt() {
   try {
     return fs.readFileSync(promptPath, 'utf-8').trim();
   } catch (error) {
+    // The agent answers without its prompt from here on, which is exactly the kind
+    // of silent degradation this log exists to make findable.
+    logEvent('error', 'provider', 'could not read prompt.md; the agent prompt is empty', error);
     console.warn('Warning: Could not read prompt.md:', error.message);
     return '';
   }
@@ -229,10 +233,14 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
       // A cancelled task must stop immediately; retrying would ignore the
       // user's ESC / Ctrl+C and stall the prompt.
       if (signal?.aborted || error.name === 'AbortError') {
+        logEvent('info', 'provider', 'call aborted by the user');
         throw error;
       }
       if (attempt < maxRetries) {
         const report = { attempt, maxRetries, delayMs: retryDelayMs, error };
+        // One line per retried attempt: the transcript shows a transient notice, the
+        // log keeps the record that outlives the session.
+        logEvent('warn', 'provider', `attempt ${attempt}/${maxRetries} failed; retrying in ${retryDelayMs}ms`, error);
         if (typeof onRetry === 'function') {
           try {
             onRetry(report);
@@ -244,6 +252,7 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
         }
         await sleep(retryDelayMs);
       } else {
+        logEvent('error', 'provider', `attempt ${attempt}/${maxRetries} failed; giving up`, error);
         throw error;
       }
     }
