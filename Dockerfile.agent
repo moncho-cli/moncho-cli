@@ -1,0 +1,82 @@
+# The agent base image: the Moncho runtime and nothing about any one project.
+#
+# Built by `moncho-cli build --base` (or automatically when it is missing) from the
+# payload the installer staged, and referenced by every Monchofile as
+# `FROM moncho-agent` — the tag is rewritten to the installed version by the runner.
+#
+# Why a base image at all: the payload lives in ~/.config/moncho-cli, outside the
+# project's build context, and a build context cannot COPY from outside itself. The
+# agent therefore arrives through the base layer and the project image only ever
+# builds the project (agent/tmp/distributing.md 9/D1).
+FROM node:22-alpine
+
+# ---------------------------------------------------------------------------
+# System tooling: the independent patch oracles and a real bash
+# ---------------------------------------------------------------------------
+# The patch workflow cross-checks a change with several *independent*
+# implementations, and the dev image installs exactly these four. The version
+# checks make the build fail loudly if a package is renamed or dropped.
+RUN apk add --no-cache \
+      bash \
+      diffutils \
+      patch \
+      git \
+ && git --version \
+ && patch --version \
+ && diff --version
+
+# ---------------------------------------------------------------------------
+# The agent payload
+# ---------------------------------------------------------------------------
+# /opt/moncho-cli is the *module root*: api/ollama.js reads config/prompt.md and
+# app/brand.js imports package.json relative to the file it lives in, so the
+# repository layout has to survive the copy unchanged.
+WORKDIR /opt/moncho-cli
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+COPY main.js ./
+COPY app ./app
+COPY api ./api
+COPY config ./config
+COPY tools ./tools
+COPY utils ./utils
+
+# Fail the build if the patch cross-check oracle is not importable, so a broken
+# dependency is caught here rather than in the middle of a task.
+RUN node -e "import('diff').then(m => { \
+      if (typeof m.applyPatch !== 'function' || typeof m.parsePatch !== 'function') { \
+        throw new Error('diff module is missing applyPatch/parsePatch'); \
+      } \
+      console.log('diff oracle ready (diff@' + m.version + ')'); \
+    })"
+
+# ---------------------------------------------------------------------------
+# Runtime permissions
+# ---------------------------------------------------------------------------
+# The runner maps the host uid (`-u $(id -u):$(id -g)`) so files written into the
+# workspace belong to the user who ran it. That uid is neither root nor in the
+# image's /etc/passwd, so anything the agent must write outside its state directory
+# has to be world-writable — which is exactly why the dev image chmods its
+# node_modules the same way.
+#
+# The npm cache is the second half: HOME is "/" in this image and is not writable by
+# that uid, so `npm install <pkg>` would try to create "/.npm" and fail.
+RUN mkdir -p /opt/moncho-cli/node_modules \
+ && chmod -R a+rwX /opt/moncho-cli/node_modules
+RUN mkdir -p /tmp/.npm && chmod -R a+rwX /tmp/.npm
+ENV npm_config_cache=/tmp/.npm
+
+# ---------------------------------------------------------------------------
+# Where the agent runs
+# ---------------------------------------------------------------------------
+# /app is the project. The runner bind-mounts the workspace there (the default), or
+# the project image has already copied it. The state — sessions, task.md,
+# implementation_plan.md, the log — defaults under /app/agent, which is why the
+# runner mounts a named volume at exactly that path.
+WORKDIR /app
+
+# The one entrypoint, appended to every project image by the runner *after* the
+# user's instructions so a Monchofile cannot override it. `main.js` reads
+# process.env alone, so the env-file values the runner passes travel as -e flags and
+# never through a mounted file.
+ENTRYPOINT ["node", "/opt/moncho-cli/main.js"]

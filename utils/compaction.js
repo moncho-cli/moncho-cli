@@ -22,7 +22,7 @@ import { estimateMessageTokens, estimateMessagesTokens, exceedsTokenBudget } fro
  * preserve the user's words, so a summary that never mentions them still leaves
  * them in the window. The request is self-contained for the same reason — its own
  * instruction plus the evicted chunks, with the agent system prompt deliberately
- * absent (`systemPrompt: false`) and `prompt.md` saying nothing about compaction
+ * absent (`systemPrompt: false`) and `config/prompt.md` saying nothing about compaction
  * at all.
  *
  * The split and the assembly are pure functions so they can be unit-tested

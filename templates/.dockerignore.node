@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.moncho
+agent/
+thinking.md
+.env
+.env.*
+dist
+build
+coverage
+.git

@@ -59,7 +59,7 @@ function sectionOf(kind) {
 /**
  * The skeleton **as a model is shown it**, with placeholders.
  *
- * This is the one template the whole harness quotes: `prompt.md` shows these exact
+ * This is the one template the whole harness quotes: `config/prompt.md` shows these exact
  * blocks and `update_task`'s description carries them, so a model is taught the shape
  * the renderer really writes instead of inferring it from prose. The copies cannot
  * drift — `tests/tracking-format.test.js` fails when either text stops matching this

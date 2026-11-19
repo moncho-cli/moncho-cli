@@ -16,7 +16,7 @@ The backlog entry this implements:
 ## The line is paused
 
 The original design put **one extra line** at the head of every request, right after
-the agent system prompt (`api/ollama.js#callOllama` prepends `prompt.md`, then
+the agent system prompt (`api/ollama.js#callOllama` prepends `config/prompt.md`, then
 `app/context-window.js#ContextWindow.request` lays out the prelude and the
 conversation):
 
@@ -115,7 +115,7 @@ wording is kept in the module as the behaviour to restore, and `PULSE_MARKER` st
 exported so the re-enable is a one-function change. `formatPulseLimitNotice()` is
 unchanged and still announces the crossing.
 
-`prompt.md` follows the pause: its pulse section no longer asks the agent to watch a
+`config/prompt.md` follows the pause: its pulse section no longer asks the agent to watch a
 number it cannot see. It asks for the property the limit was there to protect — do not
 loop over insignificant research, lock in `task.md` and `implementation_plan.md` early,
 never re-read what is already held — and to treat the one crossing notice as the signal
@@ -126,5 +126,5 @@ Its advice names `update_task` as the reset, not `compact_context`: compaction i
 <!--
 implementation: utils/task-pulse.js, app/conversation-manager.js,
 app/context-window.js, app/compaction-runner.js, utils/host.js, tools/update_task.js,
-config/constants.js, prompt.md
+config/constants.js, config/prompt.md
 -->

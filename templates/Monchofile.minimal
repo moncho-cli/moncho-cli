@@ -1,0 +1,16 @@
+# Monchofile — minimal / polyglot
+#
+# The smallest useful Monchofile: no language toolchain, just the agent and the
+# workspace. Good for a repository the agent should only read, or for one whose
+# tooling you install per session with `moncho-cli shell`.
+#
+# Two rules: the first instruction is FROM moncho-agent, and there is no ENTRYPOINT or
+# CMD (moncho-cli appends the agent's own).
+FROM moncho-agent
+
+# Uncomment the line for the language you actually work in, or add your own:
+# RUN apk add --no-cache python3 py3-pip
+# RUN apk add --no-cache go
+# RUN apk add --no-cache make gcc musl-dev
+
+WORKDIR /app

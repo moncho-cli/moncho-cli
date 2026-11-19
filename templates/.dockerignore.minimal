@@ -1,0 +1,6 @@
+.moncho
+agent/
+thinking.md
+.env
+.env.*
+.git

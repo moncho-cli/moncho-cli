@@ -1,0 +1,9 @@
+bin
+*.test
+.moncho
+agent/
+thinking.md
+.env
+.env.*
+.git
+vendor

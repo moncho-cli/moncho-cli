@@ -9,7 +9,7 @@ import http from 'node:http';
  * set here before the modules (which read it at import time) are loaded.
  *
  * What this proves for the harness work:
- *  - the agent system prompt is still injected for normal calls (prompt.md), and
+ *  - the agent system prompt is still injected for normal calls (config/prompt.md), and
  *  - `systemPrompt:false` really omits it, which is what lets the context
  *    summariser behind task.md item 8 run as a neutral summariser instead of
  *    answering as Moncho, and
@@ -153,6 +153,19 @@ test('a throwing onRetry hook never costs the retry', async () => {
     onRetry: () => { throw new Error('broken notice hook'); },
   });
   assert.equal(recovered.message.content, 'stub reply', 'the retry still happened');
+});
+
+test('the thinking capture resolves inside the project, and refuses to leave it', async () => {
+  // The default is the agent/ tree, next to the sessions and the log, so a container
+  // run keeps it in the state volume instead of at the root of the user's checkout.
+  const { THINKING_FILE } = await import('../config/constants.js');
+  assert.equal(THINKING_FILE, 'agent/thinking.md');
+  // The rule the provider layer applies: the path goes through the sandbox every file
+  // tool uses, so an absolute or escaping value is refused rather than written.
+  const { resolveProjectPath } = await import('../utils/path-safety.js');
+  assert.ok(resolveProjectPath(THINKING_FILE).startsWith(process.cwd()));
+  assert.throws(() => resolveProjectPath('/etc/moncho-thinking.md'), /Absolute paths/);
+  assert.throws(() => resolveProjectPath('../../escape.md'), /escapes the project/);
 });
 
 test.after(() => server.close());

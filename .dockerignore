@@ -1,3 +1,11 @@
 node_modules
 npm-debug.log
 agent/
+.moncho/
+build/
+thinking.md
+# The maintainer's own build context is a checkout, so credentials must not be baked
+# into an image layer: start.sh reads .env on the host and passes the values with -e.
+.env
+.env.*
+!.env.moncho.example

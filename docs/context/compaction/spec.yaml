@@ -9,7 +9,7 @@ summary: >
   block is carried over verbatim between the summary and the kept tail by code, not
   by the model, unless that would not still shrink the window. The summariser call
   is a single self-contained request — its own instruction plus the evicted chunks,
-  with the agent system prompt deliberately absent — and prompt.md says nothing
+  with the agent system prompt deliberately absent — and config/prompt.md says nothing
   about compaction at all. An empty summary or a provider error leaves the window
   untouched. compact_context reaches the live window via the host registry and
   defers the real call to the host loop.

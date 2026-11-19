@@ -15,7 +15,7 @@ code:
   - path: api/ollama.js
     symbols: [callOllama]
   - path: config/constants.js
-    symbols: [BASE_URL, API_KEY, MODEL, detectProvider, describeModel, PROVIDER]
+    symbols: [BASE_URL, API_KEY, MODEL, THINKING_FILE, detectProvider, describeModel, PROVIDER]
 tests:
   - path: tests/ollama-provider.test.js
     cases:
@@ -26,3 +26,4 @@ tests:
       - the abort signal is honoured
       - a retried attempt is reported through onRetry, not the console
       - a throwing onRetry hook never costs the retry
+      - the thinking capture resolves inside the project, and refuses to leave it

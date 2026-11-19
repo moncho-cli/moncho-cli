@@ -10,7 +10,7 @@ implementation is linked below.
   entry point. It builds the request body from the configured model, attaches the
   tool schema block when tools are present, and posts to the configured base URL
   with a bearer token when an API key is set.
-- The agent **system prompt is injected by default**: `prompt.md` is read once and
+- The agent **system prompt is injected by default**: `config/prompt.md` is read once and
   cached, then prepended as the first `system` message. Internal calls pass
   `{ systemPrompt: false }` so they do not answer as the agent — the context
   summariser is the caller that relies on this.
@@ -44,8 +44,17 @@ implementation is linked below.
   previous `console.warn` line is kept, so the provider stays usable on its own, and
   a hook that throws is swallowed — a broken notice must never cost the user a retry.
 - Streaming decodes SSE/data lines, ignores non-JSON keep-alive framing, writes
-  thinking text to `thinking.md` instead of the transcript, and returns the full
+  thinking text to the capture file instead of the transcript, and returns the full
   response text.
+- **The thinking capture lives in the state tree, not at the project root.** Its path
+  is `THINKING_FILE` (`config/constants.js`), defaulting to `agent/thinking.md` — next
+  to the sessions and the log — and it is resolved through
+  `utils/path-safety.js#resolveProjectPath`, the sandbox every file tool uses, so an
+  absolute or escaping value is refused instead of writing outside the workspace. A
+  path that cannot be resolved turns the capture **off** (logged as a warning) rather
+  than failing the call: losing a reasoning trace must never cost the user their turn.
+  Before this, the path was derived from `api/ollama.js`'s own location and landed at
+  the workspace root, where a container run leaked it into the checkout.
 
 ## Provider identity
 

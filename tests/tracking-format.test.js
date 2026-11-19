@@ -184,9 +184,9 @@ test('the template the model is shown is the shape the renderer really writes', 
 
   // Both texts the model really reads quote this template verbatim, so the three copies
   // cannot drift apart without failing here.
-  const prompt = fs.readFileSync(new URL('../prompt.md', import.meta.url), 'utf-8');
-  assert.ok(prompt.includes(task), 'prompt.md must show the task.md template verbatim');
-  assert.ok(prompt.includes(plan), 'prompt.md must show the implementation_plan.md template verbatim');
+  const prompt = fs.readFileSync(new URL('../config/prompt.md', import.meta.url), 'utf-8');
+  assert.ok(prompt.includes(task), 'config/prompt.md must show the task.md template verbatim');
+  assert.ok(prompt.includes(plan), 'config/prompt.md must show the implementation_plan.md template verbatim');
 
   const description = updateTaskDefinition.function.description;
   assert.ok(description.includes(task), 'the update_task description must carry the task template');

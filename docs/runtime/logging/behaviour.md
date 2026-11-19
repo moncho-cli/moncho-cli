@@ -127,7 +127,7 @@ start writing logs behind the caller's back.
 | ----- | ----- | ----- | ---- |
 | `startup` | `error` | A fatal error that stopped the session from starting | `main.js` |
 | `session` | `error` | A session file that could not be saved | `main.js` |
-| `provider` | `error` | `prompt.md` could not be read, so the agent answers without its prompt | `api/ollama.js#loadSystemPrompt` |
+| `provider` | `error` | `config/prompt.md` could not be read, so the agent answers without its prompt | `api/ollama.js#loadSystemPrompt` |
 | `provider` | `error` | The last attempt failed and the call is given up | `api/ollama.js#callOllama` |
 | `provider` | `warn` | An attempt failed and is being retried | `api/ollama.js#callOllama` |
 | `provider` | `warn` | An empty response; the turn retries it | `app/turn-runner.js#runTurn` |

@@ -38,7 +38,7 @@ prompt (`systemPrompt: false`), not the pulse line, not the conversation being k
 - `SUMMARIZER_SYSTEM_PROMPT` states that the message *is* the whole instruction and
   that the payload is the entire record, so the summariser never assumes context it
   was not given.
-- For the same reason **`prompt.md` says nothing about compaction at all**: no tool
+- For the same reason **`config/prompt.md` says nothing about compaction at all**: no tool
   bullet, no window section, no advice. The host decides when the window is compacted,
   so teaching the mechanism to the agent only spends context on a decision the model
   never makes.

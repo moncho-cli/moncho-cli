@@ -141,6 +141,16 @@ export const LOG_MAX_BYTES = toPositiveInt(process.env.LOG_MAX_BYTES, LOG_MAX_BY
 /** Files kept in the rotation chain, the live one included. */
 export const LOG_MAX_FILES_DEFAULT = 5;
 export const LOG_MAX_FILES = toPositiveInt(process.env.LOG_MAX_FILES, LOG_MAX_FILES_DEFAULT);
+// ---------------------------------------------------------------------------
+// Streaming thinking capture (api/ollama.js)
+// ---------------------------------------------------------------------------
+/**
+ * Where the streaming reasoning is captured instead of the transcript. It defaults
+ * into the gitignored `agent/` tree, next to the sessions and the log, so a container
+ * run keeps it in the state volume rather than at the root of the user's checkout.
+ * The path is resolved through the sandbox (`utils/path-safety.js#resolveProjectPath`).
+ */
+export const THINKING_FILE = process.env.THINKING_FILE || "agent/thinking.md";
 
 // ---------------------------------------------------------------------------
 // Task tracking files (task.md protocol: mark done, reset the plan, next item)

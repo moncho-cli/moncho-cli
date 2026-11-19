@@ -192,7 +192,7 @@ test('the compaction request is self-contained and the agent prompt says nothing
   assert.match(prompt, /nothing else is sent with this request/);
   assert.match(prompt, /evicted text/);
 
-  const agentPrompt = fs.readFileSync(new URL('../prompt.md', import.meta.url), 'utf-8');
+  const agentPrompt = fs.readFileSync(new URL('../config/prompt.md', import.meta.url), 'utf-8');
   assert.doesNotMatch(agentPrompt, /compact/i, 'the agent prompt must not instruct the agent about compaction');
   assert.doesNotMatch(agentPrompt, /CONTEXT_MAX_LENGTH/);
 });

@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+#
+# moncho-cli — run the Moncho agent in a container scoped to the directory you are
+# standing in.
+#
+# The lifecycle is deliberately the one start.sh already offers a repository — `run`,
+# `start`, `stop`, `shell`, `build` — because that is the deal users already know. The
+# layer on top is the one a repository-local script has no way to provide: the
+# workspace is *whatever directory you invoke it from*, so the image, the container
+# and the state volume are all derived from $PWD and two projects never collide.
+#
+#   moncho-cli build    build this project's image (and the agent base if missing)
+#   moncho-cli run      run in the foreground (the usual way to use it)
+#   moncho-cli start    run detached, then rejoin with `shell`
+#   moncho-cli stop     stop and remove this project's container
+#   moncho-cli shell    a shell inside the running container
+#   moncho-cli status   what this directory resolves to
+#
+# Where the agent's own state goes: a volume scoped to this workspace (default), or
+# the checkout itself with --state-in-repo.
+#
+# Reference: agent/tmp/distributing.md (the spec this script implements).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/env.sh
+. "$SCRIPT_DIR/lib/env.sh"
+# shellcheck source=lib/image.sh
+. "$SCRIPT_DIR/lib/image.sh"
+# shellcheck source=lib/container.sh
+. "$SCRIPT_DIR/lib/container.sh"
+# shellcheck source=lib/template.sh
+. "$SCRIPT_DIR/lib/template.sh"
+# shellcheck source=lib/git.sh
+. "$SCRIPT_DIR/lib/git.sh"
+
+# --- defaults ---------------------------------------------------------------
+COMMAND=""
+ENV_FILE_ARG=""
+REBUILD="0"
+BUILD_BASE="0"
+BASE_ONLY="0"
+ASSUME_YES="0"
+SYNC_FILES="0"
+SYNC_DELETE="0"
+SKIP_GIT="0"
+MOUNT_MODE="bind"
+STATE_MODE="volume"
+
+usage() {
+  cat <<'EOF'
+Usage: moncho-cli <command> [options]
+
+Commands:
+  run       run the agent in the foreground (the default when no command is given)
+            the first time in a directory it adopts ./Dockerfile or asks for the
+            project type, builds the image, then starts the agent
+  start     run detached in the background
+  stop      stop and remove the container for this directory
+  shell     open a shell inside the running container
+  build     build this project's image (and the agent base image if missing)
+  status    print what this directory resolves to
+  help      this text
+
+Options:
+  --env <path>       read this env file instead of ./.env.moncho (the only file read)
+  --state-in-repo    keep the agent's state in ./agent instead of a named volume
+  --do-not-mount     no bind mount: /app is what the project image contains
+  --copy-files       copy the workspace into the image at build time
+  --sync-files       copy /app back into this directory when the run ends
+  --sync-delete      allow --sync-files to delete host files (needs rsync)
+  --rebuild          rebuild the project image and repaint the agent base image
+  --build-base       repaint moncho-agent even when it already exists
+  --base-only        with build: stop after the agent base image, no project image
+  --skip-git         work here even without a git repository (see below)
+  --yes, -y          take the default (minimal template) instead of asking
+  -h, --help         this text
+
+Environment:
+  MONCHO_HOME        where the agent is installed (default ~/.config/moncho-cli);
+                     MONCHO_HOME=. uses this checkout, so no installer run is needed
+
+The env file is sourced as shell, exactly like .env is today: quoting, comments and
+`export` all behave the way you expect. The agent itself reads nothing else.
+
+The directory must be a git repository: moncho writes inside the workspace, and the
+repository is what keeps those files out of your history. It never edits .gitignore.
+Its own entries go to .git/info/exclude, which is local and never committed.
+--skip-git is the escape hatch, for a deliberate exception.
+EOF
+}
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      run|start|stop|shell|build|status|help) COMMAND="$1"; shift ;;
+      --env) [ $# -ge 2 ] || die "--env needs a path"; ENV_FILE_ARG="$2"; shift 2 ;;
+      --env=*) ENV_FILE_ARG="${1#--env=}"; shift ;;
+      --state-in-repo) STATE_MODE="repo"; shift ;;
+      --do-not-mount)
+        [ "$MOUNT_MODE" = "copy" ] && die "--do-not-mount and --copy-files are mutually exclusive"
+        MOUNT_MODE="none"; shift ;;
+      --copy-files)
+        [ "$MOUNT_MODE" = "none" ] && die "--do-not-mount and --copy-files are mutually exclusive"
+        MOUNT_MODE="copy"; shift ;;
+      --sync-files) SYNC_FILES="1"; shift ;;
+      --sync-delete) SYNC_DELETE="1"; shift ;;
+      --rebuild) REBUILD="1"; shift ;;
+      --build-base) BUILD_BASE="1"; shift ;;
+      --base-only) BASE_ONLY="1"; shift ;;
+      --skip-git) SKIP_GIT="1"; shift ;;
+      --yes|-y) ASSUME_YES="1"; shift ;;
+      -h|--help) COMMAND="help"; shift ;;
+      *) die "unknown argument '$1' (try 'moncho-cli help')" ;;
+    esac
+  done
+}
+
+main() {
+  parse_args "$@"
+  [ -n "$COMMAND" ] || COMMAND="run"
+  [ "$COMMAND" = "help" ] && { usage; return 0; }
+
+  # --sync-files writes back through the workspace, so it needs one to exist.
+  if [ "$SYNC_FILES" = "1" ] && [ "$MOUNT_MODE" = "bind" ]; then
+    die "--sync-files needs --do-not-mount or --copy-files (a bind mount is already the workspace)"
+  fi
+
+  resolve_workspace
+  resolve_env_file "$ENV_FILE_ARG"
+  load_env_file
+
+  # The gate. `build`, `run` and `start` prepare or write the workspace, so they need a
+  # repository; `status`, `stop` and `shell` deliberately do not, so a container stays
+  # inspectable and removable even in a directory moncho would now refuse.
+  case "$COMMAND" in
+    build|run|start) prepare_workspace_git ;;
+  esac
+
+  case "$COMMAND" in
+    build)
+      require_docker
+      # `--build-base` (and `--rebuild`) repaint the base image, which is what makes
+      # `build` usable straight from a checkout with nothing staged. Without it an
+      # existing base image is reused and only the project image is rebuilt.
+      if [ "$REBUILD" = "1" ] || [ "$BUILD_BASE" = "1" ]; then
+        build_base_image
+      else
+        ensure_base_image
+      fi
+      build_project_image_now
+      ;;
+    run|start) require_docker; run_container_or_start ;;
+    stop) require_docker; stop_container ;;
+    shell) require_docker; open_shell ;;
+    status) show_status ;;
+    *) die "unknown command '$COMMAND'" ;;
+  esac
+}
+
+# `run` and `start` share everything except the foreground/detached decision.
+run_container_or_start() {
+  if [ "$COMMAND" = "start" ]; then
+    start_container
+  else
+    run_container
+  fi
+}
+
+main "$@"

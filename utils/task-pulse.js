@@ -3,7 +3,7 @@ import { PULSE_LIMIT, PULSE_LIMIT_DEFAULT } from '../config/constants.js';
 /**
  * The model-call pulse (task-backlog: "keep in the context an incremental pulse on
  * each model call, create a hard limit configurable defaulting to 30, and instruct
- * via prompt.md to honor this value. reset it to 0 after marking an item as
+ * via config/prompt.md to honor this value. reset it to 0 after marking an item as
  * completed or running compaction").
  *
  * One line, counting how many **agent** model calls the current stretch of work has

@@ -1,0 +1,21 @@
+# Monchofile — Python project
+#
+# Two rules: the first instruction is FROM moncho-agent, and there is no ENTRYPOINT or
+# CMD (moncho-cli appends the agent's own). Everything else is an ordinary Dockerfile.
+FROM moncho-agent
+
+# The interpreter and the build tooling the project needs.
+RUN apk add --no-cache python3 py3-pip python3-dev build-base
+
+WORKDIR /app
+
+# Install into the image so a fresh container is ready to work. A virtualenv under
+# the workspace would be shadowed by the bind mount, which is why this installs
+# system-wide inside the image.
+COPY requirements*.txt ./
+RUN if [ -f requirements.txt ]; then pip install --no-cache-dir --break-system-packages -r requirements.txt; fi
+
+COPY . .
+
+# Optional: a project-local virtualenv the agent should activate itself.
+# RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt

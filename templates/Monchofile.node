@@ -1,0 +1,23 @@
+# Monchofile — Node.js / TypeScript project
+#
+# Two rules: the first instruction is FROM moncho-agent, and there is no ENTRYPOINT or
+# CMD (moncho-cli appends the agent's own). Everything else is an ordinary Dockerfile.
+FROM moncho-agent
+
+# Extra tools this project's scripts expect. Add yours here.
+RUN apk add --no-cache make
+
+WORKDIR /app
+
+# Dependencies are installed in the image so the container starts ready to work; the
+# workspace is bind-mounted over /app at run time, and an anonymous volume shadows
+# this node_modules so the tree that belongs to the container keeps winning.
+COPY package*.json ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+# Files the image itself should carry. `moncho-cli run` overlays the workspace, so
+# this matters mainly for --copy-files and --do-not-mount.
+COPY . .
+
+# Optional: anything the agent should see as pre-installed.
+# RUN npm install -g typescript

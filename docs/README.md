@@ -63,3 +63,15 @@ tests:                           # test file + the exact case names that prove i
 
 `docs/index.yaml` lists every spec id plus the three realm roots; the linking test
 compares that list against the spec directories actually present on disk.
+
+## What is not a spec
+
+Packaging is **not a fourth realm**: `bin/`, `scripts/`, the templates and the Makefile
+are shell, so they sit outside the linking rule by design and are covered by
+`make check-shell` plus `make probe` instead. The two entry points are worth naming
+here, because the rest of this tree assumes them:
+
+- a **user** installs once (`scripts/install.sh`) and then runs `moncho-cli` in any
+  project directory; nothing is cloned;
+- a **maintainer** works on this checkout through `./start.sh` (or `make dev`), and
+  `moncho-cli` refuses to prepare the agent's own checkout as if it were a project.

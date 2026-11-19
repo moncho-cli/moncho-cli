@@ -1,27 +1,48 @@
-import { BASE_URL, API_KEY, MODEL } from '../config/constants.js';
+import { BASE_URL, API_KEY, MODEL, THINKING_FILE as THINKING_TARGET } from '../config/constants.js';
 import { logEvent } from '../utils/logger.js';
+import { resolveProjectPath } from '../utils/path-safety.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const THINKING_FILE = path.join(__dirname, '..', 'thinking.md');
+/**
+ * Where the streaming reasoning is captured. The path comes from
+ * `config/constants.js#THINKING_FILE` and goes through the same sandbox every file
+ * tool uses, so an absolute or escaping value is refused instead of writing outside
+ * the workspace. A path that cannot be resolved turns the capture **off** rather than
+ * failing the call: losing a reasoning trace must never cost the user their turn.
+ */
+function resolveThinkingPath() {
+  try {
+    return resolveProjectPath(THINKING_TARGET);
+  } catch (error) {
+    logEvent('warn', 'provider', 'THINKING_FILE cannot be resolved inside the project; the capture is off', error);
+    return null;
+  }
+}
+
+const THINKING_FILE = resolveThinkingPath();
 
 async function loadSystemPrompt() {
-  const promptPath = path.join(__dirname, '..', 'prompt.md');
+  // config/prompt.md, not the module root: the prompt is agent *data*, and keeping
+  // every shipped asset inside a directory means the image copies it with the rest
+  // instead of naming it a second time (Dockerfile.agent).
+  const promptPath = path.join(__dirname, '..', 'config', 'prompt.md');
   try {
     return fs.readFileSync(promptPath, 'utf-8').trim();
   } catch (error) {
     // The agent answers without its prompt from here on, which is exactly the kind
     // of silent degradation this log exists to make findable.
-    logEvent('error', 'provider', 'could not read prompt.md; the agent prompt is empty', error);
-    console.warn('Warning: Could not read prompt.md:', error.message);
+    logEvent('error', 'provider', 'could not read config/prompt.md; the agent prompt is empty', error);
+    console.warn('Warning: Could not read config/prompt.md:', error.message);
     return '';
   }
 }
 
 async function clearThinkingFile() {
+  if (!THINKING_FILE) return;
   fs.writeFileSync(THINKING_FILE, '', 'utf-8');
 }
 
@@ -212,7 +233,7 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
               const delta = parsed.message || parsed.choices?.[0]?.delta || {};
               if (delta.content) {
                 if (delta.thinking || (parsed.message && parsed.message.thinking)) {
-                  fs.appendFileSync(THINKING_FILE, delta.content, 'utf-8');
+                  if (THINKING_FILE) fs.appendFileSync(THINKING_FILE, delta.content, 'utf-8');
                 } else {
                   fullResponse += delta.content;
                   process.stdout.write(delta.content);
