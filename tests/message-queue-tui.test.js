@@ -67,8 +67,9 @@ test('a submission while a request is in flight is queued, and shown above the i
     assert.equal(tui.queueBar.height, 1);
     assert.equal(tui.inputBox.bottom, 0, 'the input box never moves');
     assert.equal(tui.statusBar.bottom, 4, 'the status bar moved up by the queue height');
-    assert.equal(tui.modelBar.bottom, 5);
-    assert.equal(tui.transcript.bottom, 6);
+    assert.equal(tui.workBar.bottom, 5);
+    assert.equal(tui.modelBar.bottom, 6);
+    assert.equal(tui.transcript.bottom, 7);
   });
 });
 
@@ -116,7 +117,7 @@ test('the queued text is verbatim, and the queue drains in order between turns',
     assert.equal(tui.queueHeight, 0, 'the region shrinks back when the queue empties');
     assert.equal(tui.queueBar.hidden, true);
     assert.equal(tui.statusBar.bottom, 3, 'the anchors above it are restored');
-    assert.equal(tui.transcript.bottom, 5);
+    assert.equal(tui.transcript.bottom, 6);
   });
 });
 

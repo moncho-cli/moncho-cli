@@ -56,6 +56,23 @@ and writer goes through:
 - a malformed entry becomes zeroes instead of throwing — a broken table must never
   cost the user their session.
 
+### Working time on the same entry
+
+The same entry also carries `thinkingMs` and `toolMs`: how long that model spent
+thinking and how long the tool calls it asked for spent resolving
+(`docs/context/working-time`). They are a **different unit** from the counters, so
+they are written by a different function:
+
+- `applyCall()` never touches the time, and `applyTime()` never touches the tokens.
+  A call retried twice is one request but three thinking spans, and both facts have
+  to survive;
+- `createUsageMeter().recordTime(model, span)` is the second mutator, and a model
+  that never worked simply reports zero — which is why a table written before the
+  counter existed keeps exactly the row it always had;
+- `formatUsageRow()` appends `· working <dur> (thinking <dur>, tools <dur>)`
+  **only when some time was worked**, so `/usage` gained a suffix rather than a
+  column of zeroes.
+
 `createUsageMeter()` is the live object the loop records into. `table()` returns a
 **copy**, so a caller can store a snapshot without it changing under its hands,
 and `replace()` installs a stored table as the live one, which is what a resume

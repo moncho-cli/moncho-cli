@@ -1,56 +1,16 @@
 import { TranscriptModel, blockAtClick } from './transcript.js';
 import { formatArg, formatTranscript } from './tui-render.js';
+import {
+  FOLLOW_BOTTOM_PERCENT,
+  WHEEL_STEP_ROWS,
+  pageStepRows,
+  isFollowingScroll,
+} from './transcript-scroll.js';
 
-/**
- * Scroll percentage that still counts as "at the bottom". blessed positions the
- * view to the very end (100) when the user presses End or the mouse reaches the
- * bottom bar, so a small tolerance absorbs a one-row rounding difference.
- */
-export const FOLLOW_BOTTOM_PERCENT = 99.5;
-
-/**
- * Rows one mouse-wheel notch moves the transcript.
- *
- * Deliberately smaller than a page: a wheel notch is a nudge, so a reader can
- * follow the text line by line instead of jumping a screenful at a time.
- */
-export const WHEEL_STEP_ROWS = 3;
-
-/**
- * Rows one page-up / page-down moves: a whole screenful minus one row, so the
- * row that was at the top of the screen is still the last row on the next page
- * and the reader never loses their place between two pages.
- *
- * Pure, so the step is unit tested without a terminal. A widget that has not
- * been laid out yet (no measured height) still steps one row rather than none.
- */
-export function pageStepRows(visibleHeight = 0) {
-  const visible = Number(visibleHeight) || 0;
-  return visible > 1 ? Math.floor(visible) - 1 : 1;
-}
-
-/**
- * The follow/hold rule, as pure arithmetic: may an arriving message scroll the
- * transcript to the bottom?
- *
- * - **follow** when the view is parked at the bottom, so new output comes into
- *   sight as it arrives;
- * - **hold** when the user scrolled up to read history: the offset they chose
- *   must survive the append;
- * - **follow** when there is nothing to scroll yet (an unmeasured widget, or
- *   content that already fits), so a short transcript keeps following.
- *
- * @param {object} state
- * @param {number} state.percent        scroll position, 0..100
- * @param {number} state.scrollHeight   scrollable height in rows
- * @param {number} state.visibleHeight  rows of content on screen at once
- */
-export function isFollowingScroll({ percent = 0, scrollHeight = 0, visibleHeight = 0 } = {}) {
-  const height = Number(visibleHeight) || 0;
-  const total = Number(scrollHeight) || 0;
-  if (height <= 0 || total <= height) return true;
-  return (Number(percent) || 0) >= FOLLOW_BOTTOM_PERCENT;
-}
+// The pure half (the follow/hold rule and the gesture steps) lives in
+// ./transcript-scroll.js so this module stays under the line budget; it is
+// re-exported here, because this is the path every importer already uses.
+export { FOLLOW_BOTTOM_PERCENT, WHEEL_STEP_ROWS, pageStepRows, isFollowingScroll };
 
 /**
  * Bind a TranscriptModel to a blessed scrollable widget.
@@ -59,10 +19,20 @@ export function isFollowingScroll({ percent = 0, scrollHeight = 0, visibleHeight
  * toggling a block is just a model change followed by a repaint — the payload can
  * never be lost. Rendering (sanitising, tag escaping, markdown colouring) happens
  * here, in `formatTranscript()`, so the model stays plain text.
+ *
+ * `stamp` is the timestamp hook every appended entry is marked with
+ * (app/transcript-stamp.js): the TUI passes `createStamper()`, a test a frozen
+ * date, and the default `null` marks nothing, which is what the pure view tests
+ * want. The mark is stored on the entry, so a repaint paints the same one.
  */
-export function createTranscriptView({ widget, refresh = () => {} } = {}) {
+export function createTranscriptView({ widget, refresh = () => {}, stamp = null } = {}) {
   const model = new TranscriptModel();
   let closed = false;
+  const stampOf = typeof stamp === 'function' ? stamp : () => null;
+  // Switched off while a stored conversation is replayed: those rows appeared in a
+  // past run, so marking them with the reload time would state something false.
+  let stamping = true;
+  const mark = () => (stamping ? stampOf() : null);
 
   /** One display-ready line list from raw text (sanitised + markdown-coloured). */
   const formatLines = (text) => formatTranscript(text).split('\n');
@@ -192,7 +162,15 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
   /** Append plain text (prose, notices, tool call headers). */
   const log = (...args) => {
     const text = args.map(formatArg).join(' ');
-    for (const line of formatLines(text)) model.addLine(line);
+    const lines = formatLines(text);
+    // One mark per entry, on its first line that is not blank: a reply spanning ten
+    // lines is stamped once, so a long answer never becomes a column of identical
+    // times, and an entry that opens with a blank line (the `\n  [tool Output]`
+    // shape main.js builds) is stamped where its text really starts.
+    const first = lines.findIndex((line) => String(line).trim() !== '');
+    lines.forEach((line, index) => {
+      model.addLine(line, { stamp: index === first ? mark() : null });
+    });
     return paint();
   };
 
@@ -208,6 +186,7 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
       body: source,
       bodyLines: formatLines(source),
       collapsed,
+      stamp: mark(),
     });
     paint();
     return block;
@@ -272,6 +251,11 @@ export function createTranscriptView({ widget, refresh = () => {} } = {}) {
     paint,
     scrollRows,
     scrollPage,
+    /** Turn the per-entry timestamps on or off (a session reload marks nothing). */
+    setStamping(value) {
+      stamping = value !== false;
+      return stamping;
+    },
     /** True while new output follows the bottom of the transcript. */
     isFollowing: following,
     close() {

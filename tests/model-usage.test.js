@@ -61,7 +61,7 @@ process.env.OPENAI_BASE_URL = `http://127.0.0.1:${server.address().port}/v1/chat
 
 const { normalizeUsage } = await import('../api/ollama.js');
 const {
-  UNKNOWN_MODEL, emptyModelUsage, applyCall, totalUsage, normalizeModelUsage,
+  UNKNOWN_MODEL, emptyModelUsage, applyCall, applyTime, totalUsage, normalizeModelUsage,
   formatUsageRow, formatUsageRows, estimateCallUsage, recordProviderCall, createUsageMeter,
 } = await import('../utils/usage-stats.js');
 const {
@@ -97,6 +97,9 @@ test('applyCall counts a call as exact or estimated and normalizeModelUsage repa
   assert.deepEqual(entry, {
     requests: 1, exactRequests: 1, estimatedRequests: 0,
     promptTokens: 100, completionTokens: 20, totalTokens: 120,
+    // the working time rides the same entry (utils/working-time.js): a call that
+    // never had a clock ticking on it simply reports zero milliseconds
+    thinkingMs: 0, toolMs: 0,
   });
 
   // a call with no provider counters is counted, then flagged as an estimate
@@ -198,8 +201,37 @@ test('formatUsageRow/formatUsageRows describe the breakdown and an empty table s
   assert.equal(formatUsageRows({ only: { requests: 1, exactRequests: 1 } }).length, 2);
 });
 
+test('applyTime/recordTime account the working time apart from the token counts', () => {
+  // A call and a span are different units: a retried call is one request but
+  // several thinking spans, so the two are counted by different functions.
+  const entry = applyTime(applyCall(emptyModelUsage(), { usage: EXACT }), { thinkingMs: 4200, toolMs: 900 });
+  assert.equal(entry.requests, 1);
+  assert.equal(entry.totalTokens, 120);
+  assert.equal(entry.thinkingMs, 4200);
+  assert.equal(entry.toolMs, 900);
+
+  // Junk is clamped like every other counter, never accumulated as NaN.
+  assert.deepEqual(applyTime(ZERO, { thinkingMs: -5, toolMs: 'rubbish' }), ZERO);
+
+  const meter = createUsageMeter();
+  meter.record('m', { usage: EXACT });
+  meter.recordTime('m', { thinkingMs: 1000 });
+  meter.recordTime('m', { thinkingMs: 500, toolMs: 250 });
+  meter.recordTime('', { toolMs: 10 });
+  const row = meter.table().m;
+  assert.equal(row.thinkingMs, 1500);
+  assert.equal(row.toolMs, 250);
+  assert.equal(meter.totals().thinkingMs, 1500);
+  assert.equal(meter.table()[UNKNOWN_MODEL].toolMs, 10, 'an unnamed model still counts');
+
+  // The row says nothing about time until there is some, then spells both halves.
+  assert.doesNotMatch(formatUsageRow('m', { requests: 1, exactRequests: 1 }), /working/);
+  assert.match(formatUsageRow('m', row), /working 2s \(thinking 2s, tools 0s\)/);
+  assert.match(formatUsageRows({ m: row }).join('\n'), /working 2s/);
+});
+
 test('the session file stores the per-model table, and an older file without one still loads', () => {
-  const usage = { 'ollama · qwen': { requests: 2, exactRequests: 1, estimatedRequests: 1, promptTokens: 10, completionTokens: 5, totalTokens: 15 } };
+  const usage = { 'ollama · qwen': { requests: 2, exactRequests: 1, estimatedRequests: 1, promptTokens: 10, completionTokens: 5, totalTokens: 15, thinkingMs: 4200, toolMs: 900 } };
   const session = serializeSession({ createdAt: new Date('2026-02-14T10:30:00.000Z'), chunks: [], usage });
   assert.deepEqual(session.usage, usage, 'the table is part of the record');
   assert.deepEqual(parseSession(formatSession(session)).usage, usage, 'and survives the round-trip');

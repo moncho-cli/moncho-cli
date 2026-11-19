@@ -57,13 +57,26 @@ export function createCompactionRunner({ window, callModel, log = () => {}, noti
  * is metered and billed against the answering model — but a **neutral** one, because
  * `systemPrompt: false` keeps the summariser from answering as the agent.
  *
+ * `working` is the session's span clock (`utils/working-time.js`) and `meterTime`
+ * the sink that accounts a closed span (`ConversationManager#recordWorkTime`): the
+ * summary is work the model did, so it is counted like any other thinking span —
+ * without them (a bare test, the tool-level suites) the call is simply untimed.
+ *
  * @param {(response: object, promptTokens: number) => void} meter records the call
  */
-export function createSummaryCallModel({ meter = () => {} } = {}) {
+export function createSummaryCallModel({ meter = () => {}, working = null, meterTime = null } = {}) {
   return async (messages, ctx = {}) => {
     const promptTokens = estimateMessagesTokens(messages);
-    const response = await callOllama(messages, [], false, ctx.signal, { systemPrompt: false });
-    meter(response, promptTokens);
-    return response?.message?.content ?? '';
+    const span = working?.begin ? working.begin('thinking') : null;
+    try {
+      const response = await callOllama(messages, [], false, ctx.signal, { systemPrompt: false });
+      meter(response, promptTokens);
+      return response?.message?.content ?? '';
+    } finally {
+      if (span && typeof working?.end === 'function') {
+        const ms = working.end(span);
+        if (typeof meterTime === 'function') meterTime({ kind: 'thinking', ms });
+      }
+    }
   };
 }

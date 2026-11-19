@@ -1,3 +1,5 @@
+import { STAMP_RE } from './transcript-stamp.js';
+
 /**
  * The conversation palette (task-backlog: "conversation needs colors to be
  * easier to read"; "the color of the intent text should be a brightish blue so is
@@ -12,7 +14,8 @@
  * of `formatTranscript()`, whose braces are escaped) and returns strings, so the
  * classification and the palette are unit testable without a screen.
  *
- * Three rules make it safe to compose with the markdown renderer:
+ * Four rules make it safe to compose with the markdown renderer and with the
+ * per-entry timestamps:
  *  - a line the renderer already coloured (it starts with a blessed tag) is
  *    returned **untouched**, so fences, delimiters, quotes, headings and inline
  *    code keep the colours `formatTranscript()` gave them;
@@ -20,7 +23,11 @@
  *    therefore the block-click row math — are unchanged;
  *  - the intent of a call is highlighted **inside** whatever row carries it
  *    (`highlightIntentSpans`), so a yellow tool header keeps its colour and only
- *    the reason for the call stands out.
+ *    the reason for the call stands out;
+ *  - a leading `HH:MM:SS` stamp is *seen through* (`splitStamp`): a stamped
+ *    `You:` row is still the user's echo, a stamped tool header is still a tool
+ *    row, and the stamp itself is painted in the low-key chrome colour rather than
+ *    in the colour of the row it introduces.
  *
  * Colour is presentation only: it never reaches the model context or a session
  * file, and only the TUI applies it (the line CLI prints through `console.log`).
@@ -69,6 +76,9 @@ export const TRACKING_COLOR = CONVERSATION_COLORS.tracking;
 /** Tracking updates are milestones, so they carry bold as well as the colour. */
 export const TRACKING_BOLD = true;
 
+/** The colour a timestamp is painted in: chrome, never the row it introduces. */
+export const STAMP_COLOR = CONVERSATION_COLORS.notice;
+
 /** A line the markdown renderer already tagged (fences, delimiters, quotes…). */
 const ALREADY_TAGGED = /^\{(?:bold|underline|inverse|blink|invisible|[a-z-]+-bg|[a-z-]+-fg)/;
 
@@ -96,6 +106,21 @@ const BLOCK_HEADER = /^\s*[▸▾]/;
 const RULE = /^\s*-{3,}/;
 
 /**
+ * Split a stamped display line into its timestamp and its content.
+ *
+ * The stamp is *decoration in front of* a row, not part of it, so classification
+ * has to look past it: `12:04:07 You:` is the user's echo and not plain prose. A
+ * line with no stamp answers `{ stamp: '', rest: line }`, so every rule below is
+ * unchanged for the unstamped case (the line CLI, the pure view tests, a replay).
+ */
+export function splitStamp(line) {
+  const text = String(line ?? '');
+  if (!STAMP_RE.test(text)) return { stamp: '', rest: text };
+  const cut = text.indexOf(' ');
+  return { stamp: text.slice(0, cut), rest: text.slice(cut + 1) };
+}
+
+/**
  * One intent, painted the way the backlog asks for it: a bright blue and bold. The
  * colour makes it findable inside the yellow tool block, the bold makes it stand
  * out in a wall of output. Pure: the caller (or the test) gets a blessed tag back
@@ -114,6 +139,13 @@ export function colorizeIntent(text) {
 export function colorizeTracking(text) {
   const body = String(text ?? '');
   return `{${TRACKING_COLOR}-fg}{bold}${body}{/bold}{/${TRACKING_COLOR}-fg}`;
+}
+
+/** One timestamp, painted as chrome: the low-key colour, and never bold. */
+export function colorizeStamp(stamp) {
+  const body = String(stamp ?? '');
+  if (!body) return '';
+  return `{${STAMP_COLOR}-fg}${body}{/${STAMP_COLOR}-fg} `;
 }
 
 /**
@@ -142,33 +174,44 @@ export function isTagged(line) {
  * Ordered most specific first: an `[error]` line stays red even though a tool
  * result may also look like a tool line, the `You:` header is recognised before
  * the generic notice rules, and the standalone `intent:` row is matched before the
- * generic tool shapes so the reason for a call gets its own colour.
+ * generic tool shapes so the reason for a call gets its own colour. A leading
+ * timestamp is looked past first, so it never hides the kind of the row it marks.
  */
 export function classifyLine(line) {
-  const text = String(line ?? '');
-  if (text.trim() === '') return null;
-  if (isTagged(text)) return null;
+  const { rest } = splitStamp(line);
+  if (rest.trim() === '') return null;
+  if (isTagged(rest)) return null;
 
-  if (/^\s*\[error\]/i.test(text) || /^Error\b/.test(text) || text.includes('⚠️')) return 'error';
+  if (/^\s*\[error\]/i.test(rest) || /^Error\b/.test(rest) || rest.includes('⚠️')) return 'error';
   // the echo header is exactly `You:` on a line of its own (formatUserEcho)
-  if (text === USER_ECHO_HEADER) return 'user';
-  if (INTENT_LINE.test(text)) return 'intent';
-  if (BLOCK_HEADER.test(text) || TOOL_HEADER.test(text) || CALLING_LINE.test(text)) return 'tool';
-  if (/^\s*\[Context\]/.test(text)) return 'context';
-  if (/^\s*\[Tracking\]/.test(text)) return 'tracking';
-  if (/^\s*\[(?:Info|Session)\]/.test(text) || /^\s*\[pasted\b/.test(text) || RULE.test(text)) return 'notice';
+  if (rest === USER_ECHO_HEADER) return 'user';
+  if (INTENT_LINE.test(rest)) return 'intent';
+  if (BLOCK_HEADER.test(rest) || TOOL_HEADER.test(rest) || CALLING_LINE.test(rest)) return 'tool';
+  if (/^\s*\[Context\]/.test(rest)) return 'context';
+  if (/^\s*\[Tracking\]/.test(rest)) return 'tracking';
+  if (/^\s*\[(?:Info|Session)\]/.test(rest) || /^\s*\[pasted\b/.test(rest) || RULE.test(rest)) return 'notice';
   return null;
 }
 
-/** Wrap one line in its blessed tag, or return it unchanged when it has none. */
+/**
+ * Wrap one line in its blessed tag, or return it unchanged when it has none.
+ *
+ * A stamp is painted separately and in the chrome colour, so the timestamp never
+ * borrows the colour of the row it introduces; the row's own kind then decides the
+ * colour of what follows it, exactly as it would without a stamp.
+ */
 export function colorizeLine(line) {
   const text = String(line ?? '');
+  const { stamp, rest } = splitStamp(text);
+  const prefix = colorizeStamp(stamp);
   const kind = classifyLine(text);
-  if (!kind) return text;
-  if (kind === 'intent') return colorizeIntent(text);
-  if (kind === 'tracking') return colorizeTracking(text);
+  // No kind: the line keeps whatever the markdown renderer gave it — but a stamp in
+  // front of it is chrome and is still painted as such.
+  if (!kind) return stamp ? `${prefix}${rest}` : text;
+  if (kind === 'intent') return `${prefix}${colorizeIntent(rest)}`;
+  if (kind === 'tracking') return `${prefix}${colorizeTracking(rest)}`;
   const color = CONVERSATION_COLORS[kind];
-  return `{${color}-fg}${highlightIntentSpans(text)}{/${color}-fg}`;
+  return `${prefix}{${color}-fg}${highlightIntentSpans(rest)}{/${color}-fg}`;
 }
 
 /** Colour a whole transcript: one output line per input line, in order. */

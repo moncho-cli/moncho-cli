@@ -4,6 +4,7 @@ import { createCLI } from './app/cli.js';
 import { createTui } from './app/tui.js';
 import { AbortManager } from './app/abort-manager.js';
 import { createSessionRecorder } from './app/session-recorder.js';
+import { createSessionAutosave } from './app/session-autosave.js';
 import { createDefaultCommands } from './app/commands.js';
 import { createSessionMode } from './app/session-mode.js';
 import { toolsForMode, gateForMode } from './app/mode-policy.js';
@@ -147,6 +148,10 @@ async function main() {
   // tools the mode allows, so a read-only session is never *invited* to write.
   const getTools = () => toolsForMode(sessionMode.mode, tools);
   const getAbortSignal = () => abortManager.signal;
+  // The mid-turn session autosave (app/session-autosave.js), late-bound like the other
+  // hooks because it writes *through* `saveSession`, which snapshots the manager: a
+  // chunk change can only happen once both exist.
+  let autosave = null;
   const manager = new ConversationManager(toolFunctions, getTools, getAbortSignal, {
     log,
     // The model label is the key the per-model usage table is kept under.
@@ -165,11 +170,24 @@ async function main() {
     // (app/tool-guard.js), so a call named from an older prompt is refused instead of
     // touching anything. The mode is read live, so a Tab mid-turn bites at once.
     toolGate: gateForMode({ getMode: () => ({ mode: sessionMode.mode, work: sessionMode.work }) }),
+    // The record follows the conversation, not the turn (app/session-autosave.js):
+    // the first chunk of a turn writes it at once, and a burst of chunks in one tick
+    // is coalesced into the next write instead of one write per chunk.
+    onChunksChange: (reason) => autosave?.touch(reason),
     onContextChange: (stats) => {
       tui?.setTokens(stats.usage);
       tui?.notifyCompaction(stats);
     },
   });
+
+  // The working-time row (app/work-row.js) is painted from the clock, not from the
+  // window: the clock emits once a second while a span is open, so the counter
+  // climbs while the model is thinking instead of jumping when the call lands. It
+  // is host state and never a chunk, so nothing here reaches the provider
+  // (docs/context/working-time).
+  const paintWork = () => tui?.setWork(manager.workingTotals());
+  manager.working.subscribe(paintWork);
+  paintWork();
 
   // The conversation is recorded in agent/sessions/<id>/context.json — the record
   // inside the conversation's own folder: every chunk of the live window, verbatim,
@@ -208,6 +226,12 @@ async function main() {
     }
   };
 
+  // The mid-turn throttle (app/session-autosave.js): the conversation is written as it
+  // happens — the first chunk of a turn at once, a burst of chunks coalesced — instead
+  // of only when a turn ends. The loop still saves after every turn and on exit, and it
+  // settles this throttle then, because that save already holds the whole window.
+  autosave = createSessionAutosave({ save: () => saveSession('chunk') });
+
   // Slash commands: an iterable registry, so adding a command later needs no
   // change in the loop. Anything that is not `/<name>` stays a prompt.
   const commands = createDefaultCommands();
@@ -238,6 +262,7 @@ async function main() {
     drive,
     abortManager,
     saveSession,
+    autosave,
     // The turn landed, so whatever the provider recovered from on the way is no
     // longer worth showing: drop the retry notice now rather than at its TTL.
     onTurnLanded: () => {
@@ -249,6 +274,9 @@ async function main() {
   });
 
   abortManager.dispose();
+  // The loop is over, so nothing is left for the mid-turn throttle to write: closing it
+  // also cancels a trailing timer that would otherwise fire into a closed session.
+  autosave?.close();
   cli.close();
 }
 

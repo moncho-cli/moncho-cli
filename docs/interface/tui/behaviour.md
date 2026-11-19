@@ -6,21 +6,22 @@ extras; the implementation is linked below.
 
 ## Layout
 
-Six regions, laid out relatively so blessed relayouts them on resize:
+Seven regions, laid out relatively so blessed relayouts them on resize:
 
 | Region | Position | Purpose |
 | ------------- | --------------------------- | ----------------------------------------- |
 | input box | bottom 0, height 3 | the prompt the user types into |
 | queue bar | bottom 3, height 0..n | pending messages, one `✕` row each; hidden while empty |
 | status bar | bottom 3 + queue height | status text/spinner on the left, token meter on the right |
-| model row | bottom 4 + queue height | the session's mode label, then provider · model, resolved at startup |
-| transcript | bottom 5 + queue height up to one row below the top | scrollable, bordered conversation log |
+| working-time row | bottom 4 + queue height | the counter right-aligned against the meter's own column (`docs/context/working-time`) |
+| model row | bottom 5 + queue height | the session's mode label, then provider · model, resolved at startup |
+| transcript | bottom 6 + queue height up to one row below the top | scrollable, bordered conversation log |
 
 - The queue bar is the only region whose size changes: `setQueueHeight(rows)` makes
   room for the pending messages right above the input box — the status bar, the
-  model row and the transcript shift up by that many rows — and at 0 it hides the
-  region and restores every base anchor, so an empty queue costs no row. The rules
-  it serves live in `docs/interface/message-queue`.
+  working-time row, the model row and the transcript shift up by that many rows —
+  and at 0 it hides the region and restores every base anchor, so an empty queue
+  costs no row. The rules it serves live in `docs/interface/message-queue`.
 - **Without a TTY `createTui()` returns `null`** (e.g. the detached
   `start.sh start` run), and the host falls back to the line CLI. It must never
   throw when there is no pty.
@@ -64,6 +65,10 @@ Six regions, laid out relatively so blessed relayouts them on resize:
   right edge** — the token usage string plus the configured-vs-real label the
   window appends. `composeStatusRow()` lays the row out purely, and when the width
   is too small the left text is truncated, never the meter.
+  The row directly above it carries the **working-time counter**, right-aligned
+  through the same composer so the two end at the same column, and empty until the
+  session has worked a second (`docs/context/working-time`). The pair is built
+  together by `app/status-rows.js`, so a resize re-pins both at once.
 - A compaction that fires while the request is in flight is announced in the
   transcript — the status bar is owned by the spinner at that moment — exactly once
   per event.
@@ -71,9 +76,13 @@ Six regions, laid out relatively so blessed relayouts them on resize:
   results, context notices and errors each get their own colour, while a line the
   markdown renderer already coloured is left as it is and prose keeps the terminal
   default. The palette and its rules live in `docs/interface/conversation-colors`.
+  Each entry also carries the **local time it appeared**, at the head of its first
+  display line (`docs/interface/conversation-timestamps`).
 - `reload(chunks)` replaces the whole transcript with a stored conversation: the
   view is emptied and the session replayed into it as lines and collapsible blocks
   (`docs/interface/session-replay`), so opening a session shows it as it was left.
+  Stamping is switched off for that replay: those rows appeared in a past run, so
+  marking them with the reload time would state something false.
 
 ## The last-prompt hint (task-backlog)
 
@@ -167,7 +176,10 @@ user cannot see what they asked a moment ago. `app/input-hint.js` fixes that:
   `app/tui-render.js` (pure text helpers), `app/tui-keys.js` (key bindings),
   `app/paste-registry.js` (the paste table), `app/compaction-notice.js` (the
   once-per-event compaction line), `app/status-row.js` (status/spinner/meter
-  bookkeeping), `app/tui-modal.js` (the picker modal and its `choose` surface),
+  bookkeeping), `app/status-rows.js` and `app/work-row.js` (the meter and the
+  working-time counter, built as one pair), `app/tui-transcript.js` (the transcript
+  pane), `app/tui-surface.js` (the public surface),
+  `app/tui-modal.js` (the picker modal and its `choose` surface),
   `app/prompt-input.js` (the armed-question / queueing box), `app/input-hint.js`
   (the last-prompt hint), `config/constants.js`
 - Spec of the pending-message queue above the input box: `docs/interface/message-queue`
@@ -176,6 +188,8 @@ user cannot see what they asked a moment ago. `app/input-hint.js` fixes that:
 - Spec of the conversation palette: `docs/interface/conversation-colors`
 - Spec of the reload when a session is resumed: `docs/interface/session-replay`
 - Spec of the collapsible results: `docs/interface/transcript-blocks`
+- Spec of the working-time counter: `docs/context/working-time`
+- Spec of the per-block timestamps: `docs/interface/conversation-timestamps`
 - Proof: `tests/tui.test.js`, `tests/tui-render.test.js`, `tests/tui-status.test.js`,
   `tests/tui-modules.test.js`, `tests/input-hint.test.js`,
   `tests/transcript-blocks.test.js`, `tests/transcript-scroll.test.js`,

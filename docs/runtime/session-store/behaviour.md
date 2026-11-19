@@ -65,6 +65,9 @@ Versioned, pretty-printed JSON (one key per line, trailing newline) holding:
 - `stats` — the context-window snapshot at save time (`usage`, …);
 - `usage` — the per-model token table (`docs/context/model-usage`); it is
   **optional**, so a file written before it existed loads with an empty table;
+  the working time the session added up rides the same table (`thinkingMs`,
+  `toolMs`), so `/usage` and a resumed session report how long the agent worked
+  (`docs/context/working-time`);
 - `chunks` — **the full context, verbatim**: every message the `ContextWindow`
   holds, tool calls and tool results included.
 
@@ -88,12 +91,26 @@ what was written, raising a coded `SessionStoreError` (`INVALID_JSON`,
 
 `createSessionRecorder()` (`app/session-recorder.js`) owns the *current* session:
 its id, start time and model. The host loop calls `save(chunks)` after every
-completed turn and once more when the user exits, so the record always reflects the
+completed turn and once more when the user exits — and, mid-turn, whenever the
+conversation itself changes — so the record always reflects the
 live window — including after a compaction, because the snapshot is the window as
 it stands. `saveIfUsed()` skips an untouched window, so a session that never
 exchanged a message leaves no folder behind. `save(chunks, { stats, usage })` also
 stores the per-model token table, so what the conversation cost is part of the
 record (`docs/context/model-usage`).
+- **The record follows the conversation, not the turn.** `save()` is called at the
+  moments the conversation changes, not only when a turn ends
+  (`app/session-autosave.js`). The rule is a *leading-edge throttle*: the first
+  change — the user's own message — is written immediately, so the session exists on
+  disk from the first thing said; a burst of chunks inside the next half-second (one
+  tool batch adds an assistant chunk plus one chunk per call in the same tick) is
+  coalesced into a single trailing write, because a record is hundreds of kilobytes
+  written under byte-for-byte verification and a write per chunk would cost more than
+  it buys. The throttle is host state and a `setTimeout` that is `unref`'d, so a
+  pending write never holds the process open. `settle()` drops the queued write after
+  a save that already holds the whole window (the loop's own turn and exit saves), and
+  `close()` stops the throttle for good. A write that throws is contained and reported
+  through `lastError`: the record is important, the conversation more so.
 - This save is **host code, not a tool**, so no intent mode gates it: a `chat`
   session writes no file through a tool but still writes its own session record
   (`docs/interface/modes`). "Read-only" is a claim about the project tree.
@@ -108,4 +125,5 @@ record (`docs/context/model-usage`).
   `utils/session-format.js` (the record shape), `app/session-recorder.js`, `main.js`
 - The folder the tracking files share: `docs/agent/task-tracking`
 - Spec of the reload after a resume: `docs/interface/session-replay`
-- Proof: `tests/session-store.test.js`, `tests/session-layout.test.js`
+- Proof: `tests/session-store.test.js`, `tests/session-layout.test.js`,
+  `tests/session-autosave.test.js`

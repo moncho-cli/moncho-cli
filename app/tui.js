@@ -1,10 +1,12 @@
 import blessed from 'neo-blessed';
 import { describeModel } from '../config/constants.js';
-import { createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from './status-row.js';
+import { SPINNER_FRAMES, SPINNER_INTERVAL_MS } from './status-row.js';
+import { createStatusRows } from './status-rows.js';
 import {
-  createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT,
+  createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, WORK_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT,
 } from './tui-layout.js';
-import { createTranscriptView } from './transcript-view.js';
+import { createTranscriptPane } from './tui-transcript.js';
+import { createStamper } from './transcript-stamp.js';
 import { createTuiSurface } from './tui-surface.js';
 import { createQueueBar } from './queue-bar.js';
 import { createPromptInput, normalizePrompt } from './prompt-input.js';
@@ -28,19 +30,23 @@ import {
 } from './tui-render.js';
 
 // The pure helpers live in ./tui-render.js, the transcript model in
-// ./transcript.js (bound to the widget by ./transcript-view.js), the region
-// layout in ./tui-layout.js, the status-row bookkeeping in ./status-row.js, the
-// paste table in ./paste-registry.js, the compaction notice in
-// ./compaction-notice.js, the pending-message queue in ./message-queue.js (bound
-// to its region by ./queue-bar.js), the input-box state machine in
-// ./prompt-input.js, the transient notices in ./notice-overlay.js (bound to their
-// overlay by ./notice-bar.js) and the public surface in ./tui-surface.js. They are
-// all re-exported here so app/tui.js stays the single entry point every importer
-// (and the specs) already use.
+// ./transcript.js (bound to the widget by ./transcript-view.js, and to this screen
+// by ./tui-transcript.js), the region layout in ./tui-layout.js, the two
+// right-aligned rows in ./status-row.js and ./work-row.js (built as one pair by
+// ./status-rows.js), the per-entry timestamps in ./transcript-stamp.js, the paste
+// table in ./paste-registry.js, the compaction notice in ./compaction-notice.js,
+// the pending-message queue in ./message-queue.js (bound to its region by
+// ./queue-bar.js), the input-box state machine in ./prompt-input.js, the transient
+// notices in ./notice-overlay.js (bound to their overlay by ./notice-bar.js) and
+// the public surface in ./tui-surface.js. They are all re-exported here so
+// app/tui.js stays the single entry point every importer (and the specs) already use.
 export { sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD };
 export { formatUserEcho, USER_ECHO_HEADER };
 export { SPINNER_FRAMES, SPINNER_INTERVAL_MS };
-export { TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT };
+export { TRANSCRIPT_BOTTOM, MODEL_BOTTOM, WORK_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT };
+export { createStatusRows } from './status-rows.js';
+export { createWorkRow } from './work-row.js';
+export { createStamper, formatStamp, withStamp, STAMP_RE, STAMP_WIDTH } from './transcript-stamp.js';
 export { createQueueBar, queueSurface } from './queue-bar.js';
 export { createMessageQueue, queueRowAt, formatQueueTail, formatQueueRows } from './message-queue.js';
 export { formatQueueRow, previewMessage, displayWidth, truncateToWidth, queuePreviewBudget, QUEUE_PREVIEW_CHARS, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER } from './queue-rows.js';
@@ -56,9 +62,9 @@ export { formatBrand, resolveBrandSize, BRAND_NAME, BRAND_VERSION, BRAND_COLOR, 
  * runs detached, without a pty) so the caller can fall back to the line chat.
  *
  * The returned object mirrors createCLI() ({ rl, question, exit, close }) and
- * adds log()/logBlock()/setStatus() for rendering the conversation and the status
- * bar. Its shape is assembled by ./tui-surface.js, so this module stays the screen
- * wiring: the regions, the keys and the teardown.
+ * adds log()/logBlock()/setStatus()/setWork() for rendering the conversation and
+ * the two right-aligned rows. Its shape is assembled by ./tui-surface.js, so this
+ * module stays the screen wiring: the regions, the keys and the teardown.
  */
 export function createTui(options = {}) {
   const input = options.input || process.stdin;
@@ -68,6 +74,9 @@ export function createTui(options = {}) {
   // Tab / Shift+Tab are forwarded to this hook with the direction they walk in
   // (main.js wires it to the session mode's cycle()).
   const onCycleMode = typeof options.onCycleMode === 'function' ? options.onCycleMode : null;
+  // The timestamp hook of the conversation view (app/transcript-stamp.js): the time
+  // each block appeared. Injected so a test can freeze it and `null` marks nothing.
+  const stamp = options.stamp === undefined ? createStamper() : options.stamp;
 
   if (!output.isTTY) return null;
 
@@ -95,7 +104,7 @@ export function createTui(options = {}) {
   };
 
   const {
-    transcript, statusBar, modelBar, queueBar: queueRegion, inputBox, setQueueHeight,
+    transcript, statusBar, workBar, modelBar, queueBar: queueRegion, inputBox, setQueueHeight,
     setBrandRows, modeRow,
   } = createLayout({
     screen,
@@ -108,9 +117,11 @@ export function createTui(options = {}) {
   });
 
   const pastes = createPasteRegistry();
-  // The transcript is a model + view pair: the model holds the entries (plain
-  // lines and collapsible blocks), the view paints them and resolves clicks.
-  const view = createTranscriptView({ widget: transcript, refresh });
+  // The transcript is a model + view pair behind one pane (app/tui-transcript.js):
+  // the pane owns the click-to-toggle binding and the four operations the host
+  // asks of the conversation, so the wiring below never reaches into the view.
+  const pane = createTranscriptPane({ transcript, refresh, stamp });
+  const view = pane.view;
 
   // The queue bar is the pending-message region right above the input box: the
   // model owns the order and the text, the bar paints the rows and resizes the
@@ -159,7 +170,7 @@ export function createTui(options = {}) {
     inputBox,
     pastes,
     queue,
-    log: (...args) => view.log(...args),
+    log: (...args) => pane.log(...args),
     refresh,
   });
 
@@ -176,30 +187,38 @@ export function createTui(options = {}) {
   });
   focusGuard.start();
 
-  // The status bar carries two independent pieces of information on one row: the
-  // logical status (or the spinner frame) on the left, and the context-window
-  // meter pinned to the right, so usage stays visible while a request is in
-  // flight. The box pads one column on each side, so width() reports the usable
-  // interior.
-  const statusRow = createStatusRow({
-    width: () => {
-      const width = Number(screen.width) || Number(output.columns) || 0;
-      return width > 2 ? width - 2 : 0;
-    },
-    paint: (line) => {
+  // The two right-aligned rows above the model row, built as one pair
+  // (app/status-rows.js) so they can never drift a cell apart: the working-time
+  // counter on top (empty until the session has worked a second) and the status
+  // bar with the context-window meter under it, still visible while the spinner
+  // owns the left slot. Both boxes pad one column each side, so width() reports
+  // the usable interior.
+  const usableWidth = () => {
+    const width = Number(screen.width) || Number(output.columns) || 0;
+    return width > 2 ? width - 2 : 0;
+  };
+  const statusRows = createStatusRows({
+    width: usableWidth,
+    paintStatus: (line) => {
       if (closed) return;
       statusBar.setContent(line);
       refresh();
     },
+    paintWork: (line) => {
+      if (closed) return;
+      workBar.setContent(line);
+      refresh();
+    },
   });
+  const statusRow = statusRows.statusRow;
 
-  const log = (...args) => view.log(...args);
+  const log = (...args) => pane.log(...args);
 
   /**
    * Log a tool result as a collapsible block: the transcript shows one header line
    * with the "X char response" size, and a click expands or collapses the payload.
    */
-  const logBlock = (options_) => view.logBlock(options_);
+  const logBlock = (options_) => pane.logBlock(options_);
 
   // Compaction fires while a request is in flight, i.e. exactly when the status
   // bar's left slot is owned by the spinner, so the marker goes to the transcript
@@ -212,24 +231,8 @@ export function createTui(options = {}) {
 
   const question = (prompt, callback) => promptInput.question(prompt, callback);
 
-  // Scrolling must work even while the input box owns the focus. Both steps go
-  // through the view, so the wheel and the keyboard move the same distances and
-  // a scroll only moves the viewport instead of rebuilding the whole content.
-  const scrollBy = (amount) => {
-    view.scrollRows(amount);
-  };
-
-  /** Page towards the bottom (`direction < 0` pages up), one screenful minus one. */
-  const scrollPage = (direction) => {
-    view.scrollPage(direction);
-  };
-
-  // A click on the transcript toggles the tool-result block under the cursor
-  // (expand, then collapse again on the next click); a click on the queue bar
-  // deletes the message on that row and nothing else.
-  transcript.on('click', (data) => {
-    view.clickAt(data);
-  });
+  // A click on the queue bar deletes the message on that row and nothing else; the
+  // transcript's own click is bound by the pane.
   queueRegion.on('click', (data) => {
     queue.clickAt(data);
   });
@@ -238,11 +241,20 @@ export function createTui(options = {}) {
   // taken on the program so blessed cannot turn Escape into the textarea's own
   // 'cancel', and the scrolling keys are taken on the screen so a synthetic
   // `screen.emit('keypress', …)` reaches them.
-  const keys = bindKeys({ screen, onInterrupt, onCycleMode, scrollPage, transcript, refresh });
+  const keys = bindKeys({
+    screen,
+    onInterrupt,
+    onCycleMode,
+    scrollPage: (direction) => pane.scrollPage(direction),
+    transcript,
+    refresh,
+  });
 
   // A resize re-fits every row measured at the old width and puts the newest line
   // back in view (app/tui-teardown.js).
-  createResizeRepaint({ screen, transcript, statusRow, queue, brandBar, noticeBar });
+  createResizeRepaint({
+    screen, transcript, statusRow, workRow: statusRows.workRow, queue, brandBar, noticeBar,
+  });
 
   // The teardown is the reverse of construction, and happens once: the input box
   // stops accepting keystrokes first, then the regions that own a timer or a widget
@@ -257,13 +269,13 @@ export function createTui(options = {}) {
       () => view.close(),
       () => keys.dispose(),
       () => focusGuard.close(),
-      () => statusRow.dispose(),
+      () => statusRows.dispose(),
     ],
     screen,
     state: { isClosed: () => closed, markClosed: () => { closed = true; } },
   });
 
-  statusRow.render();
+  statusRows.render();
   queue.paint();
   brandBar.paint();
 
@@ -276,9 +288,11 @@ export function createTui(options = {}) {
     pastes,
     compaction,
     statusRow,
+    workRow: statusRows.workRow,
     screen,
     transcript,
     statusBar,
+    workBar,
     modelBar,
     modeRow,
     inputBox,
@@ -287,8 +301,8 @@ export function createTui(options = {}) {
     noticeBar,
     brandBar,
     refresh,
-    scrollBy,
-    scrollPage,
+    scrollBy: (amount) => pane.scrollBy(amount),
+    scrollPage: (direction) => pane.scrollPage(direction),
     log,
     logBlock,
     close,

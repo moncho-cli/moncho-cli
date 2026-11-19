@@ -13,6 +13,12 @@ summary: >
   The host loop records the live window after every turn, together with the
   per-model token table (docs/context/model-usage), which an older record may lack
   without becoming unreadable.
+  The record follows the conversation rather than the turn: app/session-autosave.js
+  writes it on the first chunk of a turn and coalesces a burst of chunks into one
+  trailing write, so a long turn — or a process that dies mid-turn — never leaves a
+  file minutes behind the messages already exchanged. The recorder stays dumb about
+  when to save; the loop settles the throttle after each of its own saves, because
+  that write already holds the whole window.
 code:
   - path: utils/session-store.js
     symbols: [SESSION_DIR, SESSION_RECORD_FILE, SessionStoreError, sessionId, sessionDir, sessionPath, legacySessionPath, formatSession, parseSession, serializeSession, countRoles, writeSession, sessionsDirExists, listSessions, loadSession, migrateSession, latestSession, describeSession]
@@ -20,6 +26,8 @@ code:
     symbols: [SESSION_FORMAT_VERSION, SessionStoreError, sessionId, serializeSession, countRoles, formatSession, parseSession, sessionTaskContent, sessionPlanContent, sessionChunks, sessionUsage, sessionModeState]
   - path: app/session-recorder.js
     symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
+  - path: app/session-autosave.js
+    symbols: [AUTOSAVE_INTERVAL_MS, createSessionAutosave]
   - path: utils/file-io.js
     symbols: [writeFileVerified]
   - path: main.js
@@ -49,3 +57,13 @@ tests:
       - "migrateSession() moves a flat record into its folder, byte for byte"
       - "the next save retires the flat record, so one session keeps one record"
       - "a folder without context.json is not a session, and a broken record is reported"
+  - path: tests/session-autosave.test.js
+    cases:
+      - "the first change is written at once, so the record exists as soon as a message lands"
+      - "a burst inside the interval is coalesced into one trailing write"
+      - "settle() drops the queued write, because a save already superseded it"
+      - "a save that throws is contained and reported, never thrown at the caller"
+      - "close() stops the throttle for good, and a closed handle never writes again"
+      - "the manager announces a chunk change, and the recorder writes the file during the turn"
+      - "the loop settles the throttle after its own save, so the record is never written twice"
+      - "the autosave interval is short enough to feel immediate and long enough to coalesce"

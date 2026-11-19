@@ -18,7 +18,8 @@
  *
  * blessed relayouts the relatively positioned regions itself, so what is left is
  * the work that depends on the *width*: the status row (whose meter is
- * right-aligned), the queue previews (fitted to the bar's columns, which would
+ * right-aligned), the working-time row above it (right-aligned against the very
+ * same column), the queue previews (fitted to the bar's columns, which would
  * otherwise keep the width of the old terminal), the brand line (which may start or
  * stop fitting whole, moving the top of the conversation) and the notices that
  * follow it.
@@ -30,6 +31,7 @@ export function createResizeRepaint({
   screen,
   transcript,
   statusRow,
+  workRow = null,
   queue,
   brandBar,
   noticeBar,
@@ -39,6 +41,9 @@ export function createResizeRepaint({
     // view: the transcript keeps its reader offset, and a resize is not a scroll.
     transcript?.setScrollPerc?.(100);
     statusRow?.render?.();
+    // The counter sits directly above the meter and is pinned to the same right
+    // edge, so it is re-fitted with it rather than a cell behind it.
+    workRow?.render?.();
     queue?.paint?.();
     brandBar?.paint?.();
     noticeBar?.paint?.();

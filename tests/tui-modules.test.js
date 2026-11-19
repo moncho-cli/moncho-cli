@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createPasteRegistry } from '../app/paste-registry.js';
 import { formatCompactionNotice, createCompactionNotifier } from '../app/compaction-notice.js';
 import { bindKeys } from '../app/tui-keys.js';
+import { createTranscriptPane } from '../app/tui-transcript.js';
 
 /**
  * The pieces `app/tui.js` delegates to (docs/interface/tui).
@@ -14,6 +15,7 @@ import { bindKeys } from '../app/tui-keys.js';
  *  - the compaction notice is emitted once per event,
  *  - the key bindings take Escape/Ctrl+C on the program (before blessed can turn
  *    them into the textarea's own 'cancel') and the scrolling keys on the screen.
+ *  - the transcript pane owns the model+view pair and the click that toggles a block.
  */
 
 /** A minimal screen stub recording what the bindings did. */
@@ -177,4 +179,52 @@ test('bindKeys() takes interrupts and Tab before blessed dispatches, and scrolls
 test('bindKeys() without a screen is a harmless no-op', () => {
   const keys = bindKeys();
   assert.doesNotThrow(() => keys.dispose());
+});
+
+/** A transcript widget stub: records its listeners and its painted content. */
+function stubTranscript() {
+  const listeners = new Map();
+  let content = '';
+  return {
+    on: (type, handler) => listeners.set(type, handler),
+    removeListener: (type) => listeners.delete(type),
+    setContent: (value) => { content = String(value); },
+    getContent: () => content,
+    setScroll: () => {},
+    setScrollPerc: () => {},
+    getScroll: () => 0,
+    getScrollPerc: () => 100,
+    getScrollHeight: () => 1,
+    height: 10,
+    iheight: 8,
+    click: (data) => listeners.get('click')?.(data),
+  };
+}
+
+test('createTranscriptPane() owns the model, the click and the four operations', () => {
+  const transcript = stubTranscript();
+  let refreshes = 0;
+  const pane = createTranscriptPane({
+    transcript,
+    refresh: () => { refreshes += 1; },
+    stamp: () => '09:05:07',
+  });
+
+  // Appending prose marks it once, and a collapsible block is one header line.
+  pane.log('an answer');
+  assert.match(pane.content, /09:05:07 an answer/);
+  const block = pane.logBlock({ header: '[read_file Output]', body: 'x'.repeat(120) });
+  assert.equal(block.collapsed, true);
+  assert.equal(pane.model.blocks.length, 1);
+
+  // The click binding lives on the pane: a click that lands on nothing is not one.
+  assert.equal(transcript.click({ y: 1, x: 0 }), null);
+  pane.clear();
+  assert.equal(pane.content, '');
+
+  // Timestamps can be switched off (a replay) and the pane closes the view.
+  assert.equal(pane.setStamping(false), false);
+  assert.equal(pane.setStamping(true), true);
+  pane.close();
+  assert.ok(refreshes >= 3, 'every operation repainted the screen');
 });

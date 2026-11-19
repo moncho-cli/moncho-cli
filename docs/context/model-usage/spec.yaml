@@ -8,14 +8,20 @@ summary: >
   and how many of those requests were reported by the provider (exact) versus
   estimated from the bytes. normalizeUsage() reads both provider spellings and
   returns null when nothing was reported, so an estimate is never passed off as a
-  reading. The table is normalised defensively, stored in the session file as an
-  optional usage block that older files may lack, seeded back into the live meter
-  when a session is resumed, and printed by /usage.
+  reading. Each entry also holds the working time attributed to that model —
+  thinkingMs and toolMs, written by applyTime()/recordTime() and never by
+  applyCall(), because tokens are counted per call while time is counted per span
+  (docs/context/working-time) — and formatUsageRow() appends the working suffix
+  only when some time was worked. The table is normalised defensively, stored in
+  the session file as an optional usage block that older files may lack, seeded
+  back into the live meter when a session is resumed, and printed by /usage.
 code:
   - path: api/ollama.js
     symbols: [normalizeUsage, callOllama]
   - path: utils/usage-stats.js
-    symbols: [UNKNOWN_MODEL, emptyModelUsage, normalizeModelUsage, applyCall, totalUsage, formatUsageRow, formatUsageRows, createUsageMeter, estimateCallUsage, recordProviderCall]
+    symbols: [UNKNOWN_MODEL, emptyModelUsage, normalizeModelUsage, applyCall, applyTime, totalUsage, formatUsageRow, formatUsageRows, createUsageMeter, estimateCallUsage, recordProviderCall]
+  - path: utils/working-time.js
+    symbols: [formatDuration]
   - path: utils/tokens.js
     symbols: [estimateTextTokens]
   - path: app/conversation-manager.js
@@ -38,6 +44,7 @@ tests:
       - "the estimate fallback is used when the provider reports no counters"
       - "createUsageMeter keys the table by model and replace() makes a stored table live"
       - "formatUsageRow/formatUsageRows describe the breakdown and an empty table says so"
+      - "applyTime/recordTime account the working time apart from the token counts"
       - "the session file stores the per-model table, and an older file without one still loads"
       - "/usage prints the per-model breakdown, and resuming a session seeds the meter"
       - "the conversation loop records every call under the model that answered it"

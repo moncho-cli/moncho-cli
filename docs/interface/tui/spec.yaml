@@ -4,14 +4,16 @@ title: Full-screen TUI layout, rendering and feedback
 status: active
 summary: >
   With a pty, createTui() builds a blessed screen (input box, queue bar, status
-  bar, model row, scrollable transcript) and returns null without one so the line
-  CLI is kept. Model text is sanitised and escaped before rendering, long pastes
-  collapse and expand byte-for-byte through a paste table, the status bar carries
-  the status or spinner on the left and the context meter pinned to its right edge
-  (always visible), compactions are announced in the transcript exactly once, and
-  the keys are bound apart from the screen wiring (interrupts on the program,
-  scrolling on the screen, Tab and Shift+Tab on the program so the tab byte never
-  reaches the input box). The queue bar right above the input box is the
+  bar, the working-time row above it, model row, scrollable transcript) and returns
+  null without one so the line CLI is kept. Model text is sanitised and escaped
+  before rendering, long pastes collapse and expand byte-for-byte through a paste
+  table, the status bar carries the status or spinner on the left and the context
+  meter pinned to its right edge (always visible), the row above it carries the
+  working-time counter right-aligned through the same composer
+  (docs/context/working-time), compactions are announced in the transcript exactly
+  once, and the keys are bound apart from the screen wiring (interrupts on the
+  program, scrolling on the screen, Tab and Shift+Tab on the program so the tab byte
+  never reaches the input box). The queue bar right above the input box is the
   pending-message region (docs/interface/message-queue). An input box with no text
   shows the last prompt over it, greyed out (app/input-hint.js, task-backlog: "if
   the input box is empty, it should have a grayed italic text saying 'Last prompt:
@@ -19,7 +21,7 @@ summary: >
   the first typed character.
 code:
   - path: app/tui.js
-    symbols: [createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, PASTE_THRESHOLD, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
+    symbols: [createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, PASTE_THRESHOLD, SPINNER_FRAMES, SPINNER_INTERVAL_MS, createStamper, formatStamp, withStamp, STAMP_RE, STAMP_WIDTH]
   - path: app/tui-render.js
     symbols: [sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD]
   - path: app/tui-keys.js
@@ -32,8 +34,16 @@ code:
     symbols: [formatCompactionNotice, createCompactionNotifier]
   - path: app/status-row.js
     symbols: [createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
+  - path: app/status-rows.js
+    symbols: [createStatusRows]
+  - path: app/work-row.js
+    symbols: [createWorkRow]
   - path: app/tui-layout.js
-    symbols: [createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT]
+    symbols: [createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, WORK_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT]
+  - path: app/tui-transcript.js
+    symbols: [createTranscriptPane]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
   - path: app/transcript-view.js
     symbols: [createTranscriptView]
   - path: app/tui-modal.js
@@ -63,6 +73,7 @@ tests:
       - "without a pty createTui() returns null so the line chat is kept"
       - "the tool-call intent is echoed to the transcript, ahead of the result"
       - "notifyCompaction() marks a compaction in the transcript, once per event"
+      - "the working-time row sits right above the meter and shares its column"
   - path: tests/tui-render.test.js
     cases:
       - "sanitize() and formatArg() behave as documented"
@@ -77,6 +88,7 @@ tests:
       - "createCompactionNotifier() announces each compaction exactly once"
       - "bindKeys() takes interrupts and Tab before blessed dispatches, and scrolls from the screen"
       - "bindKeys() without a screen is a harmless no-op"
+      - "createTranscriptPane() owns the model, the click and the four operations"
   - path: tests/tui-teardown.test.js
     cases:
       - "createResizeRepaint() re-fits every row measured at the old width"

@@ -29,9 +29,11 @@ export function createTuiSurface({
   pastes,
   compaction,
   statusRow,
+  workRow = null,
   screen,
   transcript,
   statusBar,
+  workBar = null,
   modelBar,
   modeRow = null,
   inputBox,
@@ -58,12 +60,23 @@ export function createTuiSurface({
     exit() {
       return promptInput.exit();
     },
-    /** Reload a whole conversation (a resumed session) into the transcript. */
+    /**
+     * Reload a whole conversation (a resumed session) into the transcript.
+     *
+     * Timestamps are switched off for the duration: those rows appeared in a past
+     * run, so marking them with the time the file was reopened would state
+     * something false (`docs/interface/conversation-timestamps`).
+     */
     reload: (chunks) => {
       // The transcript is replaced, so a compaction already announced is no
       // longer on screen: the next one must be reported again.
       compaction.reset();
-      return reloadConversation(chunks, { log, logBlock, clear: () => view.clear() });
+      if (typeof view.setStamping === 'function') view.setStamping(false);
+      try {
+        return reloadConversation(chunks, { log, logBlock, clear: () => view.clear() });
+      } finally {
+        if (typeof view.setStamping === 'function') view.setStamping(true);
+      }
     },
     close,
     // TUI extras
@@ -71,6 +84,14 @@ export function createTuiSurface({
     logBlock,
     setStatus: (text) => statusRow.setStatus(text),
     setTokens: (text) => statusRow.setMeter(text),
+    /**
+     * Paint the working-time counter on the row above the meter.
+     *
+     * The value is a `{ thinkingMs, toolMs, totalMs }` snapshot
+     * (`utils/working-time.js`); the row is empty until the session has worked, so
+     * a fresh conversation shows no `working 0s`.
+     */
+    setWork: (totals) => (workRow ? workRow.setTotals(totals) : null),
     notifyCompaction: (stats) => {
       if (isClosed()) return;
       compaction.notify(stats);
@@ -120,6 +141,15 @@ export function createTuiSurface({
     screen,
     transcript,
     statusBar,
+    // The working-time row (app/work-row.js): the right-aligned counter directly
+    // above the meter, plus read-only views of what it currently paints.
+    workBar,
+    get workLine() {
+      return workRow ? workRow.line : '';
+    },
+    get workTotals() {
+      return workRow ? workRow.totals : null;
+    },
     modelBar,
     // The session's intent mode, painted as the leftmost cell of the model row
     // (app/session-mode-label.js): the row itself, plus the state it shows.

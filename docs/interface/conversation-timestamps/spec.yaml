@@ -1,0 +1,39 @@
+id: interface/conversation-timestamps
+domain: interface
+title: A timestamp on each conversation block, in the TUI only
+status: active
+summary: >
+  Each transcript entry carries the local time it appeared (HH:MM:SS, eight
+  columns, one space after it), taken when it is appended and stored on the entry
+  so a repaint paints the same mark. One mark per entry — a multi-line reply is
+  stamped once, on its first non-blank line — and a block carries it on its header,
+  in front of the fold glyph. withStamp() refuses anything that does not look like a
+  stamp, and createStamper() can be switched off so a replayed conversation is not
+  marked with the reload time. The mark is display only: it never reaches a context
+  chunk or a session file. The palette sees through it (splitStamp) and paints it in
+  the chrome colour, and the click math is unchanged because the mark is part of the
+  display line.
+code:
+  - path: app/transcript-stamp.js
+    symbols: [STAMP_RE, STAMP_WIDTH, formatStamp, withStamp, createStamper]
+  - path: app/transcript.js
+    symbols: [TranscriptModel, formatBlockHeader, blockLines]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: app/tui-transcript.js
+    symbols: [createTranscriptPane]
+  - path: app/theme.js
+    symbols: [STAMP_COLOR, splitStamp, colorizeStamp, classifyLine, colorizeLine]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+tests:
+  - path: tests/transcript-stamp.test.js
+    cases:
+      - "formatStamp() writes one HH:MM:SS mark in local time"
+      - "withStamp() prefixes a display line and refuses a fake mark"
+      - "createStamper() takes the time from the caller and can be switched off"
+      - "the transcript model stamps an entry once and keeps the payload verbatim"
+      - "the transcript view stamps the first non-blank line of each entry"
+      - "setStamping(false) marks nothing, so a replay shows no reload time"
+      - "the palette sees through a stamp and paints it as chrome"
+      - "the real TUI stamps each block and the reload marks nothing"

@@ -50,6 +50,10 @@ export async function runTurn(session, userInput) {
   const { contextWindow } = session;
 
   contextWindow.add({ role: 'user', content: userInput });
+  // The first chunk of a turn is the moment the conversation starts existing on disk:
+  // the host writes the session record on this hook (`app/session-autosave.js`), so a
+  // turn that dies before it ends still leaves the user's own message behind.
+  session.notifyChunksChanged?.('user');
   // The chunk is what the model receives, verbatim; the hook is presentation only,
   // and a hook that throws must never cost the user their prompt.
   if (typeof session.onUserMessage === 'function') {

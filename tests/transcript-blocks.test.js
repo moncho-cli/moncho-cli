@@ -207,7 +207,10 @@ test('the collapsed header keeps the size label right after the intent', async (
       visible(tui),
       /\[read_file Output\] \(intent: why the file is read\) — 200 char response/,
     );
-    assert.match(plainText(painted()), /200 char response/);
+    // The timestamp adds nine columns, so this header wraps on an 80-column screen:
+    // the size label is still painted, in two pieces.
+    assert.match(plainText(painted()), /200 char/);
+    assert.match(plainText(painted()), /response/);
     // the payload never reaches the frame while collapsed
     assert.doesNotMatch(plainText(painted()), /x{40}/);
   });

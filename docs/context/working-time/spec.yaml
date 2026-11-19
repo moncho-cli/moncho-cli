@@ -1,0 +1,47 @@
+id: context/working-time
+domain: context
+title: Working time counted from model thinking and tool spans
+status: active
+summary: >
+  A session counts how long it has actually been working: every model call is a
+  thinking span and every tool batch is one tool span, while idle time and reading
+  time are not work. createWorkingClock() opens and closes those spans, ticks once
+  a second while one is open so the row climbs, and exposes openTotals()/isWorking()
+  to the front end. formatDuration()/formatWorkRow() turn milliseconds into the one
+  row, which app/work-row.js paints right-aligned above the token meter — through
+  the same composer as the status bar, and empty until some time was worked — and
+  app/status-rows.js builds the pair so the two rows share one width. The time is
+  host state, never a chunk: only the committed time is persisted, per model, in
+  the usage table the session file keeps (applyTime/recordTime), and /usage appends
+  the working suffix only when there is some.
+code:
+  - path: utils/working-time.js
+    symbols: [WORK_KINDS, WORK_TICK_MS, formatDuration, formatWorkRow, createWorkingClock]
+  - path: app/work-row.js
+    symbols: [createWorkRow]
+  - path: app/status-rows.js
+    symbols: [createStatusRows]
+  - path: utils/usage-stats.js
+    symbols: [applyTime, createUsageMeter, formatUsageRow]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/compaction-runner.js
+    symbols: [createSummaryCallModel]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/working-time.test.js
+    cases:
+      - "formatDuration() spells a short, a medium and a long span"
+      - "formatWorkRow() says nothing until the session has worked"
+      - "createWorkingClock() counts only thinking and tool spans"
+      - "createWorkingClock() arms one timer and reports its own tick length"
+      - "createWorkRow() right-aligns the counter and paints nothing while idle"
+      - "createStatusRows() keeps the counter and the meter on one width"
+      - "the manager times the model call and the tool batch into the usage table"
+      - "the time never reaches the context window"
+  - path: tests/tui.test.js
+    cases:
+      - "the working-time row sits right above the meter and shares its column"

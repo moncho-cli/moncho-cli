@@ -160,8 +160,18 @@ export async function runSessionLoop({
   drive = null,
   abortManager = null,
   saveSession = () => null,
+  autosave = null,
   onTurnLanded = null,
 } = {}) {
+  // Every save the loop makes holds the whole window, so it *supersedes* whatever the
+  // mid-turn autosave had queued: settling here drops that write instead of repeating
+  // it, and restarts the throttle from this save (`app/session-autosave.js`).
+  const commit = (reason) => {
+    const record = saveSession(reason);
+    autosave?.settle?.();
+    return record;
+  };
+
   while (true) {
     // Between two turns -- and only there -- the pending-message queue is drained
     // (app/message-queue.js#nextPrompt): a message typed while the last turn was in
@@ -179,7 +189,7 @@ export async function runSessionLoop({
 
     if (isExitInput(userInput)) {
       log('Exiting...');
-      saveSession('exit');
+      commit('exit');
       return 'exit';
     }
     if (!String(userInput ?? '').trim()) continue;
@@ -197,7 +207,7 @@ export async function runSessionLoop({
       // The turn landed: whatever the provider recovered from on the way is no
       // longer worth showing (main.js drops the retry notice here).
       if (typeof onTurnLanded === 'function') onTurnLanded();
-      saveSession('turn');
+      commit('turn');
     } catch (error) {
       if (isAbortError(error)) {
         log('\n[Info] Task was aborted.');

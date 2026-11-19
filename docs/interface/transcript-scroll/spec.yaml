@@ -10,6 +10,8 @@ summary: >
   the view applies it on every repaint, overriding blessed's automatic jump. A
   block toggle forces the hold regardless of the rule.
 code:
+  - path: app/transcript-scroll.js
+    symbols: [FOLLOW_BOTTOM_PERCENT, WHEEL_STEP_ROWS, pageStepRows, isFollowingScroll]
   - path: app/transcript-view.js
     symbols: [FOLLOW_BOTTOM_PERCENT, isFollowingScroll, createTranscriptView]
 tests:

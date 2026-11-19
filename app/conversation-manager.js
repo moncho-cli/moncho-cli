@@ -3,7 +3,8 @@ import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
 import { registerContextWindow, registerTaskPulse } from '../utils/host.js';
 import { createTaskPulse, formatPulseLimitNotice } from '../utils/task-pulse.js';
-import { createUsageMeter, recordProviderCall } from '../utils/usage-stats.js';
+import { createUsageMeter, recordProviderCall, totalUsage } from '../utils/usage-stats.js';
+import { createWorkingClock } from '../utils/working-time.js';
 import { handleToolBatch } from './tool-batch.js';
 import { createCompactionRunner, createSummaryCallModel } from './compaction-runner.js';
 import { formatRetryNotice, formatFailureNotice } from './notice-overlay.js';
@@ -17,12 +18,12 @@ import { runTurn } from './turn-runner.js';
  * `getMessages()`/`reset()` remain as compatibility shims.
  *
  * The class owns everything that outlives a turn — the window, the usage meter, the
- * model-call pulse, the compaction runner, the tool functions — plus the hooks the
- * host needs. The *control flow of one turn* lives in `app/turn-runner.js`, which
- * calls the members below; that split is what keeps both modules under the line
- * budget and lets a turn be tested against a stub session.
+ * working clock, the model-call pulse, the compaction runner, the tool functions —
+ * plus the hooks the host needs. The *control flow of one turn* lives in
+ * `app/turn-runner.js`, which calls the members below; that split is what keeps both
+ * modules under the line budget and lets a turn be tested against a stub session.
  *
- * Four responsibilities are documented where they are used:
+ * Five responsibilities are documented where they are used:
  *
  *  - the tool-call `intent` is printed *and* persisted in the result chunk, so the
  *    reason for a call is both visible and part of the model's context;
@@ -33,7 +34,12 @@ import { runTurn } from './turn-runner.js';
  *    dispatched simultaneously, one chunk per call in call order;
  *  - every agent call is counted for the model-call pulse (`docs/context/call-pulse`),
  *    which is host state and never a chunk; the line itself is paused, so the count
- *    does not ride the request.
+ *    does not ride the request;
+ *  - every model call and every tool batch is **timed** (`utils/working-time.js`), so
+ *    the session can say how long it has been working; the time is host state like
+ *    the pulse — never a chunk, never sent to the provider — and the committed part
+ *    of it is accounted per model in the usage table the session file keeps
+ *    (`docs/context/working-time`).
  */
 export class ConversationManager {
   constructor(toolFunctions, getTools, getAbortSignal = () => null, options = {}) {
@@ -42,6 +48,11 @@ export class ConversationManager {
     this.getAbortSignal = getAbortSignal; // Function that returns the active task's AbortSignal
     this.log = options.log || ((message) => console.log(message));
     this.onContextChange = options.onContextChange || null;
+    // The conversation itself changed (a chunk landed, a compaction rewrote the
+    // window). Distinct from `onContextChange`, which is the *meter* and also fires
+    // before a call that adds nothing: the host saves the session on this hook
+    // (app/session-autosave.js), so it must not fire on a bare repaint.
+    this.onChunksChange = options.onChunksChange || null;
     // The user's own message is announced before the model is called, so both
     // front ends can echo it: the transcript is otherwise one-sided.
     this.onUserMessage = options.onUserMessage || null;
@@ -52,6 +63,9 @@ export class ConversationManager {
     this.model = options.model || null;
     // Token accounting per model (utils/usage-stats.js).
     this.usage = createUsageMeter({ models: options.usage || {} });
+    // The working-time clock (utils/working-time.js): only the spans the model spent
+    // thinking and the spans a tool batch spent resolving are counted.
+    this.working = options.working || createWorkingClock(options.workingOptions || {});
     // How many tool calls of one assistant message run at once.
     this.maxParallelToolCalls = options.maxParallelToolCalls ?? null;
     // The pre-dispatch gate (app/tool-guard.js): the mode rules that decide which
@@ -62,12 +76,10 @@ export class ConversationManager {
     // tests deterministic, and it is the object `update_task` resets through the
     // host registry.
     this.pulse = options.pulse || createTaskPulse(options.pulseLimit ? { limit: options.pulseLimit } : {});
-    // The provider call, injectable so a turn can be driven by a stub
-    // (tests/turn-runner.test.js) instead of the network.
     // The provider call, injectable (a stub drives tests/turn-runner.test.js) and
     // adapted to one signature: `(messages, tools, signal, options)`.
-    this.callModel = options.callModel || ((messages, tools, signal, callOptions) =>
-      callOllama(messages, tools, false, signal, callOptions));
+    this.callModel = this.timedCallModel(options.callModel || ((messages, tools, signal, callOptions) =>
+      callOllama(messages, tools, false, signal, callOptions)));
     this.formatFailure = options.formatFailure || formatFailureNotice;
 
     this.contextWindow = options.contextWindow || new ContextWindow({
@@ -86,7 +98,43 @@ export class ConversationManager {
       log: (line) => this.log(line),
       notify: () => this.notifyContextChange(),
       callModel: createSummaryCallModel({ meter: (response, promptTokens) => this.recordUsage(response, promptTokens) }),
+      // The summariser is a provider call like any other, so it is timed like one
+      // and its time is attributed to the model that answered.
+      working: this.working,
+      meterTime: (span) => this.recordWorkTime(span),
     });
+  }
+
+  /**
+   * Wrap the provider call in a *thinking* span, so the wall clock the model spent
+   * answering is counted even when the call ends in a failure (the span is closed in
+   * a `finally`), and accounted against the model that answered.
+   *
+   * A call is counted for tokens when its answer lands; the time is counted around
+   * it, which is the same moment for a success and the honest moment for a retry
+   * that eventually threw.
+   */
+  timedCallModel(callModel) {
+    return async (...args) => {
+      const span = this.working.begin('thinking');
+      try {
+        return await callModel(...args);
+      } finally {
+        this.recordWorkTime({ kind: 'thinking', ms: this.working.end(span) });
+      }
+    };
+  }
+
+  /**
+   * Account one closed span against the model whose work it was.
+   *
+   * The committed time lands in the usage table (`utils/usage-stats.js#applyTime`),
+   * which is what the session file keeps, so `/usage` and a resumed session report
+   * the time the same way they report the tokens.
+   */
+  recordWorkTime({ kind = 'thinking', ms = 0 } = {}) {
+    const field = kind === 'tool' ? { toolMs: ms } : { thinkingMs: ms };
+    return this.usage.recordTime(this.model, field);
   }
 
   /** Ordered array of context chunks. */
@@ -97,6 +145,22 @@ export class ConversationManager {
   /** The per-model token table (a snapshot), for storage and `/usage`. */
   usageTable() {
     return this.usage.table();
+  }
+
+  /**
+   * The working-time totals the host paints: everything already accounted in the
+   * usage table (a resumed session included) **plus** the spans still open, so the
+   * number a row shows is current instead of one span stale.
+   */
+  workingTotals() {
+    const stored = totalUsage(this.usage.table());
+    const open = this.working.openTotals();
+    return {
+      thinkingMs: stored.thinkingMs + open.thinkingMs,
+      toolMs: stored.toolMs + open.toolMs,
+      totalMs: stored.thinkingMs + stored.toolMs + open.totalMs,
+      stored: { thinkingMs: stored.thinkingMs, toolMs: stored.toolMs },
+    };
   }
 
   /** The pulse's view for the host: count, limit and remaining calls. */
@@ -133,6 +197,27 @@ export class ConversationManager {
       // display only: a broken meter must not break the conversation
     }
     return stats;
+  }
+
+  /**
+   * Announce that the *conversation* changed: the hook the host autosaves on.
+   *
+   * `onContextChange` is a view (the meter follows the window, and it is repainted
+   * before a call that adds nothing), while this is the event the session record
+   * cares about — one chunk landed, or a compaction rewrote the whole array. So a
+   * session file is current while a long turn is still running, instead of only once
+   * it ends (`app/session-autosave.js`).
+   *
+   * Presentation-adjacent and just as forgiving: a hook that throws must never cost
+   * the user their turn, and without one nothing happens at all.
+   */
+  notifyChunksChanged(reason = 'chunk') {
+    if (!this.onChunksChange) return null;
+    try {
+      return this.onChunksChange(reason) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -196,7 +281,11 @@ export class ConversationManager {
    * not answer as the agent, and it is metered like any other provider call.
    */
   async maybeCompact(signal, options = {}) {
-    return this.compactionRunner.run(signal, options);
+    const result = await this.compactionRunner.run(signal, options);
+    // A compaction replaced the older 80% with one summary chunk: the array the
+    // session record holds is a different one now.
+    if (result?.compacted) this.notifyChunksChanged('compaction');
+    return result;
   }
 
   /**
@@ -208,25 +297,38 @@ export class ConversationManager {
    * that carries the call's signature (`docs/agent/tool-multicall`). Passing the
    * window, the log and the tool map in keeps this method the wiring only.
    *
+   * The whole batch is one *tool* span: the calls run at the same time, so timing
+   * them one by one would report the sum of a parallel batch instead of how long the
+   * user waited for it.
+   *
    * @returns {Promise<boolean>} true when a tool asked for a deferred compaction.
    */
   async handleToolCalls(toolCalls, signal) {
-    const report = await handleToolBatch({
-      toolCalls,
-      signal,
-      window: this.contextWindow,
-      toolFunctions: this.toolFunctions,
-      log: (line) => this.log(line),
-      notify: () => this.notifyContextChange(),
-      gate: this.toolGate,
-      ...(this.maxParallelToolCalls ? { max: this.maxParallelToolCalls } : {}),
-    });
-    this.lastBatch = report;
-    return report.compactionRequested;
+    const span = this.working.begin('tool');
+    try {
+      const report = await handleToolBatch({
+        toolCalls,
+        signal,
+        window: this.contextWindow,
+        toolFunctions: this.toolFunctions,
+        log: (line) => this.log(line),
+        notify: () => this.notifyContextChange(),
+        gate: this.toolGate,
+        ...(this.maxParallelToolCalls ? { max: this.maxParallelToolCalls } : {}),
+      });
+      this.lastBatch = report;
+      // An assistant chunk plus one chunk per call land in the same tick, so the
+      // record is written once for the whole batch (`app/session-autosave.js`).
+      this.notifyChunksChanged('tools');
+      return report.compactionRequested;
+    } finally {
+      this.recordWorkTime({ kind: 'tool', ms: this.working.end(span) });
+    }
   }
 
   async handleFinalResponse(content) {
     this.contextWindow.add({ role: "assistant", content });
+    this.notifyChunksChanged('reply');
     this.notifyContextChange();
 
     this.log("\n--- AI Response ---");

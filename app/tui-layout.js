@@ -5,10 +5,16 @@ import { createModeRow } from './session-mode-label.js';
 // Screen regions (from the bottom up):
 //   input box : bottom 0, height 3 (border 'line')
 //   queue     : bottom 3, height 0..n -> pending messages, one ✕ row each
-//   status bar: bottom 3 + queue height, height 1
-//   model row : bottom 4 + queue height, height 1 -> provider/model label
-//   transcript: bottom 5 + queue height .. below the brand row -> the conversation
+//   status bar: bottom 3 + queue height, height 1 -> status/spinner + token meter
+//   work row  : bottom 4 + queue height, height 1 -> the working-time counter
+//   model row : bottom 5 + queue height, height 1 -> mode label + provider/model
+//   transcript: bottom 6 + queue height .. below the brand row -> the conversation
 //   brand line: row 0, right-aligned -> "MONCHO (v x.y.z)"
+//
+// The work row sits directly *above* the status bar on purpose: it is the other
+// right-aligned single-row read-out, and stacking it above the meter keeps the two
+// numbers that both answer "how much has this cost" on adjacent lines
+// (task-backlog: "show next avobe the token window size information row").
 //
 // Two regions can move the others:
 //  - the queue bar, while it is empty it is hidden and every region above it keeps
@@ -16,8 +22,9 @@ import { createModeRow } from './session-mode-label.js';
 //  - the brand row, the very first line of the screen: while the mark is shown the
 //    conversation is displaced one row down, and it gets the row back when the mark
 //    is hidden because the window is too narrow to hold it (see setBrandRows).
-export const TRANSCRIPT_BOTTOM = 5;
-export const MODEL_BOTTOM = 4;
+export const TRANSCRIPT_BOTTOM = 6;
+export const MODEL_BOTTOM = 5;
+export const WORK_BOTTOM = 4;
 export const STATUS_BOTTOM = 3;
 export const QUEUE_BOTTOM = STATUS_BOTTOM;
 export const INPUT_HEIGHT = 3;
@@ -69,6 +76,21 @@ export function createLayout({ screen, modelLabel = '', mode = null, repaint = n
     tags: false,
     padding: { left: 1, right: 1 },
     content: 'Ready',
+  });
+
+  // The working-time row: one right-aligned line above the meter, empty until the
+  // session has worked for a second (app/work-row.js). It never holds the focus and
+  // its content is painted through composeStatusRow, so it is a plain box like the
+  // status bar.
+  const workBar = blessed.box({
+    parent: screen,
+    left: 0,
+    right: 0,
+    bottom: WORK_BOTTOM,
+    height: 1,
+    tags: false,
+    padding: { left: 1, right: 1 },
+    content: '',
   });
 
   const modelBar = blessed.box({
@@ -148,8 +170,9 @@ export function createLayout({ screen, modelLabel = '', mode = null, repaint = n
 
   /**
    * Make room for `rows` queue rows right above the input box: the status bar,
-   * the model row and the transcript shift up by that many rows, and at 0 the
-   * region is hidden again and every anchor is restored to its base value.
+   * the working-time row, the model row and the transcript shift up by that many
+   * rows, and at 0 the region is hidden again and every anchor is restored to its
+   * base value.
    *
    * Returns the height actually applied, so the caller can tell whether the
    * layout moved.
@@ -161,6 +184,7 @@ export function createLayout({ screen, modelLabel = '', mode = null, repaint = n
     queueBar.height = height;
     queueBar.hidden = height === 0;
     statusBar.bottom = STATUS_BOTTOM + offset;
+    workBar.bottom = WORK_BOTTOM + offset;
     modelBar.bottom = MODEL_BOTTOM + offset;
     transcript.bottom = TRANSCRIPT_BOTTOM + offset;
     return height;
@@ -184,7 +208,7 @@ export function createLayout({ screen, modelLabel = '', mode = null, repaint = n
   }
 
   return {
-    transcript, statusBar, modelBar, modeRow, queueBar, inputBox, setQueueHeight,
-    setBrandRows,
+    transcript, statusBar, workBar, modelBar, modeRow, queueBar, inputBox,
+    setQueueHeight, setBrandRows,
   };
 }

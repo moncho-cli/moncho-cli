@@ -1,4 +1,5 @@
 import { estimateTextTokens, formatTokenCount } from './tokens.js';
+import { formatDuration } from './working-time.js';
 
 /**
  * Token usage accounting, per model (task-backlog: "within each session, we
@@ -14,6 +15,13 @@ import { estimateTextTokens, formatTokenCount } from './tokens.js';
  *   - an entry says how many of its calls were reported by the provider
  *     (`exactRequests`) and how many had to be estimated (`estimatedRequests`),
  *     because mixing the two silently would make a comparison a lie;
+ *   - the same entry carries the **working** time attributed to that model
+ *     (`thinkingMs`, `toolMs`): how long it spent thinking and how long the tool
+ *     calls it asked for spent resolving (task-backlog: "add working time counter
+ *     to sessions … save this also in the usage stats"). Time is written by
+ *     `applyTime()` / `createUsageMeter().recordTime()`, never by `applyCall()`,
+ *     because a call is counted when its answer lands while a span is timed around
+ *     it (`utils/working-time.js`);
  *   - everything is a plain JSON object, so a session file can store it and the
  *     store can validate it when it is read back.
  *
@@ -31,6 +39,8 @@ const COUNTERS = [
   'promptTokens',
   'completionTokens',
   'totalTokens',
+  'thinkingMs',
+  'toolMs',
 ];
 
 /** A non-negative integer counter, or 0. */
@@ -48,6 +58,8 @@ export function emptyModelUsage() {
     promptTokens: 0,
     completionTokens: 0,
     totalTokens: 0,
+    thinkingMs: 0,
+    toolMs: 0,
   };
 }
 
@@ -101,6 +113,21 @@ export function applyCall(entry, { usage = null, estimated = null } = {}) {
   return next;
 }
 
+/**
+ * Add one timed span to a model entry, returning a new entry.
+ *
+ * Kept apart from `applyCall()` on purpose: tokens are counted per *call* (the
+ * answer that landed), while time is counted per *span* (how long the model was
+ * thinking, how long a tool batch took). A call retried twice is still one request
+ * but three thinking spans, and both facts have to survive.
+ */
+export function applyTime(entry, { thinkingMs = 0, toolMs = 0 } = {}) {
+  const next = sanitizeEntry(entry);
+  next.thinkingMs += toCount(thinkingMs);
+  next.toolMs += toCount(toolMs);
+  return next;
+}
+
 /** The sums across every model, plus how many models there are. */
 export function totalUsage(table = {}) {
   const normalized = normalizeModelUsage(table);
@@ -119,8 +146,15 @@ export function formatUsageRow(name, entry) {
   const split = row.estimatedRequests === 0
     ? 'all exact'
     : `${row.exactRequests} exact, ${row.estimatedRequests} estimated`;
-  return `${name} — ${row.requests} request(s) (${split}) · prompt ${formatTokenCount(row.promptTokens)}`
+  const line = `${name} — ${row.requests} request(s) (${split}) · prompt ${formatTokenCount(row.promptTokens)}`
     + ` · completion ${formatTokenCount(row.completionTokens)} · total ${formatTokenCount(row.totalTokens)}`;
+  // The working time is appended only when there is some: a table written before
+  // the counter existed — or one a unit test only gave tokens to — keeps exactly
+  // the row it always had.
+  const worked = row.thinkingMs + row.toolMs;
+  if (worked <= 0) return line;
+  return `${line} · working ${formatDuration(worked)}`
+    + ` (thinking ${formatDuration(row.thinkingMs)}, tools ${formatDuration(row.toolMs)})`;
 }
 
 /**
@@ -144,11 +178,13 @@ export function formatUsageRows(table = {}) {
 /**
  * The live meter the conversation loop records into.
  *
- * `record()` is the only mutator: it keys the call by the model that answered it
- * and keeps the table immutable from the outside, so a reader can hold a snapshot
- * without seeing it change under its hands. `replace()` is what resuming a
- * session uses: the session file is the accounting record, so its table becomes
- * the live one instead of being added on top of it (a resume can happen twice).
+ * `record()` is the only mutator of the *token* counters: it keys the call by the
+ * model that answered it and keeps the table immutable from the outside, so a
+ * reader can hold a snapshot without seeing it change under its hands.
+ * `recordTime()` is the second mutator, for the working-time counters, and
+ * `replace()` is what resuming a session uses: the session file is the accounting
+ * record, so its table becomes the live one instead of being added on top of it (a
+ * resume can happen twice).
  */
 export function createUsageMeter({ models = {} } = {}) {
   let table = normalizeModelUsage(models);
@@ -162,6 +198,19 @@ export function createUsageMeter({ models = {} } = {}) {
     record(model, call = {}) {
       const key = String(model ?? '').trim() || UNKNOWN_MODEL;
       const entry = applyCall(table[key], call);
+      table = { ...table, [key]: entry };
+      return entry;
+    },
+    /**
+     * Count one timed span against `model`; returns the updated entry.
+     *
+     * The model is the one that was thinking (a `thinking` span) or the one whose
+     * tool calls were running (a `tool` span), so the table answers "which model
+     * cost me the wall clock" and not only "which model cost me the tokens".
+     */
+    recordTime(model, span = {}) {
+      const key = String(model ?? '').trim() || UNKNOWN_MODEL;
+      const entry = applyTime(table[key], span);
       table = { ...table, [key]: entry };
       return entry;
     },

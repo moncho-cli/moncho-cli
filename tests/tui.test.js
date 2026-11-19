@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createTui } from '../app/tui.js';
-import { fakeTty, plainText, withTui, visible } from './support/tui-harness.js';
+import { fakeTty, plainText, statusRow, withTui, visible } from './support/tui-harness.js';
 
 /**
  * The TUI screen wiring: the regions, the scroll bindings, the question surface
@@ -17,7 +17,12 @@ test('a pty gets the three-region TUI (transcript, status bar, input box)', asyn
     assert.ok(tui, 'expected a TUI when output.isTTY is true');
 
     // transcript: bordered, scrollable, pinned above the status bar
-    assert.equal(tui.transcript.bottom, 5);
+    assert.equal(tui.transcript.bottom, 6);
+    // the working-time row: one right-aligned line directly above the meter,
+    // empty until the session has worked a second (app/work-row.js)
+    assert.equal(tui.workBar.height, 1);
+    assert.equal(tui.workBar.bottom, 4);
+    assert.equal(tui.workBar.getContent(), '');
     // ...and starting one row down: row 0 is the brand line, so the conversation's
     // own border is the row below the mark (see tests/brand.test.js).
     assert.equal(tui.transcript.top, 1);
@@ -30,7 +35,7 @@ test('a pty gets the three-region TUI (transcript, status bar, input box)', asyn
 
     // model label: one row between the status bar and the input box
     assert.equal(tui.modelBar.height, 1);
-    assert.equal(tui.modelBar.bottom, 4);
+    assert.equal(tui.modelBar.bottom, 5);
     // The row opens with the session's mode (app/session-mode-label.js): the label
     // is the leftmost cell, then the identity this option asked for. A TUI built
     // without a mode shows the state a session opens in, which is `Work`.
@@ -66,8 +71,9 @@ test('the queue bar shifts the regions above it up by its height', async () => {
     assert.equal(tui.queueBar.height, 2);
     assert.equal(tui.queueBar.hidden, false);
     assert.equal(tui.statusBar.bottom, 5);
-    assert.equal(tui.modelBar.bottom, 6);
-    assert.equal(tui.transcript.bottom, 7);
+    assert.equal(tui.workBar.bottom, 6);
+    assert.equal(tui.modelBar.bottom, 7);
+    assert.equal(tui.transcript.bottom, 8);
     assert.equal(tui.inputBox.bottom, 0);
 
     // 0 hides the region again and restores every anchor
@@ -75,8 +81,9 @@ test('the queue bar shifts the regions above it up by its height', async () => {
     assert.equal(tui.queueBar.height, 0);
     assert.equal(tui.queueBar.hidden, true);
     assert.equal(tui.statusBar.bottom, 3);
-    assert.equal(tui.modelBar.bottom, 4);
-    assert.equal(tui.transcript.bottom, 5);
+    assert.equal(tui.workBar.bottom, 4);
+    assert.equal(tui.modelBar.bottom, 5);
+    assert.equal(tui.transcript.bottom, 6);
 
     // junk is treated as "no rows", never as a crash
     assert.equal(tui.setQueueHeight(-5), 0);
@@ -124,9 +131,10 @@ test('a mid-session resize keeps the layout and repaints', async () => {
     assert.equal(tui.screen.width, 100);
     assert.equal(tui.screen.height, 30);
     // relative layout => the regions keep their anchors
-    assert.equal(tui.transcript.bottom, 5);
+    assert.equal(tui.transcript.bottom, 6);
     assert.equal(tui.statusBar.bottom, 3);
-    assert.equal(tui.modelBar.bottom, 4);
+    assert.equal(tui.workBar.bottom, 4);
+    assert.equal(tui.modelBar.bottom, 5);
     assert.equal(tui.inputBox.bottom, 0);
     assert.equal(tui.queueBar.bottom, 3);
     assert.ok(before >= 0);
@@ -237,5 +245,28 @@ test('notifyCompaction() marks a compaction in the transcript, once per event', 
       lastCompaction: { ...stats.lastCompaction, olderChunks: 3, keptChunks: 2 },
     });
     assert.equal(visible(tui).split('[Context] compaction fired').length - 1, 2);
+  });
+});
+
+test('the working-time row sits right above the meter and shares its column', async () => {
+  await withTui((tui) => {
+    // A fresh session has worked nothing: the row paints nothing at all, while the
+    // region keeps its row so nothing above it moves when the number appears.
+    assert.equal(tui.workLine, '');
+    assert.equal(tui.workTotals, null);
+    assert.equal(tui.workBar.getContent(), '');
+    assert.equal(tui.workBar.bottom, tui.statusBar.bottom + 1);
+
+    tui.setTokens('12% used');
+    tui.setWork({ thinkingMs: 30_000, toolMs: 15_000 });
+
+    const counter = tui.workBar.getContent().replace(/\x1b\[[\d;]*m/g, '');
+    const meter = statusRow(tui);
+    assert.match(counter, /working 45s/);
+    // Both rows are composed by composeStatusRow() against one width (they are
+    // built as a pair by app/status-rows.js), so both end at the same column.
+    assert.equal(counter.length, meter.length);
+    assert.ok(counter.endsWith('working 45s'));
+    assert.ok(meter.endsWith('12% used'));
   });
 });

@@ -1,3 +1,5 @@
+import { withStamp } from './transcript-stamp.js';
+
 /**
  * The transcript as a model, independent of any terminal widget.
  *
@@ -6,6 +8,11 @@
  * line carrying its "X char response" size, expandable on click). The display
  * lines are derived from the entries, so toggling a block never loses the payload
  * — the exact bytes stay in `block.body`.
+ *
+ * An entry may also carry a `stamp` (`HH:MM:SS`, app/transcript-stamp.js): the time
+ * it was appended, shown at the head of its **first** display line. It is
+ * presentation only — the payload, the display-line ranges and the click math are
+ * untouched by it, and nothing here ever reaches the model.
  *
  * Pure: no neo-blessed, no screen, so every rule below is unit testable.
  */
@@ -22,11 +29,13 @@ export function formatCharCount(chars) {
   return `${Number(chars) || 0} char response`;
 }
 
-/** The single display line of a block header, marker and size label included. */
+/** The single display line of a block header, stamp and size label included. */
 export function formatBlockHeader(block) {
   const marker = block.collapsed ? COLLAPSED_MARKER : EXPANDED_MARKER;
   const hint = block.collapsed ? 'click to expand' : 'click to collapse';
-  return `${marker} ${block.header} — ${formatCharCount(block.chars)} (${hint})`;
+  // The stamp goes *before* the marker, so the fold glyph keeps the leftmost cell
+  // and every header still starts at the same column.
+  return withStamp(`${marker} ${block.header} — ${formatCharCount(block.chars)} (${hint})`, block.stamp);
 }
 
 /** Display lines of one block: the header, plus the body when expanded. */
@@ -73,9 +82,15 @@ export class TranscriptModel {
     return this.#entries;
   }
 
-  /** Append one display-ready line. */
-  addLine(text) {
-    this.#entries.push({ type: 'line', text: String(text ?? '') });
+  /**
+   * Append one display-ready line.
+   *
+   * `stamp` (optional) is the `HH:MM:SS` mark shown at the head of the line; it is
+   * stored on the entry, so a repaint — a toggle, a scroll-driven `setContent()` —
+   * paints the very same mark instead of a new one.
+   */
+  addLine(text, { stamp = null } = {}) {
+    this.#entries.push({ type: 'line', text: String(text ?? ''), stamp: stamp || null });
     return this.#entries.length;
   }
 
@@ -87,8 +102,10 @@ export class TranscriptModel {
    * lines actually painted. Anything spanning several lines — or longer than
    * COLLAPSE_THRESHOLD_CHARS — starts collapsed, so tool output is hidden behind
    * a click "most of the times" while a one-word result stays readable inline.
+   *
+   * `stamp` marks the entry the way `addLine()` does, on the header line.
    */
-  addBlock({ header = '', body = '', bodyLines = null, collapsed = null } = {}) {
+  addBlock({ header = '', body = '', bodyLines = null, collapsed = null, stamp = null } = {}) {
     const source = String(body ?? '');
     const lines = Array.isArray(bodyLines) ? [...bodyLines] : source.split('\n');
     const block = {
@@ -98,6 +115,7 @@ export class TranscriptModel {
       body: source,
       bodyLines: lines,
       chars: source.length,
+      stamp: stamp || null,
       collapsed: collapsed == null
         ? lines.length > 1 || source.length > COLLAPSE_THRESHOLD_CHARS
         : Boolean(collapsed),
@@ -140,7 +158,7 @@ export class TranscriptModel {
   get lines() {
     const out = [];
     for (const entry of this.#entries) {
-      if (entry.type === 'line') out.push(entry.text);
+      if (entry.type === 'line') out.push(withStamp(entry.text, entry.stamp));
       else out.push(...blockLines(entry));
     }
     return out;

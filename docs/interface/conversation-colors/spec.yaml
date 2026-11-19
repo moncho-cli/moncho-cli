@@ -16,9 +16,12 @@ summary: >
   glyphs and the block-click row math are unchanged, and colour stays presentation
   only: the model and the session file never see a tag and the line CLI never
   renders one.
+  A leading HH:MM:SS stamp is seen through (splitStamp): a stamped `You:` row is
+  still the user's echo and a stamped tool header is still a tool row, while the
+  mark itself is painted in the low-key chrome colour (STAMP_COLOR, colorizeStamp).
 code:
   - path: app/theme.js
-    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, INTENT_COLOR, INTENT_BOLD, colorizeIntent, highlightIntentSpans, isTagged, classifyLine, colorizeLine, colorizeLines]
+    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, INTENT_COLOR, INTENT_BOLD, STAMP_COLOR, colorizeIntent, colorizeStamp, highlightIntentSpans, splitStamp, isTagged, classifyLine, colorizeLine, colorizeLines]
   - path: app/tui-render.js
     symbols: [formatTranscript, formatUserEcho, USER_ECHO_HEADER, USER_ECHO_PREFIX]
   - path: app/transcript.js

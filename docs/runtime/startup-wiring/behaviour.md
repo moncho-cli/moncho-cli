@@ -78,6 +78,11 @@ that seam with a stub provider.
   is snapshotted to `agent/sessions/<id>/context.json` (see
   `docs/runtime/session-store`), so the stored context matches what the model saw,
   compaction included.
+- **The record is not only written when a turn ends.** The manager announces every
+  change to the conversation itself (`onChunksChange`: the user chunk, a tool batch, a
+  final reply, a compaction), and `app/session-autosave.js` writes the record on the
+  first change and coalesces a burst into one trailing write — so a turn that takes
+  minutes is on disk while it runs, not only once it finishes.
 - A failed save is reported as a line and never breaks the loop: losing the record
   is bad, losing the conversation is worse.
 
