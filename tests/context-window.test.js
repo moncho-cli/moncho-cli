@@ -57,7 +57,7 @@ test('budget helpers and formatting', () => {
 // Compaction
 // ---------------------------------------------------------------------------
 
-test('the older 80% / newest 20% split is driven by token mass', () => {
+test('the older 70% / newest 30% split is driven by token mass', () => {
   const chunks = Array.from({ length: 5 }, (_, i) => chunk('x'.repeat(400), `m${i}`));
   const split = splitByTokenBudget(chunks);
 

@@ -93,3 +93,29 @@ export function trackingFenceRefusal(path) {
     path,
   };
 }
+
+/**
+ * The refusal for a `delete_file` call that names a tracking file, or `null`.
+ *
+ * The fence is symmetric: whichever generic writer is pointed at the two files, the
+ * answer is the same — `update_task` owns them. Deleting one is worse than patching
+ * it, so the refusal says why and names the tool that can change the list instead.
+ *
+ * @param {string} path the path argument of the call
+ * @returns {{status: string, code: string, message: string, guidance: string, path: string}|null}
+ */
+export function trackingDeleteRefusal(path) {
+  const kind = toolOwnedKind(path);
+  if (!kind) return null;
+  return {
+    status: 'error',
+    code: TRACKING_FILE_REFUSAL,
+    message:
+      `${basename(path)} is owned by ${TRACKING_TOOL}, so it is never deleted: the tracking `
+      + 'loop keeps both files in place for the whole session.',
+    guidance:
+      `Use ${TRACKING_TOOL} to change the document instead (\`action: "complete"\` to move on, `
+      + '`"status"` to mark the list done).',
+    path,
+  };
+}

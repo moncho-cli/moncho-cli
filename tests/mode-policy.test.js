@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   READ_ONLY_TOOLS, TRACKING_TOOLS, SCOPED_WRITER_TOOLS, SHELL_TOOLS, WRITER_TOOLS,
-  DESIGN_WRITABLE_FILES, normalizeTargetPath, isDesignWritable,
+  DESTRUCTIVE_TOOLS, DESIGN_WRITABLE_FILES, normalizeTargetPath, isDesignWritable,
   refusalForMode, toolsForMode, gateForMode,
 } from '../app/mode-policy.js';
 import { createSessionMode, MODES } from '../app/session-mode.js';
@@ -15,7 +15,7 @@ const tool = (name) => ({ type: 'function', function: { name, parameters: {} } }
 
 const ALL = [
   tool('read_file'), tool('blob'), tool('grep'), tool('compact_context'),
-  tool('update_task'), tool('write_file'), tool('patch_file'),
+  tool('update_task'), tool('write_file'), tool('patch_file'), tool('delete_file'),
   tool('run_bash'), tool('run_npm'),
 ];
 
@@ -36,11 +36,18 @@ test('the tool families are disjoint, so one table decides every mode', () => {
       seen.add(name);
     }
   }
-  assert.deepEqual(WRITER_TOOLS, [...SCOPED_WRITER_TOOLS, ...SHELL_TOOLS]);
+  assert.deepEqual(WRITER_TOOLS, [...SCOPED_WRITER_TOOLS, ...SHELL_TOOLS, ...DESTRUCTIVE_TOOLS]);
   // A shell can write a file, so it is a writer and never "read-only".
   for (const name of SHELL_TOOLS) {
     assert.ok(!READ_ONLY_TOOLS.includes(name));
     assert.ok(!SCOPED_WRITER_TOOLS.includes(name));
+  }
+  // A delete removes a file, so it is a writer too — and never a scoped one: no file a
+  // mode may write is one it may destroy, so the family takes no path check at all.
+  for (const name of DESTRUCTIVE_TOOLS) {
+    assert.ok(WRITER_TOOLS.includes(name), `${name} is a writer`);
+    assert.ok(!SCOPED_WRITER_TOOLS.includes(name), `${name} is not a scoped writer`);
+    assert.ok(!READ_ONLY_TOOLS.includes(name), `${name} is not read-only`);
   }
   assert.deepEqual(DESIGN_WRITABLE_FILES, ['task.md', 'implementation_plan.md']);
 });

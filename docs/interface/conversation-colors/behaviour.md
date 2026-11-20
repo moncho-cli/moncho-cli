@@ -4,7 +4,8 @@ One screenful of transcript mixes things of very different value: the prompt the
 user typed, the tool calls the agent made, the reason for each call, the results it
 got back, the context notices, and the occasional error. On a monochrome screen they
 all look alike, so the conversation is hard to skim. This spec fixes one colour per
-**kind** of row; the implementation is linked below.
+**kind** of row, and one colour per **family of tool operation** inside the tool kind;
+the implementation is linked below.
 
 ## The kinds
 
@@ -13,7 +14,7 @@ all look alike, so the conversation is hard to skim. This spec fixes one colour 
 | Kind | Rows | Colour |
 | -------- | ------------------------------------------------------------ | ----------- |
 | `user` | the `You:` header of the echoed prompt | cyan |
-| `tool` | `-> Calling …`, `[<tool> Output]`, a block header | yellow |
+| `tool` | `-> Calling …`, `[<tool> Output]`, a block header | by tool family (below) |
 | `intent` | the `intent: …` row, and the `(intent: …)` span inside a tool row | bright blue, bold |
 | `context` | `[Context]` usage and compaction notices | magenta |
 | `tracking` | a `[Tracking]` task/plan milestone | bright green, bold |
@@ -25,6 +26,38 @@ all look alike, so the conversation is hard to skim. This spec fixes one colour 
 - Ordinary prose gets **no** colour. It is the majority of the screen and the
   terminal default reads best; the markdown renderer already colours the parts of a
   reply that carry structure.
+
+## The tool families (task-backlog)
+
+> use different colors for read, write, and bash type of operations so they are easy
+> trackable in the conversation at a glance
+
+The tool kind is the busiest kind of row: a transcript holds a dozen of them in a row,
+and "a tool ran" is far less useful than *what kind of thing it did*. `app/tool-palette.js`
+subdivides the kind into families:
+
+| family | tools | colour | reads as |
+| ------ | ----- | ------ | -------- |
+| `read` | `read_file`, `blob`, `grep` | bright cyan | looking, nothing changed |
+| `write` | `write_file`, `patch_file`, `delete_file` | green | the tree changed |
+| `bash` | `run_bash`, `run_npm` | yellow | a process ran |
+| `other` | `update_task`, `compact_context`, anything unlisted | yellow | neither of the above |
+
+- `toolFamily()` maps a **name** to a family and answers `other` for anything unlisted.
+  An unclassified tool is never painted as a write: the mapping is a table, not a guess.
+- `toolNameOf(line)` recovers the tool a rendered row names, from the two shapes
+  `app/tool-call-format.js` produces: the `-> Calling <name>(…)` line and the
+  `[<name> Output]` header (a collapsed block carries that header mid-row). A row that
+  names no tool gets the kind's own colour, and `CONVERSATION_COLORS.tool` (yellow) is
+  exactly that fallback.
+- Three decisions the table encodes on purpose:
+  - `read` is **bright cyan**, never plain cyan: plain cyan is the user's own echo, and
+    "what I asked" must not read as "what the agent looked at". The bright variant is
+    also the colour the `<file …>` / `<grep …>` delimiter already has, so a read and its
+    own output read as one block.
+  - `write` is **plain green**, deliberately not the bright green a `[Tracking]` row
+    carries: the two sit next to each other and a milestone is not an edit.
+  - `bash` and `other` share yellow, which is the family colour the kind started from.
 
 ## The intent (task-backlog)
 
@@ -47,10 +80,11 @@ takes are both covered:
 
 - the standalone `intent: …` row under a `-> Calling …` line (`classifyLine()`
   returns `intent` for it, and the row is painted with the style from end to end);
-- the `(intent: …)` span of a `[<tool> Output]` header — and the `intent: …` tail of
-  a `-> Calling name(args, intent: …)` line — inside a row that already has a colour.
-  `highlightIntentSpans()` recolours **only that span**, so the header keeps the tool
-  yellow (or the error red) and the reader still gets "what this was for" at a glance.
+- the `(intent: …)` span of a `[<tool> Output]` header — inside a row that already has
+  the colour of its own **tool family** (see above), so a read header is bright cyan, a
+  write header green and a shell header yellow. `highlightIntentSpans()` recolours
+  **only that span**, so the reader still gets "what this was for" at a glance without
+  losing "what kind of call it was".
 
 Two consequences the tests pin down:
 
@@ -90,7 +124,8 @@ transcript. Both are applied at the end of `formatTranscript()`, which means:
   tag adds no visible width;
 - nested tags are safe: neo-blessed restores the outer colour when an inner tag
   closes, so a coloured row keeps its colour after an inline `**bold**` or `` `code` ``
-  span — and the intent span closes back into the yellow of the tool row around it.
+  span — and the intent span closes back into the family colour of the tool row around
+  it.
 
 ## Presentation only
 
@@ -104,8 +139,10 @@ transcript. Both are applied at the end of `formatTranscript()`, which means:
 
 ## See also
 
-- Implementation: `app/theme.js`, `app/tui-render.js`, `app/transcript.js`
+- Implementation: `app/theme.js`, `app/tool-palette.js`, `app/tui-render.js`,
+  `app/transcript.js`
 - Spec of the surrounding screen: `docs/interface/tui`
 - Spec of the echoed prompt: `docs/interface/user-messages`
 - Spec of the collapsible results: `docs/interface/transcript-blocks`
-- Proof: `tests/conversation-colors.test.js`
+- The milestone colour that must not read as a write: `docs/interface/tracking-notice`
+- Proof: `tests/conversation-colors.test.js`, `tests/tool-palette.test.js`

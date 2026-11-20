@@ -1,4 +1,5 @@
 import { STAMP_RE } from './transcript-stamp.js';
+import { toolColorFor, toolNameOf } from './tool-palette.js';
 
 /**
  * The conversation palette (task-backlog: "conversation needs colors to be
@@ -22,8 +23,8 @@ import { STAMP_RE } from './transcript-stamp.js';
  *  - it only ever *wraps* a line, never rewrites it, so the visible glyphs — and
  *    therefore the block-click row math — are unchanged;
  *  - the intent of a call is highlighted **inside** whatever row carries it
- *    (`highlightIntentSpans`), so a yellow tool header keeps its colour and only
- *    the reason for the call stands out;
+ *    (`highlightIntentSpans`), so a tool header keeps the colour of its own family
+ *    (`app/tool-palette.js`) and only the reason for the call stands out;
  *  - a leading `HH:MM:SS` stamp is *seen through* (`splitStamp`): a stamped
  *    `You:` row is still the user's echo, a stamped tool header is still a tool
  *    row, and the stamp itself is painted in the low-key chrome colour rather than
@@ -41,7 +42,7 @@ export const USER_ECHO_HEADER = 'You:';
  *
  * The intent is `bright-blue` rather than the `blue` the terminal calls normal:
  * that blue is dark and disappears against a black background, while the bright
- * variant is the one a reader can pick out inside a yellow tool block. The name is
+ * variant is the one a reader can pick out inside a tool block. The name is
  * hyphenated because blessed's tag parser rewrites `-` into a space and its colour
  * switch spells the bright variant `bright blue fg`
  * (node_modules/neo-blessed/lib/program.js#_attr): `brightblue` on its own is not
@@ -51,7 +52,10 @@ export const USER_ECHO_HEADER = 'You:';
 export const CONVERSATION_COLORS = Object.freeze({
   /** the `You:` header of the echoed prompt */
   user: 'cyan',
-  /** a tool call and a `[<tool> Output]` header */
+  /**
+   * a tool row that names no tool this palette knows: a *named* one is painted by its
+   * operation family (app/tool-palette.js), and this is the fallback colour
+   */
   tool: 'yellow',
   /** the reason for a tool call: the `intent:` row and the `intent:` span */
   intent: 'bright-blue',
@@ -122,7 +126,7 @@ export function splitStamp(line) {
 
 /**
  * One intent, painted the way the backlog asks for it: a bright blue and bold. The
- * colour makes it findable inside the yellow tool block, the bold makes it stand
+ * colour makes it findable inside the tool row that carries it, the bold makes it stand
  * out in a wall of output. Pure: the caller (or the test) gets a blessed tag back
  * as a string, never a screen.
  */
@@ -133,7 +137,7 @@ export function colorizeIntent(text) {
 
 /**
  * One tracking update, painted the way a milestone should read: its own bright colour
- * plus bold, so a `[Tracking]` row can never be mistaken for a tool result (yellow) or
+ * plus bold, so a `[Tracking]` row can never be mistaken for a tool result or
  * a context notice (magenta).
  */
 export function colorizeTracking(text) {
@@ -150,8 +154,9 @@ export function colorizeStamp(stamp) {
 
 /**
  * Paint only the intent span of a line that keeps another colour around it: a tool
- * header stays yellow, an error row stays red, and the `(intent: …)` /
- * `, intent: …` part turns bright blue and bold. A line without a span comes back
+ * header keeps the colour of its own family (app/tool-palette.js), an error row stays red,
+ * and the `(intent: …)` / `, intent: …` part turns bright blue and bold. A line
+ * without a span comes back
  * byte-for-byte, so the rule is safe to apply to every kind of row.
  */
 export function highlightIntentSpans(line) {
@@ -210,7 +215,10 @@ export function colorizeLine(line) {
   if (!kind) return stamp ? `${prefix}${rest}` : text;
   if (kind === 'intent') return `${prefix}${colorizeIntent(rest)}`;
   if (kind === 'tracking') return `${prefix}${colorizeTracking(rest)}`;
-  const color = CONVERSATION_COLORS[kind];
+  // A tool row is painted by *what the tool does* — reading, writing, running a
+  // command (app/tool-palette.js) — so a screenful of tool rows can be skimmed by
+  // colour; a row naming no known tool keeps the colour of its kind.
+  const color = kind === 'tool' ? toolColorFor(toolNameOf(rest) ?? '') : CONVERSATION_COLORS[kind];
   return `${prefix}{${color}-fg}${highlightIntentSpans(rest)}{/${color}-fg}`;
 }
 

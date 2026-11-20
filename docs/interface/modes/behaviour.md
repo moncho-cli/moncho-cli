@@ -66,6 +66,12 @@ gate read the live session mode, so a `Tab` mid-turn tightens the very next call
   replaces the live context window and may call the provider, so it changes the
   conversation without writing a file. It is offered in every mode because it can
   never name a path.
+- **A delete is a writer, and the most final one**: `DESTRUCTIVE_TOOLS`
+  (`delete_file`) is part of `WRITER_TOOLS`, so it is refused in `chat` and in
+  `design` and advertised in neither. It is *not* a scoped writer: the path is only
+  known once the call arrives, and unlike a write it cannot be corrected by writing
+  again — so it never gets the two-file exception, and `design` refuses it exactly
+  like the shell family.
 - `design` writes its two files through `write_file` / `patch_file`, whose target is
   checked after `normalizeTargetPath()`: `./task.md`, `/task.md` and `a/../task.md`
   are the same file, and a path that walks out of the project is never writable.

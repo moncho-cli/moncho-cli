@@ -3,12 +3,17 @@ import path from 'path';
 import { resolveProjectPath } from './path-safety.js';
 
 /**
- * Verified, atomic file writes shared by harness tooling.
+ * Verified file operations shared by harness tooling.
  *
- * The pattern mirrors utils/patch_lib.js: write to a sibling temp file, read it
- * back, then rename over the target. A tool never reports success unless the
- * bytes on disk match what it intended to write, so task/plan bookkeeping and
- * the TUI cannot silently corrupt project files.
+ * The write pattern mirrors utils/patch_lib.js: write to a sibling temp file, read
+ * it back, then rename over the target. A tool never reports success unless the
+ * bytes on disk match what it intended to write, so task/plan bookkeeping and the
+ * TUI cannot silently corrupt project files.
+ *
+ * The delete is the same idea in the other direction (`deleteFileVerified`): the
+ * sandbox decides whether the path may be reached, and success is only reported
+ * once the path really is gone. A delete cannot be undone by a retry, so it is the
+ * stricter of the two.
  */
 
 export class FileIOError extends Error {
@@ -75,4 +80,48 @@ export function readFileIfExists(relativePath) {
   const absPath = resolveProjectPath(relativePath);
   if (!fs.existsSync(absPath)) return null;
   return fs.readFileSync(absPath, 'utf-8');
+}
+
+/**
+ * Delete one project-relative file, and prove it is gone.
+ *
+ * The sandbox is the same one every file tool uses (`resolveProjectPath`), so a
+ * delete can never leave the project tree. Because a delete cannot be undone by
+ * retrying the call, the checks are deliberately explicit instead of optimistic:
+ *
+ *  - a path that does not exist is `NOT_FOUND`, never a silent success;
+ *  - a **directory** is `IS_DIRECTORY`: this removes one file, never a tree;
+ *  - a fifo/socket/device is `NOT_A_FILE`. A **symlink** is allowed: unlinking the
+ *    link is exactly the requested operation, and the link's target is never
+ *    touched — which is also why the entry is inspected with `lstatSync`.
+ *
+ * @param {string} relativePath
+ * @returns {{path: string, bytes: number, deleted: true, verified: true}}
+ */
+export function deleteFileVerified(relativePath) {
+  const absPath = resolveProjectPath(relativePath);
+  if (!fs.existsSync(absPath)) {
+    throw new FileIOError('NOT_FOUND', `There is no file at ${relativePath} to delete.`, { path: relativePath });
+  }
+
+  const stats = fs.lstatSync(absPath);
+  if (stats.isDirectory()) {
+    throw new FileIOError('IS_DIRECTORY', `${relativePath} is a directory, and delete_file removes one file.`, {
+      path: relativePath
+    });
+  }
+  if (!stats.isFile() && !stats.isSymbolicLink()) {
+    throw new FileIOError('NOT_A_FILE', `${relativePath} is not a regular file.`, { path: relativePath });
+  }
+
+  fs.unlinkSync(absPath);
+  if (fs.existsSync(absPath)) {
+    throw new FileIOError(
+      'POST_DELETE_VERIFICATION_FAILED',
+      `Verification failed after deleting: ${relativePath} is still there.`,
+      { path: relativePath }
+    );
+  }
+
+  return { path: relativePath, bytes: stats.size, deleted: true, verified: true };
 }

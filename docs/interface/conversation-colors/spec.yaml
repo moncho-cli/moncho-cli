@@ -1,27 +1,35 @@
 id: interface/conversation-colors
 domain: interface
-title: One colour per kind of conversation row, and a bright-blue bold intent
+title: One colour per kind of conversation row, one per tool family, and a bright-blue bold intent
 status: active
 summary: >
   app/theme.js names one blessed colour per kind of transcript row (the echoed
   prompt, tool calls and tool results, the reason for a call, context notices,
   errors, low-key chrome) and classifyLine()/colorizeLine() apply it at the end of
-  formatTranscript(). The reason for a tool call — the standalone `intent:` row and
-  the `(intent: …)` span inside a tool header — is painted bright blue and bold
-  (colorizeIntent(), INTENT_COLOR, INTENT_BOLD), which is the backlog item "the
-  color of the intent text should be a brightish blue so is easier to find within
-  the text, and bold"; highlightIntentSpans() recolours only that span, so the row
-  keeps the colour of its kind. A line the markdown renderer already coloured is
-  left untouched, prose gets no colour, the palette only wraps lines so the visible
-  glyphs and the block-click row math are unchanged, and colour stays presentation
-  only: the model and the session file never see a tag and the line CLI never
-  renders one.
+  formatTranscript(). The tool kind is subdivided by app/tool-palette.js, which maps
+  a tool name to an operation family — read (read_file, blob, grep, bright cyan),
+  write (write_file, patch_file, delete_file, green), bash (run_bash, run_npm,
+  yellow) and other (anything unlisted, the kind's own yellow) — so the backlog item
+  "use different colors for read, write, and bash type of operations" holds; the read
+  family is bright cyan because plain cyan is the user's own echo and the write family
+  is plain green so it never reads as a bright-green [Tracking] milestone. The reason
+  for a tool call — the standalone `intent:` row and the `(intent: …)` span inside a
+  tool row — is painted bright blue and bold (colorizeIntent(), INTENT_COLOR,
+  INTENT_BOLD), which is the backlog item "the color of the intent text should be a
+  brightish blue so is easier to find within the text, and bold";
+  highlightIntentSpans() recolours only that span, so the row keeps the colour of its
+  kind and family. A line the markdown renderer already coloured is left untouched,
+  prose gets no colour, the palette only wraps lines so the visible glyphs and the
+  block-click row math are unchanged, and colour stays presentation only: the model
+  and the session file never see a tag and the line CLI never renders one.
   A leading HH:MM:SS stamp is seen through (splitStamp): a stamped `You:` row is
   still the user's echo and a stamped tool header is still a tool row, while the
   mark itself is painted in the low-key chrome colour (STAMP_COLOR, colorizeStamp).
 code:
   - path: app/theme.js
     symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, INTENT_COLOR, INTENT_BOLD, STAMP_COLOR, colorizeIntent, colorizeStamp, highlightIntentSpans, splitStamp, isTagged, classifyLine, colorizeLine, colorizeLines]
+  - path: app/tool-palette.js
+    symbols: [TOOL_FAMILIES, TOOL_COLORS, toolFamily, toolColorFor, toolNameOf]
   - path: app/tui-render.js
     symbols: [formatTranscript, formatUserEcho, USER_ECHO_HEADER, USER_ECHO_PREFIX]
   - path: app/transcript.js
@@ -39,3 +47,11 @@ tests:
       - "the colour reaches the terminal, and the visible glyphs are unchanged"
       - "a coloured block header still toggles on the same row"
       - "colour is presentation only: the model text carries no tag"
+  - path: tests/tool-palette.test.js
+    cases:
+      - "each tool name maps to its operation family, and an unknown name to other"
+      - "the family colours are the agreed ones, and a write never reads as tracking"
+      - "toolColorFor resolves a tool name, a family name and junk"
+      - "toolNameOf recovers the tool from a call line and from an output header"
+      - "a read row is bright cyan, a write row green and a shell row yellow"
+      - "a write and a [Tracking] row are still told apart on screen"

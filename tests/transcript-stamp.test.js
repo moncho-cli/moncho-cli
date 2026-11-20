@@ -144,7 +144,7 @@ test('the palette sees through a stamp and paints it as chrome', () => {
   // The mark is painted in the chrome (grey) colour and the row keeps its own colour.
   const painted = colorizeLine('09:05:07 [read_file Output]');
   assert.match(painted, /\{grey-fg\}09:05:07\{\/grey-fg\} /);
-  assert.match(painted, /\{yellow-fg\}\[read_file Output\]\{\/yellow-fg\}/);
+  assert.match(painted, /\{bright-cyan-fg\}\[read_file Output\]\{\/bright-cyan-fg\}/);
 });
 
 test('the real TUI stamps each block and the reload marks nothing', async () => {

@@ -1,22 +1,31 @@
 id: agent/file-safety
 domain: agent
-title: Project-scoped path sandbox and byte-verified writes
+title: Project-scoped path sandbox, byte-verified writes and a verified delete
 status: active
 summary: >
   All file access is resolved through resolveProjectPath(), which rejects absolute
   paths, traversal and escaping symlinks. Writes go through writeFileVerified(),
   which stages, verifies, renames and re-verifies, so write_file never reports
   success unless the bytes on disk match. read_file reports a POSIX-relative path
-  in its <file> delimiter.
+  in its <file> delimiter. delete_file goes through deleteFileVerified() instead:
+  the same sandbox decides reachability, a directory and a missing path are refused
+  (IS_DIRECTORY / NOT_FOUND, never a silent success), a symlink is unlinked without
+  touching its target, and success is only reported once the path is really gone.
+  The two tracking files are refused by the same fence that guards a patch, because
+  update_task owns them.
 code:
   - path: utils/path-safety.js
     symbols: [PathSafetyError, resolveProjectPath, projectRelativePath]
   - path: utils/file-io.js
-    symbols: [FileIOError, writeFileVerified, readFileIfExists]
+    symbols: [FileIOError, writeFileVerified, readFileIfExists, deleteFileVerified]
   - path: tools/write_file.js
     symbols: [definition, execute]
   - path: tools/read_file.js
     symbols: [fileTag, wrapFileContent, lineNumberAtOffset]
+  - path: tools/delete_file.js
+    symbols: [definition, execute]
+  - path: utils/tracking-fence.js
+    symbols: [trackingDeleteRefusal, TOOL_OWNED_FILES]
 tests:
   - path: tests/harness-tools.test.js
     cases:
@@ -26,3 +35,12 @@ tests:
       - read_file keeps line numbers on by default
       - read_file supports a negative offset (from the end)
       - wrapFileContent is a pure, testable formatter
+  - path: tests/delete-file.test.js
+    cases:
+      - delete_file removes one project file and reports verified success
+      - delete_file refuses a path that walks out of the project
+      - delete_file refuses a blank path as a malformed call, not as an escape
+      - delete_file refuses a directory and reports a missing path instead of succeeding
+      - delete_file never removes a tracking file, whichever folder holds it
+      - deleteFileVerified() reports the removal it can prove and refuses the rest
+      - a symlink is unlinked without touching its target

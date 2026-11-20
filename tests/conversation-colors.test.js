@@ -125,7 +125,7 @@ test('a line the markdown renderer already coloured is left untouched', () => {
   // colour around them (blessed restores the outer colour after the inner close)
   assert.equal(
     colorizeLine('  -> Calling read_file(path: **x**)'),
-    '{yellow-fg}  -> Calling read_file(path: **x**){/yellow-fg}',
+    '{bright-cyan-fg}  -> Calling read_file(path: **x**){/bright-cyan-fg}',
   );
 });
 
@@ -155,16 +155,16 @@ test('the intent is bright blue and bold inside the row that carries it', () => 
   // the reason for the call is findable without losing "this is a tool result"
   assert.equal(
     colorizeLine('  [read_file Output] (intent: check the region anchors)'),
-    '{yellow-fg}  [read_file Output] '
-      + '{bright-blue-fg}{bold}(intent: check the region anchors){/bold}{/bright-blue-fg}{/yellow-fg}',
+    '{bright-cyan-fg}  [read_file Output] '
+      + '{bright-blue-fg}{bold}(intent: check the region anchors){/bold}{/bright-blue-fg}{/bright-cyan-fg}',
   );
 
   // ...and the same span inside a `-> Calling …` line, where the intent is the
   // last argument (it ends at the ')' and never swallows it)
   assert.equal(
     colorizeLine('  -> Calling read_file(path: app/tui.js, intent: check the layout)'),
-    '{yellow-fg}  -> Calling read_file(path: app/tui.js, '
-      + '{bright-blue-fg}{bold}intent: check the layout{/bold}{/bright-blue-fg}){/yellow-fg}',
+    '{bright-cyan-fg}  -> Calling read_file(path: app/tui.js, '
+      + '{bright-blue-fg}{bold}intent: check the layout{/bold}{/bright-blue-fg}){/bright-cyan-fg}',
   );
 
   // an error row stays red; only its intent span turns
@@ -194,7 +194,7 @@ test('formatTranscript() colours the parts of a turn and keeps the markdown colo
 
   assert.equal(rendered[0], '{cyan-fg}You:{/cyan-fg}', 'the echo header is the user colour');
   assert.equal(rendered[1], '{green-fg}│ what does the layout do?{/green-fg}', 'the quoted message keeps its markdown colour');
-  assert.equal(rendered[2], '{yellow-fg}  -> Calling read_file(path: app/tui-layout.js){/yellow-fg}');
+  assert.equal(rendered[2], '{bright-cyan-fg}  -> Calling read_file(path: app/tui-layout.js){/bright-cyan-fg}');
   assert.equal(
     rendered[3],
     '{bright-blue-fg}{bold}     intent: check the region anchors{/bold}{/bright-blue-fg}',
@@ -202,9 +202,9 @@ test('formatTranscript() colours the parts of a turn and keeps the markdown colo
   );
   assert.equal(
     rendered[4],
-    '{yellow-fg}  [read_file Output] '
-      + '{bright-blue-fg}{bold}(intent: check the region anchors){/bold}{/bright-blue-fg}{/yellow-fg}',
-    'the tool header keeps yellow and highlights only its intent span',
+    '{bright-cyan-fg}  [read_file Output] '
+      + '{bright-blue-fg}{bold}(intent: check the region anchors){/bold}{/bright-blue-fg}{/bright-cyan-fg}',
+    'the read header keeps its family cyan and highlights only its intent span',
   );
   assert.equal(rendered[5], '{magenta-fg}[Context] 1.2k / 8.0k tokens (15%){/magenta-fg}');
   assert.equal(rendered[6], '{red-fg}Error calling Ollama: connect ECONNREFUSED{/red-fg}');
@@ -226,16 +226,27 @@ test('the colour reaches the terminal, and the visible glyphs are unchanged', as
     await flush();
 
     const frame = painted();
-    // 36 = cyan, 33 = yellow, 35 = magenta, 31 = red, 94 = bright blue, 1 = bold
+    // 36 = cyan, 96 = bright cyan, 33 = yellow, 35 = magenta, 31 = red, 94 = bright blue
     const cyan = frame.indexOf('You:');
-    const yellow = frame.indexOf('Calling read_file');
+    const readCall = frame.indexOf('Calling read_file');
     const intent = frame.indexOf('intent: check the layout');
     const magenta = frame.indexOf('[Context] 1.2k');
     const red = frame.indexOf('Error calling Ollama');
-    assert.ok(cyan >= 0 && yellow >= 0 && intent >= 0 && magenta >= 0 && red >= 0, 'every row was painted');
+    assert.ok(cyan >= 0 && readCall >= 0 && intent >= 0 && magenta >= 0 && red >= 0, 'every row was painted');
 
     assert.match(frame.slice(Math.max(0, cyan - 20), cyan), /\x1b\[36m/, 'the echo header is cyan');
-    assert.match(frame.slice(Math.max(0, yellow - 20), yellow), /\x1b\[33m/, 'the tool call is yellow');
+    // A read is its own family: bright cyan, which the 8-colour tput of this harness
+    // folds into bold + the base cyan in the painted stream, while the widget content
+    // keeps the tag's own escape. The content is what is probed, and never the plain
+    // cyan of the echo asserted above.
+    const content = tui.transcript.getContent();
+    const readContent = content.indexOf('Calling read_file');
+    assert.ok(readContent >= 0, 'the read row is in the transcript content');
+    assert.match(
+      content.slice(Math.max(0, readContent - 30), readContent),
+      /\x1b\[(?:1;96|96|38;5;14)m/,
+      'a read call is bright cyan',
+    );
     // The intent is bright blue and bold. A 256-colour terminal paints
     // '\x1b[1;94m'; the 8-colour tput of this harness folds the bright variant into
     // bold + the base blue ('\x1b[1;34m'), which is still the bright blue there.

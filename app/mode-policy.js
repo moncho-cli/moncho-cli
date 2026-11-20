@@ -29,6 +29,13 @@ import { SESSION_DIR } from '../utils/session-store.js';
  * therefore refused in both `chat` and `design`. Treating them as read-only would make
  * every other rule here decorative.
  *
+ * A **delete is not a scoped write either**: `write_file` and `patch_file` are scoped by
+ * path because a `design` session authors exactly two documents, and a document can be
+ * corrected by writing it again. Nothing a mode may write is anything it may destroy, so
+ * `delete_file` is its own family (`DESTRUCTIVE_TOOLS`) and is refused in `chat` and
+ * `design` without a path check — a `design` session has no writable file worth keeping
+ * *and* no reason to remove one.
+ *
  * Pure and terminal-free: the tool list is passed in and the answer is a value, so the
  * whole policy is unit tested without a provider or a screen.
  *
@@ -66,11 +73,21 @@ const SESSION_TRACKING_PREFIX = `${SESSION_DIR.replace(/\/+$/, '')}/`;
 /** Writers that name the file they touch, so the policy can scope them by path. */
 export const SCOPED_WRITER_TOOLS = Object.freeze(['write_file', 'patch_file']);
 
+/**
+ * The one tool that *removes* a file. It is a writer, and the strictest kind: a write
+ * can be corrected by writing again, while a delete cannot be undone by retrying the
+ * call. So it is never scoped to two paths — a `design` session may author `task.md`,
+ * but there is no file it is allowed to destroy (the two it may write are held by
+ * `update_task`, `utils/tracking-fence.js`). It is therefore refused in `chat` and
+ * `design` alike, and advertised in neither.
+ */
+export const DESTRUCTIVE_TOOLS = Object.freeze(['delete_file']);
+
 /** Writers that cannot be scoped: a shell reaches every path there is. */
 export const SHELL_TOOLS = Object.freeze(['run_bash', 'run_npm']);
 
 /** Every tool that can mutate something, scoped or not. */
-export const WRITER_TOOLS = Object.freeze([...SCOPED_WRITER_TOOLS, ...SHELL_TOOLS]);
+export const WRITER_TOOLS = Object.freeze([...SCOPED_WRITER_TOOLS, ...SHELL_TOOLS, ...DESTRUCTIVE_TOOLS]);
 
 /**
  * Normalise a path argument so `task.md`, `./task.md`, `/task.md` and `foo/../task.md`
@@ -144,6 +161,12 @@ export function refusalForMode(mode, call, name = callName(call)) {
   // Design: the two tracking files, and nothing else.
   if (TRACKING_TOOLS.includes(name)) return null;
   if (SCOPED_WRITER_TOOLS.includes(name) && isDesignWritable(target)) return null;
+  if (DESTRUCTIVE_TOOLS.includes(name)) {
+    return refuse(
+      `the session is in Design, which authors ${DESIGN_WRITABLE_FILES.join(' and ')} `
+      + `and removes nothing, so ${name} on ${target === undefined ? 'an unnamed target' : `"${target}"`} may not run`,
+    );
+  }
   if (SHELL_TOOLS.includes(name)) {
     return refuse(
       `the session is in Design, where a shell cannot be scoped to `

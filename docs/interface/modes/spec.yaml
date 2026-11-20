@@ -42,7 +42,7 @@ code:
   - path: app/mode-controller.js
     symbols: [MODE_REFUSAL_KIND, createModeController]
   - path: app/mode-policy.js
-    symbols: [READ_ONLY_TOOLS, TRACKING_TOOLS, DESIGN_WRITABLE_FILES, SCOPED_WRITER_TOOLS, SHELL_TOOLS, WRITER_TOOLS, normalizeTargetPath, isDesignWritable, refusalForMode, toolsForMode, gateForMode]
+    symbols: [READ_ONLY_TOOLS, TRACKING_TOOLS, DESIGN_WRITABLE_FILES, SCOPED_WRITER_TOOLS, DESTRUCTIVE_TOOLS, SHELL_TOOLS, WRITER_TOOLS, normalizeTargetPath, isDesignWritable, refusalForMode, toolsForMode, gateForMode]
   - path: app/work-drive.js
     symbols: [WORK_DRIVE_MAX_ATTEMPTS, formatWorkPrompt, nextPendingItem, readChecklist, createWorkDrive]
 tests:
