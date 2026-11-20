@@ -36,6 +36,15 @@ empty stdout is reported as `(no output)` after the delimiter.
 - The two are **mutually exclusive**: asking for both is `INVALID_RANGE`, and so is
   a count that is not a whole number of at least one line. The command is not run
   in that case.
+- **No window asked for is not "no limit".** An output longer than
+  `DEFAULT_WINDOW_LINES` comes back as its **tail** — the verdict of a test run or a
+  build is at the end — with `mode: default`, which says the choice was made for the
+  caller rather than by it. An unbounded output is never handed over whole.
+- **A truncated document carries the way back.** `capture` is a handle to the whole
+  stream, still in memory (`docs/agent/command-capture`), `range` is the 1-based
+  lines the payload covers, and `hint` names the tool that pages or scans it. A
+  truncation without a way back would be a dead end: the model knows what it asked,
+  so it can page the head, the tail, or scan for the line that failed.
 
 A **failing** command keeps the JSON diagnostic envelope, because a stable
 machine-readable `code` matters more than a pretty one: a non-zero exit is
@@ -57,9 +66,14 @@ failing output is still readable end-first.
 - Arguments may be passed as a string (tokenised with quoting) or as an array.
 - Failure is reported structurally: a non-zero npm exit is `NPM_FAILED`, a
   timeout is `TIMEOUT`, both with `status: "error"` and the npm output attached.
+- A **successful** npm run answers with the *same* document `run_bash` does — the YAML
+  header, the `---` delimiter, the bounded window and the capture handle — because
+  `npm test` is the command whose output most needs it. A failing one keeps its JSON
+  envelope, with both streams windowed and the same handle when something was cut.
 
 ## See also
 
 - Implementation: `tools/run_bash.js`, `tools/run_npm.js`, `utils/command-output.js`,
   `config/constants.js`
+- Where the rest of a windowed output goes: `docs/agent/command-capture`
 - Proof: `tests/harness-tools.test.js`, `tests/command-output-window.test.js`

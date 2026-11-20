@@ -3,9 +3,12 @@ import { ALLOWED_COMMANDS } from '../config/constants.js';
 import { defineTool } from '../utils/tool-schema.js';
 import {
   windowLines,
+  windowCaptured,
   renderCommandOutput,
+  CAPTURE_HINT,
   OutputRangeError
 } from '../utils/command-output.js';
+import { putCapture } from '../utils/capture-store.js';
 
 /**
  * Execute an allow-listed command from a small CLI palette.
@@ -188,7 +191,10 @@ const { definition, execute } = defineTool({
 /** A successful command: the header, the delimiter, and the stdout window. */
 function renderSuccess({ command, cwd, output, window }) {
   const trimmed = output.trimEnd();
-  const selected = windowLines(trimmed, window);
+  // No window asked for still means a bounded document: a long output comes back as its
+  // tail, with the whole stream behind a capture handle (docs/agent/command-capture).
+  const selected = windowCaptured(trimmed, window);
+  const capture = selected.truncated ? putCapture({ command, text: trimmed }) : null;
   return renderCommandOutput({
     command,
     cwd: displayCwd(cwd),
@@ -199,8 +205,19 @@ function renderSuccess({ command, cwd, output, window }) {
     truncated: selected.truncated,
     mode: selected.mode,
     head: window.head,
-    tail: window.tail
+    tail: window.tail,
+    capture: capture ? capture.id : null,
+    range: capture ? shownRange(selected) : null,
+    hint: capture ? CAPTURE_HINT : null
   });
+}
+
+/** The 1-based line range a window covers, so a captured stream can be paged from it. */
+export function shownRange(selected) {
+  const total = Number(selected?.total) || 0;
+  const shown = Number(selected?.shown) || 0;
+  if (shown === 0) return null;
+  return selected?.mode === 'head' ? `1-${shown}` : `${total - shown + 1}-${total}`;
 }
 
 /**
@@ -209,8 +226,8 @@ function renderSuccess({ command, cwd, output, window }) {
  */
 function renderFailure({ error, cwd, window, timeout }) {
   const stdout = error.stdout ? String(error.stdout).trimEnd() : '';
-  const stderr = error.stderr ? String(error.stderr).trimEnd() : '';
-  const selected = windowLines(stdout, window);
+  const stderr = windowCaptured(error.stderr ? String(error.stderr).trimEnd() : '', window);
+  const selected = windowCaptured(stdout, window);
 
   if (error.code === 'ETIMEDOUT' || error.signal === 'SIGTERM') {
     return JSON.stringify({
@@ -232,10 +249,13 @@ function renderFailure({ error, cwd, window, timeout }) {
     message: `Command failed with exit code ${error.status ?? 'unknown'}.`,
     cwd: displayCwd(cwd),
     stdout: selected.text,
-    stderr,
+    stderr: stderr.text,
     stdoutLines: selected.total,
     stdoutShown: selected.shown,
     stdoutTruncated: selected.truncated,
+    stderrLines: stderr.total,
+    stderrShown: stderr.shown,
+    stderrTruncated: stderr.truncated,
     mode: selected.mode
   });
 }

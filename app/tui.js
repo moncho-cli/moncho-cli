@@ -85,6 +85,16 @@ export function createTui(options = {}) {
     output,
     smartCSR: true,
     fullUnicode: true,
+    // `fullUnicode` alone is not enough: neo-blessed derives it from the **terminfo**
+    // entry it managed to parse (`screen.js#Screen`: `this.fullUnicode =
+    // this.options.fullUnicode && this._unicode`), and a box whose entry it cannot read
+    // (no terminfo, an unknown $TERM) leaves `_unicode` false. The widget then replaces
+    // every double-width glyph with `??` (`element.js#Element.render`:
+    // `content.replace(unicode.chars.all, '??')`), which is what turned every emoji in
+    // the conversation into question marks (task-backlog: "conversation to show unicode
+    // emojis properly"). `forceUnicode` is the switch that makes the screen trust the
+    // terminal rather than the terminfo entry.
+    forceUnicode: true,
     title: 'Moncho',
     warnings: false,
     autoPadding: true,

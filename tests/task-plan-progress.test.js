@@ -66,6 +66,32 @@ test('parsePlanSteps reads the checkbox syntax of the plan', () => {
   assert.deepEqual(parsePlanSteps(null), []);
 });
 
+test('parsePlanSteps folds a wrapped entry into the one entry it is', () => {
+  // A plan or checklist entry written across several lines is one entry, not a line
+  // with the rest dropped: the continuation lines are indented and carry no checkbox.
+  const wrapped = [
+    '# item one',
+    '',
+    'status: in progress',
+    '',
+    '## Steps',
+    '',
+    '- [ ] write the module that keeps a long entry whole',
+    '      instead of cutting it in half',
+    '      when the file is re-rendered',
+    '- [ ] prove it',
+    '',
+  ].join('\n');
+
+  const steps = parsePlanSteps(wrapped);
+  assert.equal(steps.length, 2, 'a continuation is not a step of its own');
+  assert.equal(
+    steps[0].text,
+    'write the module that keeps a long entry whole instead of cutting it in half when the file is re-rendered'
+  );
+  assert.equal(steps[1].text, 'prove it');
+});
+
 test('parsePlanSteps ignores the prose and the headings of a plan', () => {
   const steps = parsePlanSteps('# title\n\nstatus: in progress\n\n## Notes\n\n- a note\n- [x] a step\n');
   assert.equal(steps.length, 1);

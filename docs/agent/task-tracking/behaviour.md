@@ -74,6 +74,13 @@ status: <pending | in progress: <item> | done>
   <item>`, `done`), so "where am I" is machine-readable instead of prose.
 - `## Notes` is the one place a human remark belongs, and it survives every rewrite.
 
+- An entry is **one line**, so a long one that a human (or the model) wrapped across
+  several lines is folded back into a single entry: an indented continuation line that
+  carries no checkbox of its own belongs to the entry above it. Without that fold the
+  re-render kept only the first line and the entry came back ending mid-sentence, which
+  reads like the harness cut the text rather than re-rendered the document. The same
+  fold applies to a note written across several lines.
+
 `renderTaskFile()` / `renderPlanFile()` are the only way the harness writes the files, and
 `validateTrackingFile()` reports each broken rule (`ok`, `problems`, `status`, `notes`,
 `items`) without throwing. The rules are **reported, not enforced destructively**: a legacy
@@ -95,6 +102,17 @@ The three copies (renderer, prompt, tool description) cannot drift: the template
 `tests/tracking-format.test.js` fails when either text stops matching `trackingTemplate()`.
 Every reply of `update_task` also reports the **resolved** `taskFile`/`planFile` paths — the
 session-folder ones — so the model learns *where* the pair lives, not only its shape.
+
+## A decision is recorded as it is agreed
+
+The checklist is not a summary written after the work: it is the record of what the
+conversation decided. A discussion that reaches an agreement and ends without an item
+on `task.md` loses that agreement, because the transcript is then the only place it
+ever lived. A decision therefore becomes an item **when it is agreed**: a `design`
+session authors the draft with `write_file` (normalised into the canonical document,
+see below), and a `work` session starts the item with `update_task` (`action: "start"`
+plus the `steps` just agreed). The prompt states the rule (`prompt.md`, section 8)
+because the model is the one that has to follow it.
 
 ## Who may author them
 

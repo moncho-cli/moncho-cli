@@ -13,11 +13,11 @@ summary: >
   JSON. Both resolve cwd through the project path sandbox.
 code:
   - path: tools/run_bash.js
-    symbols: [CommandError, tokenizeCommand, validateCommand, displayCwd, definition, execute]
+    symbols: [CommandError, tokenizeCommand, validateCommand, displayCwd, shownRange, definition, execute]
   - path: utils/command-output.js
-    symbols: [OutputRangeError, resolveWindow, splitOutputLines, windowLines, yamlScalar, renderYamlHeader, renderCommandOutput, OUTPUT_DELIMITER, EMPTY_OUTPUT]
+    symbols: [OutputRangeError, resolveWindow, splitOutputLines, windowLines, windowCaptured, DEFAULT_WINDOW_LINES, CAPTURE_HINT, yamlScalar, renderYamlHeader, renderCommandOutput, OUTPUT_DELIMITER, EMPTY_OUTPUT]
   - path: tools/run_npm.js
-    symbols: [NpmError, validateNpmArgs, splitNpmArgs, definition, execute]
+    symbols: [NpmError, validateNpmArgs, splitNpmArgs, npmFailure, definition, execute]
   - path: config/constants.js
     symbols: [ALLOWED_COMMANDS, NPM_ALLOWED_SUBCOMMANDS, NPM_DEFAULT_TIMEOUT_MS, NPM_MAX_TIMEOUT_MS]
 tests:
@@ -44,3 +44,9 @@ tests:
       - a failing command keeps its structured envelope, with a windowed stdout
       - run_bash keeps its shell-free refusal codes and its timeout contract
       - run_bash runs an approved command from a relative cwd and reports it
+  - path: tests/command-output-default.test.js
+    cases:
+      - windowCaptured bounds an output nobody asked to window
+      - a truncated command document hands back a capture that reaches the whole stream
+      - a failing npm run keeps its envelope and hands back the capture of the whole output
+      - a success document without a capture never grows a capture field

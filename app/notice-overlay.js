@@ -1,5 +1,6 @@
 import { CONVERSATION_COLORS } from './theme.js';
 import { sanitize } from './tui-render.js';
+import { cutCodePoints } from './cell-width.js';
 
 /**
  * Transient notices and the overlay that shows them (task-backlog: "clean up failed
@@ -70,7 +71,9 @@ export function formatNoticeText(text, maxChars = NOTICE_MAX_CHARS) {
   if (!flat) return '';
   const cap = Number.isFinite(Number(maxChars)) ? Math.max(0, Math.trunc(Number(maxChars))) : NOTICE_MAX_CHARS;
   if (cap === 0) return '';
-  return flat.length > cap ? `${flat.slice(0, cap - 1)}…` : flat;
+  // Truncated between **grapheme clusters** (app/cell-width.js), so a notice carrying
+  // an emoji keeps it whole instead of ending on half a sequence.
+  return cutCodePoints(flat, cap);
 }
 
 /** One painted row: `{colour}⚠ text{/colour}`, the marker carrying the severity. */

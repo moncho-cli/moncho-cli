@@ -25,6 +25,7 @@ specs:
   - agent/file-safety
   - agent/patch-application
   - agent/command-sandbox
+  - agent/command-capture
   - agent/task-tracking
   - agent/project-discovery
   - agent/file-hint
@@ -50,6 +51,7 @@ specs:
   - interface/commands
   - interface/line-cli
   - interface/input-focus
+  - interface/prompt-editor
   - interface/tracking-notice
   - interface/tracking-block
   - runtime/provider-calls

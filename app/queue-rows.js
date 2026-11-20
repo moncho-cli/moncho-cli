@@ -1,3 +1,5 @@
+import { displayWidth, truncateToWidth as truncateCells } from './cell-width.js';
+
 /**
  * How a queued message is **drawn**: the display-ready rows of the queue bar.
  *
@@ -12,9 +14,17 @@
  * to the width it really has is always **one display line**, so nothing is ever clipped
  * and the reader can see what is about to be sent.
  *
+ * The counting itself lives in `app/cell-width.js`, shared with the prompt caret: both
+ * need "how wide is this text really", and a queue row and a caret have nothing else in
+ * common. There the unit is the grapheme cluster, so a `👍🏽` is one glyph of two cells
+ * and not three characters — which is what keeps a row holding an emoji inside the box
+ * instead of pushing its tail out of sight.
+ *
  * Pure: string in, string out, no neo-blessed and no screen, so every rule here is
  * unit tested without a pty.
  */
+
+export { displayWidth };
 
 /**
  * Longest preview kept for one row **when there is no width to fit to**, in cells:
@@ -30,45 +40,13 @@ export const QUEUE_MAX_ROWS = 4;
 export const QUEUE_DELETE_MARKER = '✕';
 
 /**
- * Code points a terminal paints in one cell that still occupy **two**: the CJK,
- * Hangul and fullwidth ranges neo-blessed itself counts as double-wide
- * (`lib/unicode.js#charWidth`). Counting them as two is what keeps a row holding such
- * a glyph inside the box instead of pushing its tail out of sight.
- */
-const WIDE_CELL_RE = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u3000]/;
-
-/** A combining mark paints in no cell of its own. */
-const ZERO_CELL_RE = /[\u0300-\u036f\u0483-\u0489\u0591-\u05bd\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06dc]/;
-
-/** How many cells `text` occupies on screen: wide glyphs two, combining marks none. */
-export function displayWidth(text) {
-  let width = 0;
-  for (const char of String(text ?? '')) {
-    if (ZERO_CELL_RE.test(char)) continue;
-    width += WIDE_CELL_RE.test(char) ? 2 : 1;
-  }
-  return width;
-}
-
-/**
  * `text` cut down to at most `maxCells` display cells, with an `…` when something was
- * dropped. The ellipsis is charged to the budget, so the result never exceeds it —
- * which is the point: a row the box can hold stays one row.
+ * dropped. The shared rule counts grapheme clusters, and this export only supplies the
+ * queue's own fallback budget; the ellipsis is charged to it, so the result never
+ * exceeds it — which is the point: a row the box can hold stays one row.
  */
 export function truncateToWidth(text, maxCells = QUEUE_PREVIEW_CHARS) {
-  const source = String(text ?? '');
-  const limit = Math.max(1, Math.trunc(Number(maxCells)) || QUEUE_PREVIEW_CHARS);
-  if (displayWidth(source) <= limit) return source;
-
-  const kept = [];
-  let used = 0;
-  for (const char of source) {
-    const cells = displayWidth(char);
-    if (used + cells > limit - 1) break; // one cell is kept for the ellipsis
-    kept.push(char);
-    used += cells;
-  }
-  return `${kept.join('')}…`;
+  return truncateCells(text, maxCells);
 }
 
 /**

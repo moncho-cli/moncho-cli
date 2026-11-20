@@ -27,17 +27,32 @@ export const STATUS_PATTERN = /^\s*status\s*:\s*(.*)$/i;
  */
 export function parseCheckboxItems(content) {
   if (typeof content !== 'string') return [];
-  return content.split('\n').flatMap((line, index) => {
+  const lines = content.split('\n');
+  const items = [];
+
+  lines.forEach((line, index) => {
     const match = line.match(CHECKBOX_PATTERN);
-    if (!match) return [];
-    return [{
-      line: index + 1,
-      indent: match[1],
-      marker: match[2],
-      done: match[3].toLowerCase() === 'x',
-      text: match[4].trim()
-    }];
+    if (match) {
+      items.push({
+        line: index + 1,
+        indent: match[1],
+        marker: match[2],
+        done: match[3].toLowerCase() === 'x',
+        text: match[4].trim()
+      });
+      return;
+    }
+    // A wrapped entry is one entry: its continuation lines are indented, carry no
+    // checkbox of their own, and are folded back into the text. Without this an entry
+    // written across three lines came back as a single line ending mid-sentence, which
+    // reads like the harness cut the text rather than re-rendered the document.
+    const last = items[items.length - 1];
+    if (last && last.line < index + 1 && /^[ \t]+\S/.test(line)) {
+      last.text = `${last.text} ${line.trim()}`;
+    }
   });
+
+  return items;
 }
 
 /** The steps of the plan file: its checkbox lines, in file order. */

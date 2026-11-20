@@ -152,6 +152,38 @@ test('the human parts of a file survive the upgrade', () => {
   assert.ok(kept.includes('- a human remark'));
 });
 
+test('a wrapped entry keeps its whole text through a re-render', () => {
+  // The bug this proves: an entry written across three lines came back as one line
+  // ending mid-sentence, with no marker saying anything had been dropped.
+  const wrapped = [
+    '# Task list',
+    '',
+    'status: pending',
+    '',
+    '## Items',
+    '',
+    '- [ ] the first item is long and wraps onto',
+    '      a second line and then a third one',
+    '- [ ] the second item',
+    '',
+    '## Notes',
+    '',
+    '- a note that also wraps onto',
+    '  its own continuation line',
+  ].join('\n');
+
+  const kept = canonicalizeTrackingFile('task', wrapped);
+  assert.ok(
+    kept.includes('- [ ] the first item is long and wraps onto a second line and then a third one'),
+    'the whole entry text survives on one line'
+  );
+  assert.ok(kept.includes('- a note that also wraps onto its own continuation line'), 'and so does a wrapped note');
+  assert.equal(kept.split('\n').filter((line) => /^- \[/.test(line)).length, 2, 'still exactly two items');
+
+  // Re-rendering an already canonical document changes nothing: the fold is idempotent.
+  assert.equal(canonicalizeTrackingFile('task', kept), kept);
+});
+
 test('the template the model is shown is the shape the renderer really writes', () => {
   // One template, three places: the renderer, the tool description the provider is
   // offered, and the system prompt. These cases exist because the prompt described the
@@ -191,4 +223,12 @@ test('the template the model is shown is the shape the renderer really writes', 
   const description = updateTaskDefinition.function.description;
   assert.ok(description.includes(task), 'the update_task description must carry the task template');
   assert.ok(description.includes(plan), 'the update_task description must carry the plan template');
+});
+
+test('the prompt tells the agent to record a decision as it is agreed', () => {
+  // The protocol is only as good as the moment it is used: an agreement reached in
+  // conversation has to become an item there and then, not after the code is written.
+  const prompt = fs.readFileSync(new URL('../config/prompt.md', import.meta.url), 'utf-8');
+  assert.ok(/record as you go/i.test(prompt), 'the prompt must state the record-as-you-agree rule');
+  assert.ok(/the\s+moment it is agreed/.test(prompt), 'and it must say when: the moment it is agreed');
 });

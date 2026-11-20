@@ -52,7 +52,9 @@ tests:
       - validateTrackingFile reports each broken rule instead of throwing
       - a legacy file is upgraded, not rejected, so an operator keeps working
       - the human parts of a file survive the upgrade
+      - a wrapped entry keeps its whole text through a re-render
       - the template the model is shown is the shape the renderer really writes
+      - the prompt tells the agent to record a decision as it is agreed
   - path: tests/tracking-fence.test.js
     cases:
       - the fence recognises a tracking file by name, in any folder
@@ -71,6 +73,7 @@ tests:
   - path: tests/task-plan-progress.test.js
     cases:
       - parsePlanSteps reads the checkbox syntax of the plan
+      - parsePlanSteps folds a wrapped entry into the one entry it is
       - parsePlanSteps ignores the prose and the headings of a plan
       - findPlanStep selects one step by index or by unique substring
       - markPlanStepDone ticks one line in place and leaves the rest byte-identical

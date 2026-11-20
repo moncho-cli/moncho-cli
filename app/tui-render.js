@@ -1,4 +1,5 @@
 import { colorizeLines, USER_ECHO_HEADER } from './theme.js';
+import { displayWidth, clustersWithin } from './cell-width.js';
 
 /**
  * Pure text helpers for the TUI: sanitising, the markdown-ish transcript
@@ -213,19 +214,25 @@ export function formatUserEcho(text) {
 export function composeStatusRow(left = '', right = '', width = 0) {
   const leftText = String(left ?? '');
   const rightText = String(right ?? '');
+  // Width is counted in **cells**, not code units: a wide glyph (an emoji in the
+  // status text, a CJK character) covers two columns, so padding by `.length` leaves
+  // the meter a cell short of the right edge on a row carrying one.
+  const rightCells = displayWidth(rightText);
   const total = Number(width) || 0;
 
   if (total <= 0) return [leftText, rightText].filter(Boolean).join(' ');
   if (!rightText) return leftText;
   if (!leftText) {
-    return rightText.length >= total ? rightText : ' '.repeat(total - rightText.length) + rightText;
+    return rightCells >= total ? rightText : ' '.repeat(total - rightCells) + rightText;
   }
 
-  const gap = total - leftText.length - rightText.length;
+  const gap = total - displayWidth(leftText) - rightCells;
   if (gap > 0) return `${leftText}${' '.repeat(gap)}${rightText}`;
 
-  const keep = Math.max(0, total - rightText.length - 1);
-  return `${leftText.slice(0, keep)} ${rightText}`;
+  // The left text is cut **between clusters**, so a truncation never ends on half of
+  // a character (which a terminal would paint as a replacement glyph).
+  const keep = Math.max(0, total - rightCells - 1);
+  return `${clustersWithin(leftText, keep).join('')} ${rightText}`;
 }
 
 /** Paste tag written into the input when a large block is collapsed. */

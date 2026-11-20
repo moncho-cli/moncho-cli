@@ -133,7 +133,15 @@ export function extractNotes(content) {
     }
     if (!inNotes) continue;
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    if (bullet) notes.push(bullet[1].trim());
+    if (bullet) {
+      notes.push(bullet[1].trim());
+      continue;
+    }
+    // A note written across several lines is one note: an indented continuation is
+    // folded into the bullet above it, the way an entry is (utils/plan-file.js).
+    if (notes.length > 0 && /^[ \t]+\S/.test(line)) {
+      notes[notes.length - 1] = `${notes[notes.length - 1]} ${line.trim()}`;
+    }
   }
   return notes;
 }
@@ -150,7 +158,7 @@ export function entriesOf(content) {
  * The placeholder entries the skeleton carries are dropped, never re-rendered.
  */
 function entryLine(entry) {
-  const text = String(typeof entry === 'string' ? entry : entry?.text ?? '').trim();
+  const text = String(typeof entry === 'string' ? entry : entry?.text ?? '').replace(/\s+/g, ' ').trim();
   if (text === '') return null;
   if (/^\((no|not) .*recorded\)$/.test(text)) return null;
   const done = typeof entry === 'object' && entry !== null ? Boolean(entry.done) : false;
@@ -166,7 +174,7 @@ function renderDocument({ kind, title, status, entries, notes }) {
   lines.push(...(rendered.length === 0 ? [`- [ ] (no ${sectionOf(kind).entry}s recorded)`] : rendered));
 
   const bullets = (Array.isArray(notes) ? notes : [])
-    .map((note) => String(note ?? '').trim())
+    .map((note) => String(note ?? '').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
   if (bullets.length > 0) lines.push('', NOTES_HEADING, '', ...bullets.map((note) => `- ${note}`));
 

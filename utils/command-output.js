@@ -92,6 +92,32 @@ export function windowLines(text, { head, tail } = {}) {
   };
 }
 
+/** How many lines a captured output shows when the caller asked for no window. */
+export const DEFAULT_WINDOW_LINES = 200;
+
+/** What a truncated document tells the model about the rest of the stream. */
+export const CAPTURE_HINT = 'the whole stream is in memory: read it with read_capture (offset/limit, or pattern)';
+
+/**
+ * Window captured output, with a **bounded default**.
+ *
+ * `head`/`tail` still win when the caller asks for one. With no window asked for, an
+ * output that fits `defaultLines` comes back whole; a longer one comes back as its
+ * **tail**, because the verdict of a test run or a build is at the end — and the header
+ * says `mode: default`, so a caller can tell the choice was made for it rather than by
+ * it. Without this an output nobody bounded arrives whole, which is the flood the
+ * document shape exists to prevent.
+ */
+export function windowCaptured(text, { head, tail, defaultLines = DEFAULT_WINDOW_LINES } = {}) {
+  const explicit = (head !== undefined && head !== null) || (tail !== undefined && tail !== null);
+  if (explicit) return windowLines(text, { head, tail });
+
+  const cap = Number.isInteger(defaultLines) && defaultLines > 0 ? defaultLines : DEFAULT_WINDOW_LINES;
+  if (splitOutputLines(text).length <= cap) return windowLines(text, {});
+
+  return { ...windowLines(text, { tail: cap }), mode: 'default', count: cap };
+}
+
 /** Values YAML reads as something other than the string they look like. */
 const YAML_KEYWORD = /^(?:true|false|null|~|yes|no|on|off|[-+]?\d[\d_]*(?:\.\d+)?)$/i;
 const YAML_PLAIN = /^[A-Za-z0-9./][A-Za-z0-9._/@+ -]*$/;
@@ -145,7 +171,10 @@ export function renderCommandOutput({
   truncated = false,
   mode = 'all',
   head,
-  tail
+  tail,
+  capture = null,
+  range = null,
+  hint = null
 } = {}) {
   const header = renderYamlHeader({
     status: 'success',
@@ -157,7 +186,10 @@ export function renderCommandOutput({
     truncated,
     mode,
     head,
-    tail
+    tail,
+    capture,
+    range,
+    hint
   });
   const body = shown > 0 ? String(stdout) : EMPTY_OUTPUT;
   return `${header}\n${OUTPUT_DELIMITER}\n${body}`;

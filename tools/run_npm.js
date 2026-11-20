@@ -6,6 +6,12 @@ import {
 } from '../config/constants.js';
 import { resolveProjectPath } from '../utils/path-safety.js';
 import { defineTool } from '../utils/tool-schema.js';
+import {
+  windowCaptured,
+  renderCommandOutput,
+  CAPTURE_HINT
+} from '../utils/command-output.js';
+import { putCapture } from '../utils/capture-store.js';
 
 /**
  * npm runner for the harness.
@@ -111,38 +117,69 @@ const { definition, execute } = defineTool({
         (error, stdout, stderr) => {
           const out = String(stdout ?? '').trimEnd();
           const err = String(stderr ?? '').trimEnd();
+          const command = `npm ${argv.join(' ')}`;
           if (error) {
-            if (error.killed || error.signal === 'SIGTERM') {
-              resolve(JSON.stringify({
-                status: 'error',
-                code: 'TIMEOUT',
-                message: `npm ${argv.join(' ')} timed out after ${timeout}ms.`,
-                stdout: out,
-                stderr: err
-              }));
-              return;
-            }
-            resolve(JSON.stringify({
-              status: 'error',
-              code: 'NPM_FAILED',
-              message: `npm ${argv.join(' ')} failed with exit code ${error.code ?? 'unknown'}.`,
-              stdout: out,
-              stderr: err
-            }));
+            resolve(JSON.stringify(npmFailure({
+              command,
+              cwd,
+              out,
+              err,
+              code: error.killed || error.signal === 'SIGTERM' ? 'TIMEOUT' : 'NPM_FAILED',
+              exitCode: error.code ?? 'unknown',
+              timeout
+            })));
             return;
           }
-          resolve(JSON.stringify({
-            status: 'success',
-            command: `npm ${argv.join(' ')}`,
+          // A success is the same document run_bash answers with: a bounded window, and
+          // the whole stream behind a capture handle when it did not fit.
+          const selected = windowCaptured(out, {});
+          const capture = selected.truncated ? putCapture({ command, text: out }) : null;
+          const tail = windowCaptured(err, {});
+          resolve(renderCommandOutput({
+            command,
             cwd: cwd === process.cwd() ? '.' : cwd,
-            stdout: out,
-            stderr: err,
-            message: `npm ${argv.join(' ')} completed.`
+            exitCode: 0,
+            stdout: selected.text,
+            total: selected.total,
+            shown: selected.shown,
+            truncated: selected.truncated,
+            mode: selected.mode,
+            ...(capture ? { capture: capture.id, hint: CAPTURE_HINT } : {}),
+            ...(tail.shown > 0 ? { stderr_lines: tail.total, stderr_shown: tail.shown } : {})
           }));
         }
       );
     });
   }
 });
+
+/**
+ * A failing npm run: the structured envelope the harness relies on, with both streams
+ * windowed and — when the output was cut — the capture that holds the rest, because a
+ * failing run is exactly the one whose full output the model needs to scan.
+ */
+export function npmFailure({ command, cwd, out, err, code, exitCode, timeout = null }) {
+  const stdout = windowCaptured(out, {});
+  const stderr = windowCaptured(err, {});
+  const capture = stdout.truncated ? putCapture({ command, text: out }) : null;
+  return {
+    status: 'error',
+    code,
+    message: code === 'TIMEOUT'
+      ? `${command} timed out after ${timeout}ms.`
+      : `${command} failed with exit code ${exitCode}.`,
+    cwd: cwd === process.cwd() ? '.' : cwd,
+    stdout: stdout.text,
+    stderr: stderr.text,
+    stdoutLines: stdout.total,
+    stdoutShown: stdout.shown,
+    stdoutTruncated: stdout.truncated,
+    stderrLines: stderr.total,
+    stderrShown: stderr.shown,
+    stderrTruncated: stderr.truncated,
+    mode: stdout.mode,
+    ...(capture ? { capture: capture.id, hint: CAPTURE_HINT } : {})
+  };
+}
 
 export { definition, execute };

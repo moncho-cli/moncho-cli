@@ -43,6 +43,7 @@ export const TOOL_FAMILIES = Object.freeze({
   hint_file: 'read',
   blob: 'read',
   grep: 'read',
+  read_capture: 'read',
   write_file: 'write',
   patch_file: 'write',
   delete_file: 'write',

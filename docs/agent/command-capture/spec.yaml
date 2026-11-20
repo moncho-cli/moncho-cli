@@ -1,0 +1,34 @@
+id: agent/command-capture
+domain: agent
+title: The in-memory capture behind a truncated command document
+status: active
+summary: >
+  A command whose output is windowed keeps the whole stream in memory behind a
+  monotonic handle, and the document reports it as "capture: <id>". Nothing is
+  written to disk, because command output is attacker-influenced text and a shell is
+  in the allow-list. The model pages or scans the capture with read_capture
+  (offset/limit with a negative offset counting from the end, or a pattern returning
+  the matching lines), and a capture expires as soon as the next tool batch does not
+  read it, so the bytes live for one action. The store is bounded on top of that
+  (oldest first), a stale handle is CAPTURE_EXPIRED rather than an empty page, and
+  read_capture is a reader: it names a handle, never a path.
+code:
+  - path: utils/capture-store.js
+    symbols: [DEFAULT_MAX_CAPTURES, DEFAULT_MAX_CAPTURE_BYTES, countCaptureLines, normalizeCaptureId, evictCaptures, putCapture, getCapture, hasCapture, dropCapture, expireCaptures, clearCaptures, captureIds, captureStats, capturesRequestedBy]
+  - path: utils/capture-window.js
+    symbols: [DEFAULT_CAPTURE_PAGE, MAX_CAPTURE_PAGE, DEFAULT_MAX_MATCHES, CaptureRangeError, splitCaptureLines, numberLines, selectCapture]
+  - path: tools/read_capture.js
+    symbols: [definition, execute]
+  - path: app/tool-batch.js
+    symbols: [handleToolBatch]
+  - path: app/mode-policy.js
+    symbols: [READ_ONLY_TOOLS]
+  - path: app/tool-palette.js
+    symbols: [TOOL_FAMILIES]
+tests:
+  - path: tests/command-capture.test.js
+    cases:
+      - the capture store keeps a bounded number of captures, oldest first
+      - selectCapture pages a numbered window and scans for a pattern
+      - read_capture answers a numbered page, a scan, and an expired handle
+      - a capture expires when the next batch does not read it, and survives one that does

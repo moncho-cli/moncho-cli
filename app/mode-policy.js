@@ -47,8 +47,11 @@ import { SESSION_DIR } from '../utils/session-store.js';
  * `compact_context` belongs here because "read-only" is a claim about the **project
  * tree**: it replaces the live context window and may call the provider, so it changes
  * the conversation without ever naming a path.
+ * `read_capture` belongs here too: a capture lives in memory
+ * (`utils/capture-store.js`) and the tool names a handle, never a file, so it can
+ * change nothing on disk.
  */
-export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 'grep', 'compact_context']);
+export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 'grep', 'read_capture', 'compact_context']);
 
 /**
  * The one tool that authors the tracking files. It is a writer, but a *scoped* one:

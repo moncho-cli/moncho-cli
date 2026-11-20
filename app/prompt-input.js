@@ -1,5 +1,6 @@
 import { sanitize } from './tui-render.js';
 import { createInputHint, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR } from './input-hint.js';
+import { createPromptKeys } from './prompt-keys.js';
 
 /**
  * The input box as a two-state machine: an **armed question** between turns, or a
@@ -16,6 +17,15 @@ import { createInputHint, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR } 
  * empty, it should have a grayed italic text saying 'Last prompt: .......'").
  * The formatting and the value/content rule live in `app/input-hint.js`, which is
  * pure; this module only decides *when* to paint it.
+ *
+ * The **text and the caret** are not the widget's either: neo-blessed's textarea
+ * appends every printable byte at the end and its directional keys are a `// TODO`
+ * in the library, so the editing model (left/right/home/end, backspace/delete,
+ * grapheme-aware) lives in `app/prompt-editor.js` and the up/down recall of what was
+ * sent in `app/prompt-history.js`, bound inside the box by `app/prompt-keys.js`
+ * (docs/interface/prompt-editor). This module owns only *when* a submission happens,
+ * and it asks that seam to empty the box and to remember what was really sent — a
+ * queued message is recallable too, because the user sent it.
  *
  * `arm()` is the single arming point and is **idempotent**, so anything that finds
  * the box unfocused or no longer reading can simply arm it again (app/focus-guard.js
@@ -38,6 +48,7 @@ export function normalizePrompt(prompt) {
  * @param {object} [options.pastes]  the paste table (app/paste-registry.js)
  * @param {object} [options.queue]   the pending-message queue (app/message-queue.js)
  * @param {object} [options.hint]    the last-prompt hint (app/input-hint.js)
+ * @param {object} [options.keys]    the caret/history seam (app/prompt-keys.js)
  * @param {Function} [options.log]   where the "[pasted N lines -> …]" notice goes
  * @param {Function} [options.refresh] repaint hook
  */
@@ -46,9 +57,13 @@ export function createPromptInput({
   pastes = null,
   queue = null,
   hint = null,
+  keys = null,
   log = () => {},
   refresh = () => {},
 } = {}) {
+  // The arrows, the caret and the recallable history (app/prompt-keys.js). It adopts
+  // whatever the box already holds, so an injected seam is respected.
+  const promptKeys = keys || createPromptKeys({ inputBox, refresh });
   let pending = null;
   let inFlight = false;
   let labelText = ' > ';
@@ -95,6 +110,9 @@ export function createPromptInput({
     dropOrphanReader();
     if (!hasFocus() && typeof inputBox.focus === 'function') inputBox.focus();
     if (typeof inputBox.readInput === 'function') inputBox.readInput();
+    // The editor adopts what the box holds (a hint is content, never value) and the
+    // caret is placed on the text the user can type into.
+    promptKeys.sync();
     lastPromptHint.apply();
     refresh();
     return true;
@@ -104,7 +122,11 @@ export function createPromptInput({
   const settle = (value) => {
     const resolve = pending;
     pending = null;
-    if (inputBox && typeof inputBox.clearValue === 'function') inputBox.clearValue();
+    // The box is emptied through the editing seam, so the caret and the one-line window
+    // empty with it; a raw clearValue() would leave the model holding the old text.
+    promptKeys.reset();
+    // What was really sent is recallable with the up arrow (app/prompt-history.js).
+    promptKeys.record(value);
     // The box is empty again, so the hint for the prompt just sent takes over.
     lastPromptHint.note(value);
     if (typeof resolve === 'function') resolve(value);
@@ -139,7 +161,10 @@ export function createPromptInput({
       return null;
     }
     const queued = queue ? queue.enqueue(text) : null;
-    if (inputBox && typeof inputBox.clearValue === 'function') inputBox.clearValue();
+    promptKeys.reset();
+    // A message the user really sent is part of the history even when it was queued
+    // rather than answered: the up arrow recalls what was *said*, not what was replied.
+    promptKeys.record(text);
     // Enter ends the box's read cycle (neo-blessed's textarea drops its listener on
     // submit), so the box is armed again here: otherwise the very next keystroke of
     // a long turn would be lost — the bug this queue exists to fix.
@@ -151,6 +176,28 @@ export function createPromptInput({
     submit,
     settle,
     arm,
+    /** The editing seam: the caret, the window and the recallable history. */
+    keys: promptKeys,
+    /** The box's text, verbatim, as the caret editor sees it. */
+    get value() {
+      return promptKeys.value;
+    },
+    /** The caret, in grapheme clusters from the start of the box. */
+    get caret() {
+      return promptKeys.caret;
+    },
+    /** The caret's column in display cells (what the terminal cursor is placed at). */
+    get caretColumn() {
+      return promptKeys.caretColumn;
+    },
+    /** The prompts the up arrow recalls, oldest first. */
+    get history() {
+      return promptKeys.history.entries;
+    },
+    /** True while the up/down walk is in progress. */
+    get isWalkingHistory() {
+      return promptKeys.isWalkingHistory;
+    },
     /** Paint the last-prompt hint (or the box's own value) right now. */
     applyHint: () => lastPromptHint.apply(),
     /** The prompt the hint is built from ('' before the first one is sent). */
@@ -198,6 +245,7 @@ export function createPromptInput({
     abandon() {
       pending = null;
       inFlight = false;
+      promptKeys.close();
       return true;
     },
     get pending() {
@@ -228,3 +276,6 @@ export function createPromptInput({
 }
 
 export { createInputHint, formatLastPromptHint, LAST_PROMPT_LABEL, HINT_COLOR };
+export { createPromptKeys } from './prompt-keys.js';
+export { createPromptEditor } from './prompt-editor.js';
+export { createPromptHistory } from './prompt-history.js';

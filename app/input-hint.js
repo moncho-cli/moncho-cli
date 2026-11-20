@@ -1,4 +1,5 @@
 import { sanitize } from './tui-render.js';
+import { cutCodePoints } from './cell-width.js';
 
 /**
  * The "Last prompt: …" hint shown over an empty input box (task-backlog: "if the
@@ -55,7 +56,10 @@ export function formatLastPromptHint(text, maxChars = HINT_MAX_CHARS) {
   const flat = sanitize(text).replace(/\s+/g, ' ').trim();
   if (!flat) return '';
   const cap = Number(maxChars) > 0 ? Math.trunc(Number(maxChars)) : HINT_MAX_CHARS;
-  return `${LAST_PROMPT_LABEL}${flat.length > cap ? `${flat.slice(0, cap - 1)}…` : flat}`;
+  // The cut is made between **grapheme clusters**, never code units: an emoji in the
+  // last prompt is one glyph, and cutting into it would leave half a sequence on
+  // screen, which a terminal paints as a replacement glyph.
+  return `${LAST_PROMPT_LABEL}${cutCodePoints(flat, cap)}`;
 }
 
 /**

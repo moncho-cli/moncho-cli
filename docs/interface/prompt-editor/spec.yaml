@@ -1,0 +1,71 @@
+id: interface/prompt-editor
+domain: interface
+title: The input box as an editable line, with an arrow-key history
+status: active
+summary: >
+  The input box has an editing model of its own, because neo-blessed's textarea has
+  none: its directional keys are a `// TODO` in the library and it only ever appends
+  at the end. app/prompt-editor.js holds the text and the caret in grapheme clusters
+  (left/right/home/end, insert at the caret, backspace/delete) and windows a long
+  line so the caret stays in view (window()); app/prompt-history.js walks the prompts
+  already sent with up/down and always gives back the draft the box held when the
+  walk began; app/prompt-keys.js binds both inside the widget by replacing the
+  instance's _listener, delegating every key it does not handle to the widget's own
+  listener, keeping value/_value in step and painting the caret at its real column;
+  app/prompt-input.js empties the box through that seam and records what was really
+  sent. Everything that has to fit a width counts display cells rather than code
+  points (app/cell-width.js), so an emoji is one glyph of two cells and a truncated
+  line never ends on half a character.
+code:
+  - path: app/cell-width.js
+    symbols: [graphemes, graphemeWidth, displayWidth, clustersWithin, truncateToWidth, cutCodePoints, tailWithin, WIDE_CELL_RE, ZERO_CELL_RE]
+  - path: app/prompt-editor.js
+    symbols: [createPromptEditor]
+  - path: app/prompt-history.js
+    symbols: [createPromptHistory, HISTORY_LIMIT]
+  - path: app/prompt-keys.js
+    symbols: [createPromptKeys]
+  - path: app/prompt-input.js
+    symbols: [createPromptInput, normalizePrompt]
+  - path: app/input-hint.js
+    symbols: [formatLastPromptHint, LAST_PROMPT_LABEL]
+  - path: app/notice-overlay.js
+    symbols: [formatNoticeText]
+  - path: app/tui-render.js
+    symbols: [composeStatusRow]
+  - path: app/tui.js
+    symbols: [createTui]
+tests:
+  - path: tests/cell-width.test.js
+    cases:
+      - "graphemes() and displayWidth() count cells per cluster, not per code point"
+      - "truncateToWidth() and cutCodePoints() never cut a character in half"
+      - "tailWithin() keeps the cells that end at the caret, and nothing before them"
+  - path: tests/prompt-editor.test.js
+    cases:
+      - "createPromptEditor() moves the caret through the text one cluster at a time"
+      - "createPromptEditor() types, deletes and backspaces at the caret"
+      - "createPromptEditor() treats an emoji as one character in every operation"
+      - "createPromptEditor() windows a long line so the caret stays in view"
+      - "createPromptHistory() walks the prompts sent and always gives the draft back"
+      - "createPromptHistory() ignores blanks, the exit sentinel caller and repetitions"
+  - path: tests/prompt-keys.test.js
+    cases:
+      - "createPromptKeys() binds the arrows inside the box and leaves other keys alone"
+      - "createPromptKeys() gives up and down to the history, and back to the box when empty"
+      - "createPromptKeys() adopts a value written from outside and survives a close"
+      - "createPromptKeys() without a widget is a harmless no-op"
+      - "the arrow keys edit the prompt and recall history in the real TUI"
+  - path: tests/queue-rows.test.js
+    cases:
+      - "displayWidth() and truncateToWidth() count cells, not characters"
+      - "formatQueueRow() fits a long message to the width the row really has"
+  - path: tests/message-queue-tui.test.js
+    cases:
+      - "a long queued message uses the whole bar and is never wrapped or clipped"
+  - path: tests/emoji-render.test.js
+    cases:
+      - "formatLastPromptHint() truncates between clusters, never through an emoji"
+      - "formatNoticeText() truncates between clusters, never through an emoji"
+      - "composeStatusRow() measures in cells, so an emoji cannot shift the meter"
+      - "the conversation shows an emoji intact in the real TUI"

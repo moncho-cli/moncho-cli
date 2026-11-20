@@ -28,6 +28,7 @@ test('each tool name maps to its operation family, and an unknown name to other'
     hint_file: 'read',
     blob: 'read',
     grep: 'read',
+    read_capture: 'read',
     write_file: 'write',
     patch_file: 'write',
     delete_file: 'write',

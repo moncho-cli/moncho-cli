@@ -7,6 +7,7 @@ import { detectCompactionRequest } from './compaction-request.js';
 import { guardToolCall, formatGuardRefusal } from './tool-guard.js';
 import { formatRefusalLine } from './refusal-line.js';
 import { logEvent } from '../utils/logger.js';
+import { captureIds, expireCaptures, capturesRequestedBy } from '../utils/capture-store.js';
 import {
   formatCallLines,
   formatCallSignature,
@@ -234,7 +235,15 @@ export async function handleToolBatch({
 
   // The accepted calls are dispatched together and awaited together, so their
   // wall-clock cost is the slowest call rather than the sum of all of them.
+  const existingCaptures = captureIds();
   const outcomes = await dispatchToolCalls(plan.accepted, toolFunctions, { signal, gate });
+  // A capture lives for one action (docs/agent/command-capture): the ones that already
+  // existed and that this batch did not ask to read go now, so a huge output can never
+  // pile up in memory. A capture *taken* during the batch is kept — the next batch may
+  // read it, which is what makes "inspect it next" possible.
+  const keptByCallers = capturesRequestedBy(plan.accepted.map(({ call }) => call));
+  const takenNow = captureIds().filter((id) => !existingCaptures.includes(id));
+  expireCaptures({ keep: [...takenNow, ...keptByCallers] });
   let compactionRequested = false;
   const order = [];
 

@@ -160,6 +160,30 @@ export function createTuiSurface({
     queueBar: queueRegion,
     inputBox,
     setQueueHeight,
+    // The input box as an editable line (app/prompt-keys.js): the text, the caret and
+    // the recallable history, so the host and the tests can see what the arrows did
+    // without reaching into the wiring module.
+    promptInput,
+    /** The box's text, verbatim, as the caret editor sees it. */
+    get promptValue() {
+      return promptInput.value;
+    },
+    /** The caret, in grapheme clusters from the start of the box. */
+    get promptCaret() {
+      return promptInput.caret;
+    },
+    /** The caret's column in display cells, which is where the terminal cursor goes. */
+    get promptCaretColumn() {
+      return promptInput.caretColumn;
+    },
+    /** The prompts the up arrow recalls, oldest first. */
+    get promptHistory() {
+      return promptInput.history;
+    },
+    /** The editing seam itself, for callers that need the editor or the walk. */
+    get promptKeys() {
+      return promptInput.keys;
+    },
     // Keeping the input box armed: the click on the box and the periodic check
     // (app/focus-guard.js). Exposed so the host and the tests can see a repair
     // without reaching into the wiring module.
