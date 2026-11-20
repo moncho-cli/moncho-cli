@@ -96,14 +96,15 @@ test('the command registry is iterable code, not a hard-coded switch', async () 
   assert.throws(() => registry.register({ name: 'x' }), /needs a run/);
 });
 
-test('the default registry ships /work, /sessions, /usage and /help, and /help lists them', async () => {
+test('the default registry ships /work, /sessions, /usage, /compact and /help, and /help lists them', async () => {
   const registry = createDefaultCommands();
-  assert.deepEqual(registry.list().map((command) => command.name), ['help', 'sessions', 'usage', 'work']);
+  assert.deepEqual(registry.list().map((command) => command.name), ['compact', 'help', 'sessions', 'usage', 'work']);
   assert.equal(registry.get('resume').name, 'sessions', 'the alias is registered');
 
   const help = await runCommand(registry, 'help', {});
   assert.equal(help.code, 'HELP');
   assert.deepEqual(help.lines, [
+    '/compact — compact the context window now (/compact force to compact within budget)',
     '/help — list the available commands',
     '/sessions — list stored conversations and continue one',
     '/usage — token usage per model in this session',

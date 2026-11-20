@@ -11,9 +11,16 @@ summary: >
   model, so they are tested without a terminal.
   /work on|off is the execution lock (`docs/interface/modes`): it refuses a session
   with no task.md or with every item done, and releasing it lands on Design.
+  /compact is the compaction the *user* asks for: a bare /compact runs the ordinary
+  budget check and reports WITHIN_BUDGET when the window still fits, /compact force
+  overrides it, and a completed compaction restarts the model-call pulse
+  (`docs/context/call-pulse`). It drives ConversationManager#maybeCompact(), so the
+  summary call stays with the manager that owns the provider connection.
 code:
   - path: app/commands.js
     symbols: [createCommandRegistry, parseCommand, createDefaultCommands, helpCommand, sessionsCommand, usageCommand, runCommand]
+  - path: app/compact-command.js
+    symbols: [compactCommand, FORCE_ARG]
   - path: app/work-command.js
     symbols: [workCommand, readTaskItems]
   - path: utils/usage-stats.js
@@ -31,7 +38,7 @@ tests:
     cases:
       - "parseCommand() recognises /<name> <arg> and leaves prompts alone"
       - "the command registry is iterable code, not a hard-coded switch"
-      - "the default registry ships /work, /sessions, /usage and /help, and /help lists them"
+      - "the default registry ships /work, /sessions, /usage, /compact and /help, and /help lists them"
       - "/sessions with no stored session says so and changes nothing"
       - "/sessions lists the stored conversations when there is no picker"
       - "/sessions opens the picker and resumes the chosen conversation"
@@ -39,6 +46,13 @@ tests:
       - "/sessions <id> resumes directly, without a picker"
       - "createPicker() keeps the cursor in view and wraps at the ends"
       - "createPicker() handles an empty list without throwing"
+  - path: tests/compact-command.test.js
+    cases:
+      - "/compact runs the ordinary budget check and reports a window that still fits"
+      - "/compact force overrides the budget and restarts the pulse"
+      - "/compact over a window with nothing to compact says so instead of failing"
+      - "/compact refuses a front end without a window, an unknown argument and a failed compaction"
+      - "/compact ships in the default registry, so the user can type it"
   - path: tests/tui-modal.test.js
     cases:
       - "the picker modal opens, navigates and resolves with the chosen index"

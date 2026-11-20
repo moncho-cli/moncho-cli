@@ -1,6 +1,7 @@
 import { writeFileVerified } from '../utils/file-io.js';
+import { forgetRead, staleWriteRefusal } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
-import { canonicalTrackingWrite } from '../utils/tracking-fence.js';
+import { canonicalTrackingWrite, isToolOwnedFile } from '../utils/tracking-fence.js';
 
 /**
  * Overwrite a file with verified, atomic writes (see utils/file-io.js).
@@ -10,6 +11,11 @@ import { canonicalTrackingWrite } from '../utils/tracking-fence.js';
  * (`utils/tracking-format.js`) before it lands, so `task.md` and
  * `implementation_plan.md` keep their shape no matter who drafts them
  * (`utils/tracking-fence.js`).
+ *
+ * A file the model *read* and that changed on disk in the meantime is **refused** with
+ * `STALE_READ` (`utils/read-tracker.js`): overwriting it would throw away bytes the
+ * model never saw. The refusal names the re-read that clears it, and the tracking files
+ * are exempt because `update_task` rewrites them whole.
  */
 
 const { definition, execute } = defineTool({
@@ -30,9 +36,17 @@ const { definition, execute } = defineTool({
   },
   async execute(args) {
     try {
+      // A file the model read and that changed in the meantime is refused: writing now
+      // would clobber bytes it never saw (utils/read-tracker.js). The tracking files are
+      // exempt — `update_task` owns them and the fence already answers for them.
+      const stale = staleWriteRefusal(args?.path, { isToolOwned: isToolOwnedFile });
+      if (stale) return JSON.stringify(stale);
+
       const tracking = canonicalTrackingWrite(args.path, args.content);
       const content = tracking ? tracking.content : args.content;
       const result = writeFileVerified(args.path, content);
+      // The bytes on disk are now the model's own: no stale view is left to guard.
+      forgetRead(args.path);
       return JSON.stringify({
         status: 'success',
         path: args.path,

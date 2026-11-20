@@ -1,4 +1,5 @@
 import { defineTool } from '../utils/tool-schema.js';
+import { recordRead } from '../utils/read-tracker.js';
 import {
   displayPath,
   listProjectFiles,
@@ -56,6 +57,10 @@ function renderBlob(relativePath, { maxBytesPerFile, remainingBytes }) {
       truncated: false
     };
   }
+
+  // A blob is a read: the model holds these bytes, so a later write into a file that
+  // changed since is refused (utils/read-tracker.js).
+  recordRead(relativePath);
 
   let content = read.content;
   let bytes = read.bytes;

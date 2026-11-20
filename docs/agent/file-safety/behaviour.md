@@ -40,6 +40,39 @@ Implementations are linked at the bottom.
 - `readFileIfExists()` returns `null` for a missing file rather than throwing,
   which callers use for optional reads (e.g. the task/plan bookkeeping).
 
+## The stale-read guard
+
+The sandbox stops the agent from reaching outside the project; the **stale-read guard**
+stops it from overwriting a change it never saw. A read is not just a look — the model
+now believes it knows what is in the file — so the bytes it was handed are remembered,
+and a write built on those bytes is refused once they have moved. This is
+`utils/read-tracker.js`.
+
+- A **read is recorded as a fingerprint** of what was handed over: the file's
+  modification time and size, keyed by its project-relative path. `read_file` and
+  `hint_file` record it as they read; `blob` records every file it wraps.
+- Before a write or a patch the file is fingerprinted again. The **same pair** means the
+  model's view is still the file on disk and the write goes ahead. A **different pair**
+  means someone else touched it — the user in an editor, another tool, a previous turn —
+  and the operation is refused with `STALE_READ` and a `guidance` line naming the
+  `read_file` call that clears it. A refusal changes nothing.
+- `patch_file` refuses **before** it matches a hunk: a diff built against bytes that are
+  gone would either fail on context or, worse, land on lines that merely look right.
+- A **successful write or patch forgets the record**, because the bytes on disk are then
+  exactly what the model just supplied; `delete_file` forgets the path it removed.
+- **Only a file the model really read is guarded.** A file it never read, and a file that
+  does not exist yet, are written as before — there is no stale view to protect, and
+  inventing one would refuse every legitimate create. A file *removed* after the read is
+  not refused either: there is no unseen content to clobber, and sending the model to
+  re-read a path that is gone would be a dead end.
+- The **tracking files are exempt**. `task.md` and `implementation_plan.md` are rewritten
+  whole by `update_task`, so a read of one is routinely followed by a harness write; the
+  fence already answers for them (`docs/agent/task-tracking`).
+- The record is **host state, never a chunk**: it lives in the module's own map, so it
+  costs no context and is not persisted. A resumed session therefore starts with nothing
+  recorded and guards nothing, which is the safe direction — a refusal needs a recorded
+  read to exist.
+
 ## Verified delete
 
 A write can be corrected by writing again; a **delete cannot be undone by retrying the
@@ -79,10 +112,15 @@ wrapper over it.
 - `read_file` wraps its result in the `<file relative_path="…">` delimiter and
   never silently returns an empty body for a page that is fully out of range — the
   tag still reports the path.
+- A refusal from the stale-read guard carries `status: "error"`, `code: "STALE_READ"`,
+  the path, the reason (`modified`), the recorded and current byte counts, and the
+  `guidance` naming the re-read — the same shape as every other tool refusal.
 
 ## See also
 
-- Implementation: `utils/path-safety.js`, `utils/file-io.js`, `tools/read_file.js`,
-  `tools/write_file.js`, `tools/delete_file.js`, `utils/tracking-fence.js`
+- Implementation: `utils/path-safety.js`, `utils/file-io.js`, `utils/read-tracker.js`,
+  `tools/read_file.js`, `tools/write_file.js`, `tools/delete_file.js`,
+  `utils/tracking-fence.js`
 - The fence that owns the two tracking files: `docs/agent/task-tracking`
-- Proof: `tests/harness-tools.test.js`, `tests/delete-file.test.js`
+- Proof: `tests/harness-tools.test.js`, `tests/delete-file.test.js`,
+  `tests/stale-read.test.js`

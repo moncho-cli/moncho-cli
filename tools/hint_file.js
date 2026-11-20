@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { resolveProjectPath, projectRelativePath } from '../utils/path-safety.js';
+import { recordRead } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
 import {
   MAX_HINT_CHARS,
@@ -104,6 +105,9 @@ const { definition, execute } = defineTool({
       const rawPath = args.path;
       const relativePath = projectRelativePath(rawPath);
       const fullContent = fs.readFileSync(resolveProjectPath(rawPath), 'utf-8');
+      // A hint is a read too: the model has seen a sketch of these bytes, so a write
+      // into a file that moved afterwards is refused (utils/read-tracker.js).
+      recordRead(relativePath);
       const fileSize = fullContent.length;
       const fileLines = fullContent === '' ? 0 : fullContent.split('\n').length;
 

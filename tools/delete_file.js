@@ -1,4 +1,5 @@
 import { deleteFileVerified, FileIOError } from '../utils/file-io.js';
+import { forgetRead } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { trackingDeleteRefusal } from '../utils/tracking-fence.js';
 
@@ -55,6 +56,8 @@ const { definition, execute } = defineTool({
       if (fenced) return JSON.stringify(fenced);
 
       const result = deleteFileVerified(args.path);
+      // There is nothing left to guard: the path the model read is gone.
+      forgetRead(args.path);
       return JSON.stringify({
         status: 'success',
         path: result.path,

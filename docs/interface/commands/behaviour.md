@@ -61,6 +61,23 @@ registry and the commands that ship with it; the implementation is linked below.
   the live meter, so `/usage` works while the session is running and after it is
   resumed. It does **not** replace the status bar: the meter shows how full the
   window is right now, `/usage` shows what was spent.
+- **`/compact [force]`** — compact the context window **now**, at the user's request
+  (`docs/context/compaction`). The window already compacts itself when a turn pushes it
+  past its budget, and the model can ask for one through the `compact_context` tool;
+  this is the third way in, and it moves the very same state — it drives
+  `ConversationManager#maybeCompact()`, so the summary call stays with the manager that
+  owns the provider connection and the command never calls a model itself.
+  - a **bare `/compact`** runs the ordinary budget check: a window that still fits
+    reports `WITHIN_BUDGET` and is left exactly as it was, and the message names
+    `/compact force` as the override.
+  - **`/compact force`** compacts even within budget. A window holding no older block to
+    summarise is still not an error: it answers `WITHIN_BUDGET` with the reason
+    `nothing_to_compact`.
+  - a **completed compaction restarts the model-call pulse** (`docs/context/call-pulse`):
+    a user-driven compaction is the same event as the forced one the turn loop performs,
+    so the counter goes back to 0 and the result reports `pulseReset: true`.
+  - a **failure is its own refusal**, `COMPACTION_FAILED`, naming the reason the window
+    was left unchanged — a compaction must never silently discard history.
 - **`/help`** — the command list, derived from the registry itself.
 
 ## The picker
@@ -85,9 +102,10 @@ Each front end renders it its own way:
 
 ## See also
 
-- Implementation: `app/commands.js`, `app/picker.js`, `app/tui-modal.js`,
-  `app/cli.js`, `main.js`
+- Implementation: `app/commands.js`, `app/compact-command.js`, `app/picker.js`,
+  `app/tui-modal.js`, `app/cli.js`, `main.js`
 - Spec of the numbers `/usage` prints: `docs/context/model-usage`
 - Spec of the stored sessions: `docs/runtime/session-store`
 - Spec of the reload after a resume: `docs/interface/session-replay`
-- Proof: `tests/commands.test.js`, `tests/tui-modal.test.js`
+- Spec of the compaction `/compact` drives: `docs/context/compaction`
+- Proof: `tests/commands.test.js`, `tests/compact-command.test.js`, `tests/tui-modal.test.js`

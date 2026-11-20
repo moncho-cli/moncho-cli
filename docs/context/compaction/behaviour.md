@@ -48,6 +48,12 @@ A summary paraphrases, and the prompt the user actually typed is the one thing t
 - `ContextWindow.needsCompaction()` is true when the estimated request size exceeds the budget; it also carries where the budget came from (config override, provider API, or default) so the UI can show both.
 - `compact()` returns a report and records it in a compaction history; a within-budget call is a no-op with reason `within-budget` unless forced.
 - The `compact_context` tool reaches the **live** window through a host registry. It either reports a model-free dry run (`WITHIN_BUDGET`, or `COMPACTION_REQUESTED` with `defer: false`) or *requests* a real compaction by returning `defer: true`, which the host loop then performs because it owns the provider connection. Without a registered window it returns `NO_CONTEXT_WINDOW`.
+- There are **three ways in**, and they all reach the same state
+  (`ConversationManager#maybeCompact()`): the budget check the turn loop runs, the
+  `compact_context` tool the model calls, and the `/compact [force]` slash command the
+  *user* types (`docs/interface/commands`). A user-driven compaction restarts the
+  model-call pulse (`docs/context/call-pulse`), exactly like the forced one the turn
+  loop performs.
 
 ## Implementation
 

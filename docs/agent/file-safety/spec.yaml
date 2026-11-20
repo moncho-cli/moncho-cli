@@ -12,12 +12,19 @@ summary: >
   (IS_DIRECTORY / NOT_FOUND, never a silent success), a symlink is unlinked without
   touching its target, and success is only reported once the path is really gone.
   The two tracking files are refused by the same fence that guards a patch, because
-  update_task owns them.
+  update_task owns them. On top of the sandbox sits the stale-read guard
+  (utils/read-tracker.js): a read records the size and mtime of the bytes the model
+  was handed, and a write or a patch into a file that changed since is refused with
+  STALE_READ plus a guidance naming the re-read that clears it. A file never read, a
+  brand-new file and the two tracking files are written as before, and a successful
+  write forgets the record.
 code:
   - path: utils/path-safety.js
     symbols: [PathSafetyError, resolveProjectPath, projectRelativePath]
   - path: utils/file-io.js
     symbols: [FileIOError, writeFileVerified, readFileIfExists, deleteFileVerified]
+  - path: utils/read-tracker.js
+    symbols: [recordRead, readDrift, forgetRead, staleWriteRefusal, fingerprint, trackedReads, clearReads]
   - path: tools/write_file.js
     symbols: [definition, execute]
   - path: tools/read_file.js
@@ -44,3 +51,15 @@ tests:
       - delete_file never removes a tracking file, whichever folder holds it
       - deleteFileVerified() reports the removal it can prove and refuses the rest
       - a symlink is unlinked without touching its target
+  - path: tests/stale-read.test.js
+    cases:
+      - recordRead()/readDrift() remember the bytes a read handed over
+      - a write into a file that changed since the read is refused with STALE_READ
+      - re-reading clears the refusal, and the write then lands
+      - a successful write leaves no stale view behind, so the next write is not refused
+      - patch_file refuses a stale target before it matches a single hunk
+      - a file the model never read, and a brand-new file, are written as before
+      - hint_file and blob count as reads, because the model saw those bytes
+      - delete_file forgets the path it removed, so a later create is not refused
+      - the tracking files are exempt, because update_task rewrites them whole
+      - forgetRead() and clearReads() drop what is tracked

@@ -1,6 +1,7 @@
 import { listSessions, loadSession, describeSession, sessionChunks, sessionUsage, sessionModeState, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
+import { compactCommand } from './compact-command.js';
 
 /**
  * Slash commands: the iterable registry behind `/sessions` (task.md item 4).
@@ -69,6 +70,7 @@ export function createDefaultCommands() {
   registry.register(workCommand());
   registry.register(sessionsCommand());
   registry.register(usageCommand());
+  registry.register(compactCommand());
   registry.register(helpCommand(registry));
   return registry;
 }

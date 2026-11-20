@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { resolveProjectPath, projectRelativePath } from '../utils/path-safety.js';
+import { recordRead } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
 
 /**
@@ -72,6 +73,9 @@ const { definition, execute } = defineTool({
     const relativePath = projectRelativePath(rawPath);
 
     const fullContent = fs.readFileSync(resolveProjectPath(rawPath), 'utf-8');
+    // The model now holds these bytes: remember them, so a later write into a file
+    // that changed in the meantime is refused (utils/read-tracker.js).
+    recordRead(relativePath);
     const fileSize = fullContent.length;
     const fileLines = fullContent === '' ? 0 : fullContent.split('\n').length;
 

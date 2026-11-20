@@ -1,10 +1,17 @@
 import { applyPatch, PatchError } from '../utils/patch_lib.js';
+import { forgetRead, staleWriteRefusal } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
-import { trackingFenceRefusal } from '../utils/tracking-fence.js';
+import { isToolOwnedFile, trackingFenceRefusal } from '../utils/tracking-fence.js';
 
 /**
  * The two tracking files belong to `update_task` (utils/tracking-fence.js), so a patch
  * that names one is refused with the tool to use instead of being applied.
+ *
+ * A file the model read and that changed on disk afterwards is refused with
+ * `STALE_READ` (`utils/read-tracker.js`) *before* the hunks are matched: a patch built
+ * against bytes that are no longer there would either fail on context or, worse, land
+ * on lines that merely look right. A successful patch forgets the recorded read,
+ * because the bytes on disk are then the model's own.
  */
 
 function errorResponse(error) {
@@ -55,7 +62,14 @@ const { definition, execute } = defineTool({
       const fenced = trackingFenceRefusal(args.path);
       if (fenced) return JSON.stringify(fenced);
 
-      return JSON.stringify(applyPatch(args.patchStr, args.path));
+      // A patch is built against the bytes the model read: if those bytes moved, the
+      // patch is refused rather than matched against whatever is there now.
+      const stale = staleWriteRefusal(args.path, { isToolOwned: isToolOwnedFile });
+      if (stale) return JSON.stringify(stale);
+
+      const result = applyPatch(args.patchStr, args.path);
+      forgetRead(args.path);
+      return JSON.stringify(result);
     } catch (error) {
       return errorResponse(error);
     }
