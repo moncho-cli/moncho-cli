@@ -31,9 +31,11 @@ nothing it cannot describe.
 - `design` may write **only** the two tracking files, `task.md` and
   `implementation_plan.md`: it is the mode that turns a discussion into a backlog,
   never the mode that turns the backlog into code.
-- Those two files live **in the session folder** (`agent/sessions/<id>/`, see
-  `docs/agent/task-tracking`), so `design` may write them there as well as at the
-  project root — one folder deep, and only under those two names.
+- Those two files live **only in the session folder** (`agent/sessions/<id>/`, see
+  `docs/agent/task-tracking`), so `design` may write them there and nowhere else — one
+  folder deep, and only under those two names. The project root is not a place either
+  file may appear: a checklist belongs to a conversation, so `write_file` refuses a root
+  `task.md` (`utils/tracking-fence.js#trackingLocationRefusal`).
 - `work` executes the backlog: talk the work through and the agent acts on it. The
   `work:on` **lock** is an optional extra, not how a session normally works — see
   *The work lock* below.

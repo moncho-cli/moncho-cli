@@ -22,6 +22,7 @@ specs:
   - agent/tool-call-contract
   - agent/tool-multicall
   - agent/tool-refusal
+  - agent/approach-gate
   - agent/file-safety
   - agent/line-edits
   - agent/patch-application

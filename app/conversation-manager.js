@@ -3,12 +3,22 @@ import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
 import { registerContextWindow, registerTaskPulse } from '../utils/host.js';
 import { createTaskPulse, formatPulseLimitNotice } from '../utils/task-pulse.js';
-import { createUsageMeter, recordProviderCall, totalUsage } from '../utils/usage-stats.js';
+import { createUsageMeter } from '../utils/usage-stats.js';
 import { createWorkingClock } from '../utils/working-time.js';
-import { handleToolBatch } from './tool-batch.js';
 import { createCompactionRunner, createSummaryCallModel } from './compaction-runner.js';
-import { formatRetryNotice, formatFailureNotice } from './notice-overlay.js';
+import { formatFailureNotice } from './notice-overlay.js';
 import { runTurn } from './turn-runner.js';
+import { runToolBatch, storeFinalResponse } from './manager-turn.js';
+import {
+  accountUsage,
+  accountWorkTime,
+  announceChunksChange,
+  announceContextChange,
+  announceNotice,
+  announceRetry,
+  timeCallModel,
+  workingTotals,
+} from './manager-hooks.js';
 
 /**
  * The conversation: its state, and the seam the turn runner drives.
@@ -20,26 +30,19 @@ import { runTurn } from './turn-runner.js';
  * The class owns everything that outlives a turn — the window, the usage meter, the
  * working clock, the model-call pulse, the compaction runner, the tool functions —
  * plus the hooks the host needs. The *control flow of one turn* lives in
- * `app/turn-runner.js`, which calls the members below; that split is what keeps both
- * modules under the line budget and lets a turn be tested against a stub session.
+ * `app/turn-runner.js`, which calls the members below; the hooks and the accounting
+ * are one-line delegations to `app/manager-hooks.js`, and the turn's two side effects
+ * to `app/manager-turn.js`. That split is what keeps every module here under the line
+ * budget and lets a turn be tested against a stub session.
  *
- * Five responsibilities are documented where they are used:
- *
- *  - the tool-call `intent` is printed *and* persisted in the result chunk, so the
- *    reason for a call is both visible and part of the model's context;
- *  - a failure is told apart by whether it was *recovered*: a retried attempt is a
- *    transient notice (app/notice-overlay.js) while the one that ends the task also
- *    keeps a transcript line;
- *  - one assistant message's tool calls are a batch (app/tool-batch.js): capped,
- *    dispatched simultaneously, one chunk per call in call order;
- *  - every agent call is counted for the model-call pulse (`docs/context/call-pulse`),
- *    which is host state and never a chunk; the line itself is paused, so the count
- *    does not ride the request;
- *  - every model call and every tool batch is **timed** (`utils/working-time.js`), so
- *    the session can say how long it has been working; the time is host state like
- *    the pulse — never a chunk, never sent to the provider — and the committed part
- *    of it is accounted per model in the usage table the session file keeps
- *    (`docs/context/working-time`).
+ * Four responsibilities are documented where they are used: the tool-call `intent`
+ * (printed *and* persisted in the result chunk), a failure told apart by whether it was
+ * *recovered* (`app/notice-overlay.js`), one assistant message's tool calls as a batch
+ * (`docs/agent/tool-multicall`), and the model-call pulse (`docs/context/call-pulse`) —
+ * host state, never a chunk, its line paused so the count does not ride the request.
+ * Every model call and every tool batch is timed (`docs/context/working-time`): host
+ * state like the pulse, with only the committed part accounted per model in the usage
+ * table the session file keeps.
  */
 export class ConversationManager {
   constructor(toolFunctions, getTools, getAbortSignal = () => null, options = {}) {
@@ -72,6 +75,13 @@ export class ConversationManager {
     // calls may run at all. `null` keeps every call allowed, exactly as before the
     // intent modes existed (`docs/interface/modes`).
     this.toolGate = typeof options.toolGate === 'function' ? options.toolGate : null;
+    // How many times one turn may be refused for asking for tools before it has
+    // addressed the user (`docs/agent/approach-gate`). The rule is read by the turn
+    // loop; `0` — the default — leaves a session unpoliced, which is what keeps every
+    // existing wiring and stub session behaving exactly as it did.
+    this.approachMaxRefusals = Number.isFinite(options.approachMaxRefusals)
+      ? Math.max(0, Math.floor(options.approachMaxRefusals))
+      : 0;
     // The model-call pulse (utils/task-pulse.js): an injected counter keeps the
     // tests deterministic, and it is the object `update_task` resets through the
     // host registry.
@@ -115,14 +125,7 @@ export class ConversationManager {
    * that eventually threw.
    */
   timedCallModel(callModel) {
-    return async (...args) => {
-      const span = this.working.begin('thinking');
-      try {
-        return await callModel(...args);
-      } finally {
-        this.recordWorkTime({ kind: 'thinking', ms: this.working.end(span) });
-      }
-    };
+    return timeCallModel(this, callModel);
   }
 
   /**
@@ -133,8 +136,7 @@ export class ConversationManager {
    * the time the same way they report the tokens.
    */
   recordWorkTime({ kind = 'thinking', ms = 0 } = {}) {
-    const field = kind === 'tool' ? { toolMs: ms } : { thinkingMs: ms };
-    return this.usage.recordTime(this.model, field);
+    return accountWorkTime(this, { kind, ms });
   }
 
   /** Ordered array of context chunks. */
@@ -153,14 +155,7 @@ export class ConversationManager {
    * number a row shows is current instead of one span stale.
    */
   workingTotals() {
-    const stored = totalUsage(this.usage.table());
-    const open = this.working.openTotals();
-    return {
-      thinkingMs: stored.thinkingMs + open.thinkingMs,
-      toolMs: stored.toolMs + open.toolMs,
-      totalMs: stored.thinkingMs + stored.toolMs + open.totalMs,
-      stored: { thinkingMs: stored.thinkingMs, toolMs: stored.toolMs },
-    };
+    return workingTotals(this);
   }
 
   /** The pulse's view for the host: count, limit and remaining calls. */
@@ -177,7 +172,7 @@ export class ConversationManager {
    * fallback — flagged as an estimate, never passed off as exact.
    */
   recordUsage(response, promptTokens = 0) {
-    return recordProviderCall(this.usage, this.model, { response, promptTokens });
+    return accountUsage(this, response, promptTokens);
   }
 
   /**
@@ -189,14 +184,7 @@ export class ConversationManager {
    * listener that throws must never cost the user their turn.
    */
   notifyContextChange() {
-    if (!this.onContextChange) return null;
-    const stats = this.contextWindow.stats();
-    try {
-      this.onContextChange(stats);
-    } catch {
-      // display only: a broken meter must not break the conversation
-    }
-    return stats;
+    return announceContextChange(this);
   }
 
   /**
@@ -212,12 +200,7 @@ export class ConversationManager {
    * the user their turn, and without one nothing happens at all.
    */
   notifyChunksChanged(reason = 'chunk') {
-    if (!this.onChunksChange) return null;
-    try {
-      return this.onChunksChange(reason) ?? null;
-    } catch {
-      return null;
-    }
+    return announceChunksChange(this, reason);
   }
 
   /**
@@ -229,17 +212,12 @@ export class ConversationManager {
    * hook exists to fix.
    */
   notifyNotice(kind, text, options = {}) {
-    if (!this.onNotice) return null;
-    try {
-      return this.onNotice(kind, text, options);
-    } catch {
-      return null;
-    }
+    return announceNotice(this, kind, text, options);
   }
 
   /** Report one retried attempt (the `onRetry` hook of api/ollama.js). */
   notifyRetry(report = {}) {
-    return this.notifyNotice('warn', formatRetryNotice(report), { code: 'retry' });
+    return announceRetry(this, report);
   }
 
   /**
@@ -289,52 +267,24 @@ export class ConversationManager {
   }
 
   /**
-   * Run the tool calls of one assistant message as a batch.
+   * Run the tool calls of one assistant message as a batch
+   * (`app/manager-turn.js#runToolBatch`, `docs/agent/tool-multicall`).
    *
-   * The batch itself lives in `app/tool-batch.js`: the accepted calls are capped at
-   * `MAX_PARALLEL_TOOL_CALLS`, dispatched simultaneously, and stored one chunk per
-   * call in call order — each result inside the `<tool-multicall result>` envelope
-   * that carries the call's signature (`docs/agent/tool-multicall`). Passing the
-   * window, the log and the tool map in keeps this method the wiring only.
-   *
-   * The whole batch is one *tool* span: the calls run at the same time, so timing
-   * them one by one would report the sum of a parallel batch instead of how long the
-   * user waited for it.
+   * The options come from the turn loop: `content` is the prose the model wrote
+   * **next to** its calls, kept on the same assistant chunk, and `gate` overrides the
+   * session gate for this one batch, which is how the approach rule refuses a whole
+   * batch without the manager knowing what an approach is
+   * (`docs/agent/approach-gate`).
    *
    * @returns {Promise<boolean>} true when a tool asked for a deferred compaction.
    */
-  async handleToolCalls(toolCalls, signal) {
-    const span = this.working.begin('tool');
-    try {
-      const report = await handleToolBatch({
-        toolCalls,
-        signal,
-        window: this.contextWindow,
-        toolFunctions: this.toolFunctions,
-        log: (line) => this.log(line),
-        notify: () => this.notifyContextChange(),
-        gate: this.toolGate,
-        ...(this.maxParallelToolCalls ? { max: this.maxParallelToolCalls } : {}),
-      });
-      this.lastBatch = report;
-      // An assistant chunk plus one chunk per call land in the same tick, so the
-      // record is written once for the whole batch (`app/session-autosave.js`).
-      this.notifyChunksChanged('tools');
-      return report.compactionRequested;
-    } finally {
-      this.recordWorkTime({ kind: 'tool', ms: this.working.end(span) });
-    }
+  async handleToolCalls(toolCalls, signal, options = {}) {
+    return runToolBatch(this, toolCalls, signal, options);
   }
 
+  /** Store, print and announce the tool-free reply that ends a turn. */
   async handleFinalResponse(content) {
-    this.contextWindow.add({ role: "assistant", content });
-    this.notifyChunksChanged('reply');
-    this.notifyContextChange();
-
-    this.log("\n--- AI Response ---");
-    this.log(content);
-    this.log("----------------------");
-    this.log(`[Context] ${this.contextWindow.usage()}\n`);
+    return storeFinalResponse(this, content);
   }
 
   /** Compatibility shim: the context window as a plain message array. */

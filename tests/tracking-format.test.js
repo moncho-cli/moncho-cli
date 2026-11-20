@@ -9,6 +9,7 @@ import {
   canonicalizeTrackingFile, trackingTemplate,
 } from '../utils/tracking-format.js';
 import { definition as updateTaskDefinition } from '../tools/update_task.js';
+import { definition as writeFileDefinition } from '../tools/write_file.js';
 
 /**
  * The canonical shape of the two tracking files.
@@ -231,4 +232,25 @@ test('the prompt tells the agent to record a decision as it is agreed', () => {
   const prompt = fs.readFileSync(new URL('../config/prompt.md', import.meta.url), 'utf-8');
   assert.ok(/record as you go/i.test(prompt), 'the prompt must state the record-as-you-agree rule');
   assert.ok(/the\s+moment it is agreed/.test(prompt), 'and it must say when: the moment it is agreed');
+});
+
+test('the prompt states the tracking rule without teaching a session path', () => {
+  // The model cannot act on where the pair lives — the folder is named after a session
+  // id it never sees, and a resumed conversation may sit in a different one — so the
+  // prompt states the *rule* (the pair is not part of the project; `update_task` owns
+  // it) and leaves the location to the tool, whose every reply reports the resolved
+  // `taskFile`/`planFile` paths. A path here would be text the model can neither check
+  // nor use, which is exactly the kind of instruction this file keeps out.
+  const prompt = fs.readFileSync(new URL('../config/prompt.md', import.meta.url), 'utf-8');
+  assert.doesNotMatch(prompt, /agent\/sessions/, 'the shipped prompt never names the sessions directory');
+  assert.doesNotMatch(prompt, /session folder/i, 'nor describes the folder the pair sits in');
+  assert.match(prompt, /(belong|belongs) to\s+the conversation/i, 'the rule it states instead: the pair is the conversation\'s');
+
+  for (const description of [
+    updateTaskDefinition.function.description,
+    writeFileDefinition.function.description,
+  ]) {
+    assert.doesNotMatch(description, /agent\/sessions/, 'neither tool teaches the sessions directory');
+    assert.doesNotMatch(description, /session folder/i);
+  }
 });

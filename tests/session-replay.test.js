@@ -163,6 +163,26 @@ test('a failed tool result keeps its error marker out of the body', () => {
   assert.match(ops[1].text, /intent: list/);
 });
 
+test('an announced approach replays as the prose it was, before the calls', () => {
+  // The shape the approach rule produces (docs/agent/approach-gate): the model's own
+  // words on the same assistant chunk as the calls it introduces.
+  const { ops } = replayChunks([
+    {
+      role: 'assistant',
+      content: 'I will read the fixture, then grep for the symbol.',
+      tool_calls: [{ id: 'a', function: { name: 'read_file', arguments: JSON.stringify({ path: 'fixture.txt', intent: 'load' }) } }],
+    },
+    { role: 'tool', tool_call_id: 'a', content: 'intent: load\nbody' },
+  ]);
+
+  assert.equal(ops[0].text, 'I will read the fixture, then grep for the symbol.');
+  assert.match(ops[1].text, /-> Calling read_file/);
+  assert.ok(
+    textOf(ops).indexOf('I will read') < textOf(ops).indexOf('-> Calling'),
+    'the stated approach is read before the call it introduces',
+  );
+});
+
 test('renderReplay() drives a block-aware front end and a plain one', () => {
   const { ops } = replayChunks(CHUNKS);
 

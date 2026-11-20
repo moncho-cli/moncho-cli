@@ -20,11 +20,13 @@ import { readTaskItems } from '../app/work-command.js';
 /**
  * *Where* the two tracking files live: one pair per session, under its folder.
  *
- * The rule has three sources and one order (session file, then the session record, then
- * the project root when no session is registered), and these cases fix all three. They
- * exist because the readers used to disagree: `update_task` saw an empty session copy
- * while the work drive saw a file, so a session could report zero items with a populated
- * checklist sitting right there.
+ * The rule has two sources and one order (session file, then the session record), and a
+ * third that is **not** one: the project root. A checklist belongs to the conversation
+ * working through it, so with no session there is no store at all — a root `task.md` was
+ * an artefact of the old flat layout, and these cases pin down that neither half of the
+ * store reaches it. They exist because the readers used to disagree: `update_task` saw an
+ * empty session copy while the work drive saw a file, so a session could report zero
+ * items with a populated checklist sitting right there.
  */
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-tracking-test-'));
@@ -60,28 +62,25 @@ test('a registered session owns a folder, and the files live in it', () => {
   assert.equal(paths.task, `${FOLDER}/task.md`);
   assert.equal(paths.plan, `${FOLDER}/implementation_plan.md`);
 
-  // No session at all is the bare-tool-call shape the tool tests drive.
+  // No session at all means no store at all: the root pair is not a fallback.
   clearSession();
-  assert.deepEqual(trackingPaths(), {
-    task: 'task.md', plan: 'implementation_plan.md', folder: null,
-  });
+  assert.deepEqual(trackingPaths(), { task: null, plan: null, folder: null });
+  assert.equal(readTaskContent(), null, 'nothing is read from the project root');
 });
 
 test('ensureTrackingFiles gives a session its own canonical pair', () => {
-  writeFile('task.md', '- [x] root item\n- [ ] another root item\n');
   registerSession({ id: ID });
 
   const ready = ensureTrackingFiles();
   assert.deepEqual(ready.created, [`${FOLDER}/task.md`, `${FOLDER}/implementation_plan.md`]);
 
-  // Seeded from the root file, but re-rendered in the canonical shape.
+  // A new session starts from the canonical skeleton, never from a root file left in the
+  // tree: the root is the operator's, and a checklist is not a property of the project.
   const task = read(`${FOLDER}/task.md`);
   const checked = validateTrackingFile(task, { kind: 'task' });
   assert.equal(checked.ok, true, checked.problems.join('; '));
-  assert.equal(checked.items.length, 2);
-  assert.equal(checked.items[0].done, true);
-
-  // A session with no root file starts from the skeleton instead of from nothing.
+  assert.equal(checked.items.length, 1);
+  assert.match(checked.items[0].text, /^\(no items? recorded\)$/, 'the skeleton placeholder, not a root file\'s items');
   assert.equal(validateTrackingFile(read(`${FOLDER}/implementation_plan.md`), { kind: 'plan' }).ok, true);
 
   // The record snapshot is seeded too, so a resume with no folder still reads a checklist.
@@ -89,6 +88,19 @@ test('ensureTrackingFiles gives a session its own canonical pair', () => {
 
   // Running it twice changes nothing: the files are already there.
   assert.deepEqual(ensureTrackingFiles().created, []);
+});
+
+test('a root task.md is neither read as a checklist nor rewritten', () => {
+  writeFile('task.md', '# Root\n\nstatus: pending\n\n## Items\n\n- [ ] root item\n');
+  registerSession({ id: ID });
+  ensureTrackingFiles();
+
+  // The session's own pair is the whole store, even while a root file sits right there.
+  assert.equal(readTaskContent(), read(`${FOLDER}/task.md`));
+  assert.deepEqual(readChecklist().map((item) => item.text), ['(no items recorded)'], 'not the root item');
+
+  writeTaskContent(TASK);
+  assert.ok(read('task.md').includes('- [ ] root item'), 'the root file is never touched');
 });
 
 test('the session copy answers only when its file is gone', () => {
@@ -148,24 +160,28 @@ test('update_task reads and writes the checklist of its own session', async () =
   assert.ok(read(`${FOLDER}/implementation_plan.md`).startsWith('# item two'));
 });
 
-test('without a session the project root is the only store', () => {
+test('without a session there is no store, so the project root is never one', () => {
   writeFile('task.md', TASK);
 
-  assert.deepEqual(trackingPaths(), { task: 'task.md', plan: 'implementation_plan.md', folder: null });
-  assert.equal(readTaskContent(), TASK);
-  const written = writeTaskContent('# Root\n\nstatus: done\n\n## Items\n\n- [x] done\n');
-  assert.equal(written.path, 'task.md');
-  assert.ok(read('task.md').includes('- [x] done'));
-  assert.equal(exists('agent'), false, 'a bare tool call never creates a session folder');
-});
+  // A root file is the operator's, not a checklist: it is not read, and it is not a place
+  // the harness may write either. Both directions are the same rule.
+  assert.deepEqual(trackingPaths(), { task: null, plan: null, folder: null });
+  assert.equal(readTaskContent(), null);
+  assert.throws(
+    () => writeTaskContent('# Root\n\nstatus: done\n\n## Items\n\n- [x] done\n'),
+    (error) => error.code === 'NO_SESSION',
+  );
 
-test('seeding is a session affair, so it never recreates the root pair', () => {
+  assert.ok(read('task.md').includes('- [ ] item one'), 'the root file is left exactly as it was');
+  assert.equal(exists('agent'), false, 'a bare tool call never creates a session folder');});
+
+test('seeding is a session affair, so it never creates the root pair', () => {
   // No session registered: `ensureTrackingFiles()` must be a no-op. Seeding the root
   // files here would resurrect exactly the pair the per-session move removed, and a
   // resume test that runs with no session would leave them in the tree.
   const ready = ensureTrackingFiles();
 
-  assert.deepEqual(ready, { task: 'task.md', plan: 'implementation_plan.md', folder: null, created: [] });
+  assert.deepEqual(ready, { task: null, plan: null, folder: null, created: [] });
   assert.equal(exists('task.md'), false);
   assert.equal(exists('implementation_plan.md'), false);
   assert.equal(exists('agent'), false);

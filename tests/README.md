@@ -22,9 +22,9 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | -------------------------------- | ----------------------------------------------------------- |
 | `docs-realm.test.js` | The three realms are linked: every spec exists, its code refs resolve to real symbols, its named cases exist, every source module is documented. |
 | `harness-tools.test.js` | The tool contract (`intent`), the read_file delimiters, the verified writes and the task.md protocol. |
-| `tracking-format.test.js` | The canonical shape of both tracking files: the closed status set, the skeleton, the validator, the legacy upgrade, and the template the model is shown in the prompt and the tool description. |
-| `tracking-store.test.js` | Where the pair lives: one folder per session, the file/record/root read order, the mirrored writes, and the seeding that never recreates the root files. |
-| `tracking-fence.test.js` | Who may author them: a `write_file` draft re-rendered into the canonical document, and an `edit_file` into one refused as tool-owned. |
+| `tracking-format.test.js` | The canonical shape of both tracking files: the closed status set, the skeleton, the validator, the legacy upgrade, and the template the model is shown in the prompt and the tool description — the rule stated without a session path. |
+| `tracking-store.test.js` | Where the pair lives: one folder per session, the file/record read order, the mirrored writes, and the fact that the project root is never a store — no root file is read, created or seeded. |
+| `tracking-fence.test.js` | Who may author them, and where: `write_file` re-renders a draft only inside a session folder and refuses a tracking name at the root, while `edit_file` and `delete_file` refuse any tracking file as tool-owned. |
 | `tracking-notice.test.js` | That an update is *visible*: the `[Tracking]` rows an item completion, a plan reset and a ticked step print, and the contrasting bright-green they are painted in. |
 | `context-window.test.js` | The context machinery: token estimation, the 80/20 compaction, the live window and the `compact_context` tool. |
 | `command-sandbox.test.js` | The sandbox rules: the allow-list, the shell-free refusals, and the structured npm failures. |
@@ -32,6 +32,8 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `task-plan-progress.test.js` | `implementation_plan.md` moving as steps are verified: the step parsing, the strict selection, the in-place tick and the `step` action. |
 | `tool-multicall.test.js` | The multicall grammar: the call signature, the `<tool-multicall result>` envelope, the round-trip and the replay of an enveloped chunk. |
 | `tool-batch.test.js` | Running one batch: the five-call cap, the simultaneous dispatch in call order, the refusal, and the chunks the loop stores. |
+| `approach-seed.test.js` | The stated approach as a value: prose is the whole test, the refusal and its reader row, the bound, and the wording the shipped prompt uses — the seed named for what it is, never an order about being first or a duty on every tool call. |
+| `approach-gate.test.js` | The approach rule enforced: the seed is latched, a seedless message's calls are refused whole with one structured result per call, later batches of the seeded turn are ordinary, the seed rides the assistant chunk printed before the calls, and the bound lets the batch through without ever starving the turn. |
 | `patch.test.js` | Unified-diff application, its error codes and all-or-nothing behaviour. |
 | `edit.test.js` | Exact literal search/replace: literal matching, the two refusals with their evidence, order, all-or-nothing. |
 | `edit-engine.test.js` | The pure edit engine and its miss diagnostics: literal matching, the candidate report, the bounds. |
@@ -48,7 +50,7 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `context-size.test.js` | Resolving the context size from config, provider or default. |
 | `context-usage-refresh.test.js` | The live token meter: every window change and every call announces the usage, a broken listener is swallowed, and the compaction marker stays once-per-event. |
 | `model-usage.test.js` | Token accounting per model: provider counters normalised from both shapes, the exact/estimated split, the session file's usage block, and `/usage`. |
-| `call-pulse.test.js` | The model-call pulse as a value: the limit's default and its validation, the one-line wording before and past the cap, and the reasons a reset records. |
+| `call-pulse.test.js` | The model-call pulse as a value: the limit's default and its validation, the one-line wording before and past the cap, the reasons a reset records, and the fact that the shipped prompt carries the behaviour rather than the machinery. |
 | `call-pulse-loop.test.js` | The pulse in the loop: the line rides every agent request right after the agent prompt, is never a chunk, the summariser does not tick it, and a completed item or a compaction resets it. |
 | `brand.test.js` | The brand line: `MONCHO (v x.y.z)` formatted from the manifest, the one-row all-or-nothing fit rule, the reserved band, and the floating box in the top right of the conversation. |
 | `queue-rows.test.js` | How a queued message is drawn: the cell counting (wide glyphs two, combining marks none), the preview budget that keeps the `✕ N. ` marker, and the rule that a row is fitted to the bar it is painted in. |

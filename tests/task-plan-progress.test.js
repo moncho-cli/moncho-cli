@@ -17,6 +17,7 @@ import {
   readStatusLine,
   replaceStatusLine
 } from '../utils/plan-file.js';
+import { registerSession, clearSession } from '../utils/host.js';
 
 /**
  * The plan must move *while* an item is in flight (task-backlog: "implementation-plan.md
@@ -28,12 +29,25 @@ import {
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-plan-test-'));
 process.chdir(root);
 
-function writeFile(name, content) {
-  fs.mkdirSync(path.dirname(name), { recursive: true });
-  fs.writeFileSync(name, content, 'utf-8');
+/** The session the tracking pair belongs to, so no fixture is ever written at the root. */
+const FOLDER = 'agent/sessions/plan-test';
+registerSession({ id: 'plan-test' });
+
+/** A tracking name is placed in the session folder; any other path stays where it is. */
+function place(name) {
+  const base = String(name).split('/').pop();
+  if (String(name).includes('/') || !['task.md', 'implementation_plan.md'].includes(base)) return name;
+  return `${FOLDER}/${base}`;
 }
 
-const read = (name) => fs.readFileSync(name, 'utf-8');
+function writeFile(name, content) {
+  const target = place(name);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content, 'utf-8');
+}
+
+const read = (name) => fs.readFileSync(place(name), 'utf-8');
+const exists = (name) => fs.existsSync(place(name));
 
 const PLAN = [
   '# item one',
@@ -220,13 +234,16 @@ test('ticking a step refuses an unknown, ambiguous or already-ticked step', asyn
 });
 
 test('a missing plan file is reported instead of created', async () => {
+  // A fresh registration drops the record snapshot of the plan, so the file really is the
+  // only source and its absence is what the tool has to report.
+  registerSession({ id: 'plan-test' });
   writeFile('task.md', '- [ ] item one\n');
-  if (fs.existsSync('implementation_plan.md')) fs.unlinkSync('implementation_plan.md');
+  if (exists('implementation_plan.md')) fs.unlinkSync(place('implementation_plan.md'));
 
   const result = JSON.parse(await updateTaskExecute({ action: 'step', step: 'anything', intent: 'x' }));
   assert.equal(result.status, 'error');
   assert.equal(result.code, 'PLAN_FILE_NOT_FOUND');
-  assert.equal(fs.existsSync('implementation_plan.md'), false);
+  assert.equal(exists('implementation_plan.md'), false);
 });
 
 test('update_task list reports the plan progress', async () => {

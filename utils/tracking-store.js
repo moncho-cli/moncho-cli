@@ -1,5 +1,5 @@
 import { TASK_FILE, PLAN_FILE } from '../config/constants.js';
-import { readFileIfExists, writeFileVerified } from './file-io.js';
+import { FileIOError, readFileIfExists, writeFileVerified } from './file-io.js';
 import {
   getSession,
   getSessionTaskContent,
@@ -20,17 +20,23 @@ import { canonicalizeTrackingFile } from './tracking-format.js';
  *     agent/sessions/<session-id>/implementation_plan.md
  *
  * The `agent/` tree is gitignored, so a checklist never ships in a commit, and two
- * sessions over the same repository never fight over one file. A bare tool call with no
- * session registered — the tool-level tests — falls back to the project-root names,
- * which is the shape those tests drive.
+ * sessions over the same repository never fight over one file. A tool call with **no**
+ * session registered — a bare tool invocation, which is what the tool-level suites
+ * drive — has no store at all: `trackingPaths()` answers `null` paths, every read
+ * answers `null`, and a write throws `NO_SESSION`.
  *
- * Three sources, consulted in this order and never a fourth:
+ * There is deliberately **no project-root fallback**. The pair is a property of a
+ * conversation, so a root `task.md` is never read as one and can never be created: a
+ * tree file that carried one was an artefact of the old flat layout, and a `[Tracking]`
+ * write against a session-less process used to resurrect it. The root is the operator's
+ * and the harness keeps nothing there.
+ *
+ * Two sources, consulted in this order and never a third:
  *
  *  1. the **session file** — the copy a human can hot-edit, the escape hatch
  *     `docs/interface/modes` names;
  *  2. the **session record** — the snapshot inside `<session-id>/context.json`, used
- *     only when the file is gone (a resumed conversation whose folder was cleaned);
- *  3. the **project-root file** — only when no session is registered at all.
+ *     only when the file is gone (a resumed conversation whose folder was cleaned).
  *
  * Writes always land in the session file and are mirrored into the session record, so a
  * resumed conversation is self-contained. Every byte written comes from
@@ -47,10 +53,8 @@ export const TRACKING_FILE_NAMES = Object.freeze({ task: TASK_FILE, plan: PLAN_F
  */
 export function trackingPaths({ dir = null } = {}) {
   const id = getSession()?.id;
-  if (!id) {
-    // No session: the root names are the only store (a bare tool call).
-    return { task: TASK_FILE, plan: PLAN_FILE, folder: null };
-  }
+  // No session: no store. Never the project root — that pair belongs to nobody.
+  if (!id) return { task: null, plan: null, folder: null };
   const folder = sessionDir(id, dir ? { dir } : {});
   return { task: `${folder}/${TASK_FILE}`, plan: `${folder}/${PLAN_FILE}`, folder };
 }
@@ -67,7 +71,12 @@ export function readPlanContent(readFile = readFileIfExists) {
 
 /** The file first (it is what a human edits), then the record snapshot. */
 function readTracking(kind, readFile) {
-  const fromFile = readFile(trackingPaths()[kind]);
+  const path = trackingPaths()[kind];
+  // An injected reader *is* the store: it decides what the checklist of this call is
+  // (the drive and `/work` are tested that way). The project's own reader is only ever
+  // pointed inside a session folder, because the root is not one.
+  if (!path && readFile === readFileIfExists) return null;
+  const fromFile = readFile(path);
   if (typeof fromFile === 'string') return fromFile;
   const snapshot = kind === 'task' ? getSessionTaskContent() : getSessionPlanContent();
   return typeof snapshot === 'string' && snapshot !== '' ? snapshot : null;
@@ -88,6 +97,15 @@ export function writePlanContent(content) {
 
 function writeTracking(kind, content, setSessionContent) {
   const path = trackingPaths()[kind];
+  // The invariant behind the whole module: a checklist is written inside a session
+  // folder or not at all, so nothing can ever create `task.md` in the project tree.
+  if (!path) {
+    throw new FileIOError(
+      'NO_SESSION',
+      `There is no session to own ${TRACKING_FILE_NAMES[kind]}: the tracking pair lives in `
+        + 'agent/sessions/<id>/, never at the project root.',
+    );
+  }
   const written = writeFileVerified(path, content);
   setSessionContent(content);
   return { ...written, path };
@@ -96,11 +114,11 @@ function writeTracking(kind, content, setSessionContent) {
 /**
  * Make sure the session folder owns a canonical pair of files.
  *
- * Called when a session is registered, and again on resume. A fresh session is
- * **seeded** from the project-root files when they exist, so an operator who already
- * has a `task.md` in the tree keeps working; a resumed session is re-seeded from its own
- * record when its folder went missing. Either way the bytes are canonical, so a legacy
- * file is upgraded in place instead of being inherited as-is.
+ * Called when a session is registered, and again on resume. A fresh session is **seeded**
+ * from its canonical skeleton (an empty checklist); a resumed session is re-seeded from
+ * its own record when its folder went missing. Either way the bytes are canonical, so a
+ * legacy file is upgraded in place instead of being inherited as-is. No root file is
+ * ever consulted: a checklist starts empty and is built by the conversation.
  *
  * @param {{readFile?: Function, dir?: string}} [options]
  * @returns {{task: string, plan: string, folder: string|null, created: string[]}}
@@ -116,7 +134,7 @@ export function ensureTrackingFiles({ readFile = readFileIfExists, dir = null } 
 
   for (const kind of ['task', 'plan']) {
     if (typeof readFile(paths[kind]) === 'string') continue;
-    writeFileVerified(paths[kind], canonicalizeTrackingFile(kind, seedOf(kind, readFile)));
+    writeFileVerified(paths[kind], canonicalizeTrackingFile(kind, seedOf(kind)));
     created.push(paths[kind]);
   }
 
@@ -127,10 +145,8 @@ export function ensureTrackingFiles({ readFile = readFileIfExists, dir = null } 
   return { ...paths, created };
 }
 
-/** What a new file starts from: the root file, else the record, else `null`. */
-function seedOf(kind, readFile) {
-  const root = readFile(TRACKING_FILE_NAMES[kind]);
-  if (typeof root === 'string') return root;
+/** What a new file starts from: the record snapshot, else `null` (the empty skeleton). */
+function seedOf(kind) {
   const snapshot = kind === 'task' ? getSessionTaskContent() : getSessionPlanContent();
   return typeof snapshot === 'string' ? snapshot : null;
 }

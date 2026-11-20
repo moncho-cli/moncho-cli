@@ -18,6 +18,7 @@ import { createLogger, logEvent } from './utils/logger.js';
 import { createTrackingAnnouncer } from './app/tracking-block.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
+  APPROACH_MAX_REFUSALS,
 } from './config/constants.js';
 import { ensureTrackingFiles } from './utils/tracking-store.js';
 import { resolveContextSize, formatContextLimit } from './utils/context-size.js';
@@ -170,6 +171,12 @@ async function main() {
     // (app/tool-guard.js), so a call named from an older prompt is refused instead of
     // touching anything. The mode is read live, so a Tab mid-turn bites at once.
     toolGate: gateForMode({ getMode: () => ({ mode: sessionMode.mode, work: sessionMode.work }) }),
+    // The approach rule (docs/agent/approach-gate): the stated approach seeds the turn —
+    // one short statement of intent, then as much work as the task needs. The bound is
+    // what keeps a model that will not speak from deadlocking the turn — after this many
+    // refusals the batch runs and the skip is announced — and it comes from
+    // `APPROACH_MAX_REFUSALS`.
+    approachMaxRefusals: APPROACH_MAX_REFUSALS,
     // The record follows the conversation, not the turn (app/session-autosave.js):
     // the first chunk of a turn writes it at once, and a burst of chunks in one tick
     // is coalesced into the next write instead of one write per chunk.

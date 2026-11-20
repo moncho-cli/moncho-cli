@@ -30,6 +30,13 @@
  */
 
 import { logEvent } from '../utils/logger.js';
+import {
+  APPROACH_REQUIRED_NOTICE,
+  APPROACH_SKIPPED_NOTICE,
+  approachRefusal,
+  isApproachAnnouncement,
+  needsApproach,
+} from './approach-gate.js';
 
 /** True when a provider failure is an abort in any of the shapes it arrives in. */
 export function isAbortFailure(error) {
@@ -48,6 +55,15 @@ export function isAbortFailure(error) {
  */
 export async function runTurn(session, userInput) {
   const { contextWindow } = session;
+  // The approach rule (docs/agent/approach-gate): the turn is *addressed* once an
+  // assistant message carries prose, and `refusals` counts how many batches this turn
+  // has already been refused for arriving before that. A session that declares no bound
+  // (`approachMaxRefusals`) is not policed at all, which is what keeps a stub session —
+  // and any older wiring — behaving exactly as it did.
+  const approachMax = Number(session.approachMaxRefusals) || 0;
+  let addressed = false;
+  let approachRefusals = 0;
+  let skipAnnounced = false;
 
   contextWindow.add({ role: 'user', content: userInput });
   // The first chunk of a turn is the moment the conversation starts existing on disk:
@@ -99,7 +115,44 @@ export async function runTurn(session, userInput) {
       session.recordUsage(data, promptTokens);
 
       if (data.message.tool_calls) {
-        const wantsCompaction = await session.handleToolCalls(data.message.tool_calls, signal);
+        // The stated approach seeds the turn: one short statement of intent from which
+        // the rest of the work grows. It is enforced here rather than merely instructed
+        // to the model, and the prose rides the assistant chunk next to the calls, so it
+        // is part of the model's context *and* of the conversation. The seed latches —
+        // once a message has carried it, every later batch of the turn is ordinary.
+        const prose = isApproachAnnouncement(data.message.content) ? data.message.content : null;
+        if (prose) addressed = true;
+        if (!addressed && approachMax > 0) {
+          if (needsApproach({ announced: false, refusals: approachRefusals, max: approachMax })) {
+            approachRefusals += 1;
+            logEvent('info', 'approach', 'refusing a batch: the turn has no stated approach', {
+              calls: data.message.tool_calls.length,
+              refusals: approachRefusals,
+              max: approachMax,
+            });
+            session.notifyNotice('warn', APPROACH_REQUIRED_NOTICE, { code: 'approach-required' });
+            // The batch is refused *whole*: every call still owes the provider one
+            // result, and each one is the structured body saying what to answer
+            // instead. Nothing runs, so no tool can act before the user is addressed.
+            await session.handleToolCalls(data.message.tool_calls, signal, {
+              content: null,
+              gate: () => approachRefusal(),
+            });
+            continue;
+          }
+          // The bound is spent. The rule was enforced; the turn must not deadlock on a
+          // model that will not speak, so the batch runs and the skip is said once.
+          if (!skipAnnounced) {
+            skipAnnounced = true;
+            logEvent('warn', 'approach', 'the refusal bound is spent; running the batch unannounced', {
+              refusals: approachRefusals,
+              max: approachMax,
+            });
+            session.notifyNotice('warn', APPROACH_SKIPPED_NOTICE, { code: 'approach-skipped' });
+          }
+        }
+
+        const wantsCompaction = await session.handleToolCalls(data.message.tool_calls, signal, { content: prose });
         if (wantsCompaction) {
           const forced = await session.maybeCompact(signal, { force: true, reason: 'tool-request' });
           if (forced?.compacted) session.resetPulse('compaction');

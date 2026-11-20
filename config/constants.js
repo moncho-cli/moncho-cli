@@ -169,6 +169,13 @@ export const PLAN_FILE = process.env.PLAN_FILE || "implementation_plan.md";
 export const MAX_PARALLEL_TOOL_CALLS = 5;
 /** Stable result code for a call a batch refused to run. */
 export const TOO_MANY_TOOL_CALLS = "TOO_MANY_TOOL_CALLS";
+/**
+ * How many times one turn may be refused for asking for tools before it has addressed
+ * the user (docs/agent/approach-gate). The rule is enforced, not merely instructed,
+ * but a refusal that could repeat forever would let a stubborn model deadlock the
+ * turn: after this many refusals the batch runs and the skip is announced.
+ */
+export const APPROACH_MAX_REFUSALS = toPositiveInt(process.env.APPROACH_MAX_REFUSALS, 2);
 /** The guidance a refused call carries, so the model can correct itself. */
 export const TOO_MANY_TOOL_CALLS_GUIDANCE =
   `Ask for at most ${MAX_PARALLEL_TOOL_CALLS} tools at a time and wait for their results before the next batch.`;

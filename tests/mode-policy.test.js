@@ -64,7 +64,9 @@ test('normalizeTargetPath collapses the ways one file can be spelled', () => {
   assert.equal(normalizeTargetPath('../task.md'), '');
   assert.equal(normalizeTargetPath('a/../../task.md'), '');
   assert.equal(normalizeTargetPath(''), '');
-  assert.equal(isDesignWritable('./implementation_plan.md'), true);
+  assert.equal(isDesignWritable('./agent/sessions/s1/implementation_plan.md'), true);
+  assert.equal(isDesignWritable('agent/sessions/s1/task.md'), true);
+  assert.equal(isDesignWritable('./implementation_plan.md'), false, 'the root is not a session');
   assert.equal(isDesignWritable('src/task.md'), false);
 });
 
@@ -87,19 +89,18 @@ test('Design writes the two tracking files and nothing else', () => {
   for (const name of [...READ_ONLY_TOOLS, ...TRACKING_TOOLS]) {
     assert.equal(refusalForMode(MODES.DESIGN, call(name)), null, name);
   }
-  assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path: 'task.md' })), null);
-  assert.equal(refusalForMode(MODES.DESIGN, call('edit_file', { path: './task.md' })), null);
-  assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path: 'implementation_plan.md' })), null);
-
-  // A session writes its own pair where they now live, under agent/sessions/<id>/.
+  // A session writes its own pair where they live, under agent/sessions/<id>/ — and the
+  // project root is not one of those places, so a root `task.md` is refused.
   for (const path of [
     'agent/sessions/2026-02-14T10-30-00-000Z/task.md',
     './agent/sessions/s1/implementation_plan.md',
   ]) {
     assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path })), null, path);
   }
-  // But only there: one folder deep, and only the two names.
+  // But only there: one folder deep, only the two names, and no walking back out.
   for (const path of [
+    'task.md',
+    './implementation_plan.md',
     'agent/sessions/task.md',
     'agent/sessions/a/b/task.md',
     'agent/sessions/s1/notes.md',
@@ -107,6 +108,7 @@ test('Design writes the two tracking files and nothing else', () => {
   ]) {
     assert.ok(refusalForMode(MODES.DESIGN, call('write_file', { path })), path);
   }
+  assert.equal(refusalForMode(MODES.DESIGN, call('edit_file', { path: './agent/sessions/s1/task.md' })), null);
 
   const source = refusalForMode(MODES.DESIGN, call('write_file', { path: 'app/tui.js' }));
   assert.equal(source.code, TOOL_GUARD_REFUSAL);
@@ -159,7 +161,7 @@ test('gateForMode reads the live mode, so a Tab mid-turn bites the next call', (
 
   mode.setMode(MODES.DESIGN);
   assert.equal(gate(call('write_file', { path: 'app/tui.js' })).mode, 'design');
-  assert.equal(gate(call('write_file', { path: 'task.md' })), null);
+  assert.equal(gate(call('write_file', { path: 'agent/sessions/s1/task.md' })), null);
 
   mode.setWork(true);
   assert.equal(gate(call('write_file', { path: 'app/tui.js' })), null);

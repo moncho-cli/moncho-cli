@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   PULSE_LIMIT,
@@ -107,4 +108,19 @@ test('the pulse message is null while the line is disabled, so no empty system m
   // lets ContextWindow.request() drop it with its own filter(Boolean).
   assert.equal(pulse.message(), null);
   assert.equal(pulse.count, 1, 'the call was counted anyway');
+});
+
+test('the shipped prompt carries the pulse behaviour, not the pulse machinery', () => {
+  // The agent cannot read the count and cannot operate the counter, so naming either in
+  // the prompt would be text spent for nothing. What the section keeps is the property
+  // the limit protects: budget the calls by not wandering, and treat the crossing
+  // notice as the signal to finish the item in flight.
+  const prompt = fs.readFileSync(new URL('../config/prompt.md', import.meta.url), 'utf-8');
+
+  for (const machinery of [/PULSE_LIMIT/, /\[pulse\]/, /prompt cache/, /provider prompt/]) {
+    assert.doesNotMatch(prompt, machinery, `the prompt must not describe ${machinery}`);
+  }
+  assert.match(prompt, /cannot read the count/i, 'it says the count is unreadable, so the model stops guessing');
+  assert.match(prompt, /budget is spent/i, 'and it names the notice as the signal to finish');
+  assert.match(prompt, /update_task/, 'with the reset it can actually perform');
 });

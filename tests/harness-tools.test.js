@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { loadTools } from '../utils/tool-loader.js';
+import { registerSession, clearSession } from '../utils/host.js';
+import { ensureTrackingFiles } from '../utils/tracking-store.js';
 import { hasIntentParameter, parseToolArgs, getIntent, withIntentParameter } from '../utils/tool-schema.js';
 import { execute as readFileExecute, wrapFileContent } from '../tools/read_file.js';
 import { execute as writeFileExecute } from '../tools/write_file.js';
@@ -24,14 +26,37 @@ import { execute as editFileExecute } from '../tools/edit_file.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-harness-test-'));
 process.chdir(root);
 
+const TRACKING_ID = 'harness-tools';
+const TRACKING_FOLDER = `agent/sessions/${TRACKING_ID}`;
+
+/** Where a fixture really lives: a tracking name belongs to the session's own folder. */
+function place(name) {
+  const base = String(name).split('/').pop();
+  const nested = String(name).includes('/');
+  if (nested || !['task.md', 'implementation_plan.md'].includes(base)) return name;
+  return `${TRACKING_FOLDER}/${base}`;
+}
+
 function writeFile(name, content) {
-  fs.mkdirSync(path.dirname(name), { recursive: true });
-  fs.writeFileSync(name, content, 'utf-8');
+  const target = place(name);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content, 'utf-8');
 }
 
 function readFile(name) {
-  return fs.readFileSync(name, 'utf-8');
+  return fs.readFileSync(place(name), 'utf-8');
 }
+
+/** The tracking pair lives in a session folder, so the task cases own one. */
+function startSession() {
+  registerSession({ id: TRACKING_ID });
+  ensureTrackingFiles();
+}
+
+test.afterEach(() => {
+  clearSession();
+  fs.rmSync(path.join(root, 'agent'), { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Task.md item 6: the shared "intent" tool-call contract
@@ -191,6 +216,7 @@ test('renderPlan produces a resetable implementation_plan.md body', () => {
 });
 
 test('update_task marks an item done, advances, and resets the plan', async () => {
+  startSession();
   const taskContent = ['create a terminal UI', 'status: not started', '', 'MVP', '- [ ] item one', '- [ ] item two', '- [ ] item three'].join('\n');
   writeFile('task.md', taskContent);
   writeFile('implementation_plan.md', 'stale plan\n');
@@ -222,6 +248,7 @@ test('update_task marks an item done, advances, and resets the plan', async () =
 });
 
 test('update_task refuses ambiguous or unknown items without touching the files', async () => {
+  startSession();
   writeFile('task.md', ['- [ ] alpha', '- [ ] alpha beta'].join('\n'));
   const before = readFile('task.md');
 
@@ -239,6 +266,7 @@ test('update_task refuses ambiguous or unknown items without touching the files'
 });
 
 test('update_task reports a done task when nothing is pending', async () => {
+  startSession();
   writeFile('task.md', ['- [ ] sole item'].join('\n'));
   const result = JSON.parse(await updateTaskExecute({ action: 'complete', item: 'sole item', intent: 'finish the list' }));
   assert.equal(result.next, null);

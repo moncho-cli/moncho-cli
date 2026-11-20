@@ -33,7 +33,10 @@ import { execute as blobExecute } from '../tools/blob.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-stale-read-'));
 process.chdir(root);
 
-const write = (name, content) => fs.writeFileSync(name, content, 'utf-8');
+const write = (name, content) => {
+  fs.mkdirSync(path.dirname(name), { recursive: true });
+  fs.writeFileSync(name, content, 'utf-8');
+};
 const read = (name) => fs.readFileSync(name, 'utf-8');
 const parsed = (result) => JSON.parse(result);
 
@@ -210,12 +213,12 @@ test('delete_file forgets the path it removed, so a later create is not refused'
 
 test('the tracking files are exempt, because update_task rewrites them whole', async () => {
   clearReads();
-  write('task.md', '# Task list\n\nstatus: pending\n\n## Items\n\n- [ ] one\n');
-  await readFileExecute({ path: 'task.md', intent: 'read the checklist' });
-  write('task.md', '# Task list\n\nstatus: pending\n\n## Items\n\n- [ ] one\n- [ ] two\n');
+  write('agent/sessions/s1/task.md', '# Task list\n\nstatus: pending\n\n## Items\n\n- [ ] one\n');
+  await readFileExecute({ path: 'agent/sessions/s1/task.md', intent: 'read the checklist' });
+  write('agent/sessions/s1/task.md', '# Task list\n\nstatus: pending\n\n## Items\n\n- [ ] one\n- [ ] two\n');
 
   const stored = parsed(await writeFileExecute({
-    path: 'task.md',
+    path: 'agent/sessions/s1/task.md',
     content: '- [ ] one\n- [ ] two\n',
     intent: 'draft the checklist',
   }));

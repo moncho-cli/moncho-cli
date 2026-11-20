@@ -1,8 +1,4 @@
-import {
-  MAX_PARALLEL_TOOL_CALLS,
-  TOO_MANY_TOOL_CALLS,
-  TOO_MANY_TOOL_CALLS_GUIDANCE,
-} from '../config/constants.js';
+import { MAX_PARALLEL_TOOL_CALLS } from '../config/constants.js';
 import { detectCompactionRequest } from './compaction-request.js';
 import { guardToolCall, formatGuardRefusal } from './tool-guard.js';
 import { formatRefusalLine } from './refusal-line.js';
@@ -12,8 +8,18 @@ import {
   formatCallLines,
   formatCallSignature,
   formatToolResultChunk,
-  normalizeToolCall,
 } from './tool-call-format.js';
+// The pure half of a batch — which calls it is made of, and what a call beyond the cap
+// is told — lives in app/batch-plan.js so this module stays the *running* half. Both are
+// re-exported below, so every existing import of these names keeps working.
+import {
+  formatBatchLine,
+  formatBatchRefusal,
+  formatBatchRefusalReason,
+  planToolBatch,
+} from './batch-plan.js';
+
+export { formatBatchLine, formatBatchRefusal, formatBatchRefusalReason, planToolBatch };
 
 /**
  * One tool batch: the calls of a single assistant message.
@@ -38,53 +44,6 @@ import {
  * the intent first and the result inside the `<tool-multicall result>` envelope
  * (`docs/agent/tool-multicall`).
  */
-
-/** The plain-language reason a cap refusal carries, shared by the row and the JSON. */
-export function formatBatchRefusalReason({ requested = 0, max = MAX_PARALLEL_TOOL_CALLS } = {}) {
-  return `this message asked for ${requested} tool calls at once; only ${max} run in a batch`;
-}
-
-/** A call a batch refused to run because the message asked for too many. */
-export function formatBatchRefusal({ name, requested, max = MAX_PARALLEL_TOOL_CALLS } = {}) {
-  return JSON.stringify({
-    status: 'error',
-    code: TOO_MANY_TOOL_CALLS,
-    tool: name,
-    guidance: TOO_MANY_TOOL_CALLS_GUIDANCE,
-    message: formatBatchRefusalReason({ requested, max }),
-    max,
-  }, null, 2);
-}
-
-/**
- * Split the calls of one assistant message into the batch that runs and the calls
- * that are refused, preserving the model's order in both.
- *
- * A call is accepted by **position**, never by name: the first `max` ids keep the
- * pairing with the results the provider expects, and the remainder are answered
- * with a refusal instead of being dropped.
- *
- * @returns {{accepted: object[], refused: object[], total: number, max: number, simultaneous: boolean}}
- */
-export function planToolBatch(toolCalls = [], { max = MAX_PARALLEL_TOOL_CALLS } = {}) {
-  const list = Array.isArray(toolCalls) ? toolCalls : [];
-  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : MAX_PARALLEL_TOOL_CALLS;
-  const accepted = [];
-  const refused = [];
-
-  list.forEach((call, index) => {
-    const entry = { index, call: normalizeToolCall(call, index) };
-    (index < limit ? accepted : refused).push(entry);
-  });
-
-  return {
-    accepted,
-    refused,
-    total: list.length,
-    max: limit,
-    simultaneous: accepted.length > 1,
-  };
-}
 
 /**
  * Run the accepted calls **at the same time** and return their outcomes in call
@@ -151,13 +110,6 @@ export async function dispatchToolCalls(entries = [], toolFunctions = {}, { sign
   }));
 }
 
-/** The line announcing a batch before its calls run (a lone call needs none). */
-export function formatBatchLine({ accepted = 0, refused = 0, max = MAX_PARALLEL_TOOL_CALLS } = {}) {
-  const parts = [`${accepted} call(s) at once (max ${max})`];
-  if (refused > 0) parts.push(`${refused} refused: ${TOO_MANY_TOOL_CALLS}`);
-  return `  -> batch: ${parts.join(' · ')}`;
-}
-
 /**
  * One stored `tool` chunk: the call's intent, then the result inside the batch
  * envelope that names the call's signature and the size of the batch.
@@ -192,6 +144,7 @@ export async function handleToolBatch({
   max = MAX_PARALLEL_TOOL_CALLS,
   notify = () => {},
   gate = null,
+  content = null,
 } = {}) {
   const plan = planToolBatch(toolCalls, { max });
   const notifyChange = typeof notify === 'function' ? notify : () => {};
@@ -199,9 +152,13 @@ export async function handleToolBatch({
   let lastLoggedIntent = null;
 
   // Emit a single, OpenAI-compatible assistant chunk carrying all tool calls.
+  // `content` is the prose the model wrote next to them: keeping it on the *same*
+  // chunk is what puts an announced approach in the model's context (the provider
+  // shape pairs prose and calls in one message) and in the reader's transcript, and
+  // it is why nothing has to be duplicated into a second message.
   window?.add({
     role: 'assistant',
-    content: null,
+    content: content ?? null,
     tool_calls: plan.accepted.concat(plan.refused).map(({ call }) => ({
       id: call.id,
       type: 'function',
@@ -213,6 +170,11 @@ export async function handleToolBatch({
   });
   // The assistant chunk carrying the calls is a chunk like any other.
   notifyChange();
+
+  // The model's own words next to its calls are printed *before* the calls they
+  // introduce, so the reader sees the approach that was stated — the same prose the
+  // assistant chunk carries for the model (`docs/agent/approach-gate`).
+  if (typeof content === 'string' && content.trim() !== '') log(content);
 
   if (plan.total > 1) {
     log(formatBatchLine({ accepted: plan.accepted.length, refused: plan.refused.length, max: plan.max }));

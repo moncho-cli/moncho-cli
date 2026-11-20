@@ -27,6 +27,10 @@ code:
     symbols: [MAX_PARALLEL_TOOL_CALLS, TOO_MANY_TOOL_CALLS, TOO_MANY_TOOL_CALLS_GUIDANCE]
   - path: app/conversation-manager.js
     symbols: [ConversationManager]
+  - path: app/batch-plan.js
+    symbols: [formatBatchRefusalReason, formatBatchRefusal, planToolBatch, formatBatchLine]
+  - path: app/manager-turn.js
+    symbols: [runToolBatch, storeFinalResponse]
 tests:
   - path: tests/tool-multicall.test.js
     cases:

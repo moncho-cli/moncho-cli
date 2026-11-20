@@ -42,6 +42,7 @@ tests:
       - "formatPulseLimitNotice says what happened and what to do about it"
       - "createTaskPulse counts calls, reports the first crossing once, and resets with a reason"
       - "the pulse message is null while the line is disabled, so no empty system message is sent"
+      - "the shipped prompt carries the pulse behaviour, not the pulse machinery"
   - path: tests/call-pulse-loop.test.js
     cases:
       - "no agent request carries a pulse line or an empty system message while it is disabled"

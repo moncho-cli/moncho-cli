@@ -20,7 +20,8 @@ summary: >
   a finished checklist stops it without releasing the lock.
   app/mode-policy.js holds both halves as one table (toolsForMode() and
   gateForMode()): chat invokes no writing tool, design also writes task.md and
-  implementation_plan.md, work is unrestricted, and a shell (run_bash, run_npm) is
+  implementation_plan.md — only inside a session folder, since the pair belongs to a
+  conversation — work is unrestricted, and a shell (run_bash, run_npm) is
   refused in chat and design because it cannot be scoped to two paths.
   createSessionMode() is the pure, terminal-free machine every front end drives:
   nextMode() walks chat -> design -> work -> chat and prevMode() walks the same ring
@@ -43,6 +44,8 @@ code:
     symbols: [MODE_REFUSAL_KIND, createModeController]
   - path: app/mode-policy.js
     symbols: [READ_ONLY_TOOLS, TRACKING_TOOLS, DESIGN_WRITABLE_FILES, SCOPED_WRITER_TOOLS, DESTRUCTIVE_TOOLS, SHELL_TOOLS, WRITER_TOOLS, normalizeTargetPath, isDesignWritable, refusalForMode, toolsForMode, gateForMode]
+  - path: utils/tracking-fence.js
+    symbols: [isSessionTrackingPath, trackingLocationRefusal]
   - path: app/work-drive.js
     symbols: [WORK_DRIVE_MAX_ATTEMPTS, formatWorkPrompt, nextPendingItem, readChecklist, createWorkDrive]
 tests:

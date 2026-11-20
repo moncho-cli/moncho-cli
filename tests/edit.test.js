@@ -196,16 +196,16 @@ test('path traversal is rejected', async () => {
 });
 
 test('the tracking files are refused with the tool that owns them', async () => {
-  writeFile('task.md', '- [ ] something\n');
+  writeFile('agent/sessions/s1/task.md', '- [ ] something\n');
   const result = body(await editFile({
     intent: 'edit the tracking file directly',
-    path: 'task.md',
+    path: 'agent/sessions/s1/task.md',
     search: '- [ ] something',
     replace: '- [x] something',
   }));
   assert.equal(result.code, 'TRACKING_FILE_TOOL_OWNED');
   assert.equal(result.message.includes('update_task'), true);
-  assert.equal(readFile('task.md'), '- [ ] something\n');
+  assert.equal(readFile('agent/sessions/s1/task.md'), '- [ ] something\n');
 });
 
 test('a file changed since it was read is refused with STALE_READ', async () => {

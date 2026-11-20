@@ -77,7 +77,7 @@ export function renderPlan(parts = {}) {
 const { definition, execute } = defineTool({
   name: 'update_task',
   description:
-    `Mark one item of the session's ${TASK_FILE} as done (or update its "status:" line), tick one verified step of ${PLAN_FILE}, report the next pending item, and reset ${PLAN_FILE} with the steps for that item. This is the task-tracking loop. Both files live in the session folder (agent/sessions/<id>/) and are written in one canonical shape, which is what every write re-renders — a malformed draft is normalised, never kept:\n\n${TASK_FILE}:\n\n${trackingTemplate('task')}\n\n${PLAN_FILE}, titled with the item the plan is for:\n\n${trackingTemplate('plan')}\n\nNever author either file with write_file (the draft is normalised) or patch_file (refused as tool-owned): this tool owns them.`,
+    `Mark one item of the session's ${TASK_FILE} as done (or update its "status:" line), tick one verified step of ${PLAN_FILE}, report the next pending item, and reset ${PLAN_FILE} with the steps for that item. This is the task-tracking loop. Both files are written in one canonical shape, which is what every write re-renders — a malformed draft is normalised, never kept — and this tool is the only thing that writes them; every reply names the exact taskFile/planFile paths.\n\n${TASK_FILE}:\n\n${trackingTemplate('task')}\n\n${PLAN_FILE}, titled with the item the plan is for:\n\n${trackingTemplate('plan')}\n\nNever author either file with write_file (the draft is normalised) or patch_file (refused as tool-owned): this tool owns them.`,
   parameters: {
     properties: {
       action: {

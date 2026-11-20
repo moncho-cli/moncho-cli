@@ -1,6 +1,6 @@
 import { MODES, normalizeMode } from './session-mode.js';
 import { TOOL_GUARD_REFUSAL } from './tool-guard.js';
-import { SESSION_DIR } from '../utils/session-store.js';
+import { isSessionTrackingPath } from '../utils/tracking-fence.js';
 
 /**
  * The mode as a *policy*: which tools a session may use, and which calls are refused.
@@ -65,13 +65,13 @@ export const TRACKING_TOOLS = Object.freeze(['update_task']);
 export const DESIGN_WRITABLE_FILES = Object.freeze(['task.md', 'implementation_plan.md']);
 
 /**
- * A `design` session writes its tracking files **where they live**: the project-root
- * names, or one session folder under `agent/sessions/`
- * (`agent/sessions/<id>/task.md`, `utils/tracking-store.js`). The folder is fixed, so
- * "design writes two files" stays a claim about two files rather than about any file
- * that happens to carry one of the two names.
+ * A `design` session writes its tracking files **where they live**: one session folder
+ * under `agent/sessions/` (`agent/sessions/<id>/task.md`, `utils/tracking-store.js`). The
+ * folder is fixed and the project root is not one of its places, so "design writes two
+ * files" stays a claim about two files rather than about any file that happens to carry
+ * one of the two names. The shape is `isSessionTrackingPath()`'s, shared with the fence so
+ * the mode and the writer cannot disagree about where a tracking file may live.
  */
-const SESSION_TRACKING_PREFIX = `${SESSION_DIR.replace(/\/+$/, '')}/`;
 
 /** Writers that name the file they touch, so the policy can scope them by path. */
 export const SCOPED_WRITER_TOOLS = Object.freeze(['write_file', 'edit_file']);
@@ -116,14 +116,7 @@ export function normalizeTargetPath(value) {
 /** True when `target` names one of the files a `design` session may write. */
 export function isDesignWritable(target) {
   const path = normalizeTargetPath(target);
-  if (path === '') return false;
-  if (DESIGN_WRITABLE_FILES.includes(path)) return true;
-  // One session folder holding one of the two files: `agent/sessions/<id>/task.md`.
-  // The id is whatever the session named itself, but the folder and the file name are
-  // both fixed and no deeper nesting is accepted.
-  if (!path.startsWith(SESSION_TRACKING_PREFIX)) return false;
-  const rest = path.slice(SESSION_TRACKING_PREFIX.length).split('/');
-  return rest.length === 2 && rest[0] !== '' && DESIGN_WRITABLE_FILES.includes(rest[1]);
+  return path !== '' && isSessionTrackingPath(path);
 }
 
 /** The name a call names, from either accepted call shape. */

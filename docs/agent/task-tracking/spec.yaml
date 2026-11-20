@@ -19,7 +19,7 @@ code:
   - path: utils/tracking-format.js
     symbols: [TASK_TITLE, PLAN_TITLE, ITEMS_HEADING, STEPS_HEADING, NOTES_HEADING, STATUS_STATES, isCanonicalStatus, normalizeStatus, readTitle, extractNotes, entriesOf, trackingTemplate, renderTaskFile, renderPlanFile, validateTrackingFile, canonicalizeTrackingFile]
   - path: utils/tracking-fence.js
-    symbols: [TOOL_OWNED_FILES, TRACKING_TOOL, TRACKING_FILE_REFUSAL, isToolOwnedFile, toolOwnedKind, canonicalTrackingWrite, trackingFenceRefusal]
+    symbols: [TOOL_OWNED_FILES, TRACKING_TOOL, TRACKING_FILE_REFUSAL, TRACKING_LOCATION_REFUSAL, isToolOwnedFile, isSessionTrackingPath, toolOwnedKind, canonicalTrackingWrite, trackingFenceRefusal, trackingLocationRefusal]
   - path: utils/tracking-step.js
     symbols: [refusal, completeStep]
   - path: tools/update_task.js
@@ -40,8 +40,9 @@ tests:
       - the session copy answers only when its file is gone
       - a write lands in the session file and in the record snapshot
       - update_task reads and writes the checklist of its own session
-      - without a session the project root is the only store
-      - seeding is a session affair, so it never recreates the root pair
+      - a root task.md is neither read as a checklist nor rewritten
+      - without a session there is no store, so the project root is never one
+      - seeding is a session affair, so it never creates the root pair
   - path: tests/tracking-format.test.js
     cases:
       - the canonical status is one of three states, with the item in flight named
@@ -53,13 +54,17 @@ tests:
       - a wrapped entry keeps its whole text through a re-render
       - the template the model is shown is the shape the renderer really writes
       - the prompt tells the agent to record a decision as it is agreed
+      - the prompt states the tracking rule without teaching a session path
   - path: tests/tracking-fence.test.js
     cases:
       - the fence recognises a tracking file by name, in any folder
+      - a tracking file lives one session folder deep, and nowhere else
       - a write_file draft is normalised instead of stored verbatim
       - write_file stores the canonical document when it is handed a checklist
+      - write_file refuses to create a tracking file at the project root
       - write_file leaves an ordinary file byte-for-byte alone
       - a pasted diff into a tracking file is refused, and names the tool to use
+      - a stray root copy of a tracking file is refused too, and never created
       - the same diff still patches an ordinary file
   - path: tests/harness-tools.test.js
     cases:

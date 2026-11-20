@@ -1,0 +1,61 @@
+id: agent/approach-gate
+domain: agent
+title: The stated approach seeds the turn, and the rule is enforced, not asked for
+status: active
+summary: >
+  A turn has one seed: a short statement, in prose, of what was understood and what the
+  next operations are, riding the same assistant message as the calls it introduces. The
+  batched work after it is the work that prose promised, and the closing reply is prose
+  too, so the seed is written once and nothing repeats it. The rule is stated on the
+  message rather than on order, because a model cannot tell a first answer from a later
+  one — a rule about being first asks it to police a boundary it cannot observe, while a
+  rule about the message in hand names a defect it can see and a fix it can write. It is
+  also deterministic rather than a request to the model: app/approach-gate.js is the
+  policy as values — isApproachAnnouncement() (prose is the whole test), approachRefusal()
+  (the shape the batch gate already understands), formatApproachRefusalLine() and
+  needsApproach() (the bound, APPROACH_MAX_REFUSALS) — and app/turn-runner.js is the
+  enforcement: while the turn has no seed, a message whose calls carry no prose is refused
+  whole, every call still gets its one structured TOOL_REFUSED_BEFORE_APPROACH result
+  chunk so the provider pairing stays balanced and the refusal lives in the context, the
+  model is asked again through a transient notice, and after the bound the batch runs with
+  APPROACH_SKIPPED_NOTICE said once so the turn can never be starved. The seed latches:
+  once a message has carried real prose the loop stops refusing, so the batches that follow
+  need no prose of their own. The tool list stays advertised throughout: the point is not
+  to hide the tools, it is to have the seed say what they are for. The prose that satisfies
+  the rule rides the same assistant chunk as the calls it introduces, so it is in the
+  model's context and in the reader's transcript, and app/tool-batch.js prints it before
+  the calls while app/session-replay.js replays it in the same place.
+code:
+  - path: app/approach-gate.js
+    symbols: [APPROACH_REFUSAL_CODE, APPROACH_REFUSAL_REASON, APPROACH_REFUSAL_GUIDANCE, APPROACH_REQUIRED_NOTICE, APPROACH_SKIPPED_NOTICE, isApproachAnnouncement, approachRefusal, formatApproachRefusalLine, needsApproach]
+  - path: app/turn-runner.js
+    symbols: [runTurn, isAbortFailure]
+  - path: app/tool-batch.js
+    symbols: [handleToolBatch]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/session-replay.js
+    symbols: [replayChunks, renderReplay, reloadConversation]
+  - path: config/constants.js
+    symbols: [APPROACH_MAX_REFUSALS]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/approach-gate.test.js
+    cases:
+      - "a message whose calls carry no prose is refused whole, and the model is asked again"
+      - "the seed is written once, and the batches after it grow from it unannounced"
+      - "the bound is spent and the batch runs, with the skip said once"
+      - "a session that declares no bound is not policed at all"
+      - "the refused batch still owes the provider one result per call"
+      - "the stated prose rides the assistant chunk next to the calls"
+      - "a batch with no prose keeps the chunk shape every session already holds"
+      - "the live manager enforces the rule end to end, and the refusal lands in its window"
+  - path: tests/approach-seed.test.js
+    cases:
+      - "only real prose is the whole test, and the reason is one string"
+      - "the bound re-asks a finite number of times and then lets the batch through"
+      - "the rule names the seed the turn grows from, without an order the model cannot see"
+  - path: tests/session-replay.test.js
+    cases:
+      - "an announced approach replays as the prose it was, before the calls"

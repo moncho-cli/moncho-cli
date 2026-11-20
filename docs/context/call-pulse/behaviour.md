@@ -115,11 +115,12 @@ wording is kept in the module as the behaviour to restore, and `PULSE_MARKER` st
 exported so the re-enable is a one-function change. `formatPulseLimitNotice()` is
 unchanged and still announces the crossing.
 
-`config/prompt.md` follows the pause: its pulse section no longer asks the agent to watch a
-number it cannot see. It asks for the property the limit was there to protect — do not
-loop over insignificant research, lock in `task.md` and `implementation_plan.md` early,
-never re-read what is already held — and to treat the one crossing notice as the signal
-to stop exploring and finish the item in flight.
+`config/prompt.md` follows the pause, and one step further: its pulse section no longer
+names the limit variable, the counter or the disabled line either — text about machinery
+the agent cannot see or operate is context spent for nothing. It asks for the property the
+limit was there to protect — do not loop over insignificant research, lock in `task.md` and
+`implementation_plan.md` early, never re-read what is already held — and to treat the one
+crossing notice as the signal to stop exploring and finish the item in flight.
 
 Its advice names `update_task` as the reset, not `compact_context`: compaction is a host decision the agent does not operate (`docs/context/compaction`), so the prompt no longer mentions it. The counter itself still resets on a compaction.
 

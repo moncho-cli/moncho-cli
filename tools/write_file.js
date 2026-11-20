@@ -1,7 +1,7 @@
 import { writeFileVerified } from '../utils/file-io.js';
 import { forgetRead, staleWriteRefusal } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
-import { canonicalTrackingWrite, isToolOwnedFile } from '../utils/tracking-fence.js';
+import { canonicalTrackingWrite, isToolOwnedFile, trackingLocationRefusal } from '../utils/tracking-fence.js';
 
 /**
  * Overwrite a file with verified, atomic writes (see utils/file-io.js).
@@ -11,16 +11,14 @@ import { canonicalTrackingWrite, isToolOwnedFile } from '../utils/tracking-fence
  * (`utils/tracking-format.js`) before it lands, so `task.md` and
  * `implementation_plan.md` keep their shape no matter who drafts them
  * (`utils/tracking-fence.js`).
- *
- * A file the model *read* and that changed on disk in the meantime is **refused** with
+ * * A file the model *read* and that changed on disk in the meantime is **refused** with
  * `STALE_READ` (`utils/read-tracker.js`): overwriting it would throw away bytes the
  * model never saw. The refusal names the re-read that clears it, and the tracking files
  * are exempt because `update_task` rewrites them whole.
  */
-
 const { definition, execute } = defineTool({
   name: 'write_file',
-  description: 'Write content to a file, overwriting existing content. The write is atomic and verified byte-for-byte before success is reported. A write to task.md or implementation_plan.md is re-rendered in the canonical tracking shape (title, "status:" line, one "- [ ]" section), so a draft is normalised rather than stored verbatim.',
+  description: 'Write content to a file, overwriting existing content. The write is atomic and verified byte-for-byte before success is reported. A write to task.md or implementation_plan.md is re-rendered in the canonical tracking shape (title, "status:" line, one "- [ ]" section), so a draft is normalised rather than stored verbatim — and only at the path update_task reports for them: anywhere else, including the project root, a tracking name is refused with TRACKING_FILE_NOT_IN_SESSION, because that pair belongs to the conversation.',
   parameters: {
     properties: {
       path: {
@@ -41,6 +39,12 @@ const { definition, execute } = defineTool({
       // exempt — `update_task` owns them and the fence already answers for them.
       const stale = staleWriteRefusal(args?.path, { isToolOwned: isToolOwnedFile });
       if (stale) return JSON.stringify(stale);
+
+      // A tracking name is only a checklist **inside** a session folder, and this is the
+      // one writer that could create it anywhere else: a root `task.md` is refused
+      // (`utils/tracking-fence.js`), so the harness never puts the pair in the tree.
+      const misplaced = trackingLocationRefusal(args.path);
+      if (misplaced) return JSON.stringify(misplaced);
 
       const tracking = canonicalTrackingWrite(args.path, args.content);
       const content = tracking ? tracking.content : args.content;

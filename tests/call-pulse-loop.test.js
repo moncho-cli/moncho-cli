@@ -78,7 +78,11 @@ const { loadTools } = await import('../utils/tool-loader.js');
 const { ConversationManager } = await import('../app/conversation-manager.js');
 const { ContextWindow } = await import('../app/context-window.js');
 const { PULSE_MARKER } = await import('../utils/task-pulse.js');
-const { getTaskPulse, resetTaskPulse, clearTaskPulse } = await import('../utils/host.js');
+const { getTaskPulse, resetTaskPulse, clearTaskPulse, registerSession } = await import('../utils/host.js');
+
+/** The session the tracking pair belongs to: `update_task` writes it in this folder. */
+const FOLDER = 'agent/sessions/pulse-test';
+registerSession({ id: 'pulse-test' });
 
 fs.writeFileSync('fixture.txt', 'fixture content\n', 'utf-8');
 const { tools, toolFunctions } = await loadTools(() => {});
@@ -198,7 +202,8 @@ test('completing a task.md item resets the live pulse through the host registry'
   requests.length = 0;
   toolAnswers = 0;
 
-  fs.writeFileSync('task.md', [
+  fs.mkdirSync(FOLDER, { recursive: true });
+  fs.writeFileSync(`${FOLDER}/task.md`, [
     '# Task',
     '',
     'status: in progress',
@@ -207,7 +212,7 @@ test('completing a task.md item resets the live pulse through the host registry'
     '- [ ] document it',
     '',
   ].join('\n'), 'utf-8');
-  fs.writeFileSync('implementation_plan.md', '# Plan\n\n- [ ] a step\n', 'utf-8');
+  fs.writeFileSync(`${FOLDER}/implementation_plan.md`, '# Plan\n\n- [ ] a step\n', 'utf-8');
 
   const manager = createManager();
   await manager.processInput('read the fixture');

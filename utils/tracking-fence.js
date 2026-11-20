@@ -1,5 +1,6 @@
 import { TASK_FILE, PLAN_FILE } from '../config/constants.js';
 import { canonicalizeTrackingFile } from './tracking-format.js';
+import { SESSION_DIR } from './session-store.js';
 
 /**
  * The fence around the two tracking files (`docs/agent/task-tracking`).
@@ -17,9 +18,12 @@ import { canonicalizeTrackingFile } from './tracking-format.js';
  *    never the right move: its hunks would be undone by the next `update_task` call, so
  *    the refusal names the tool to use instead.
  *
- * The comparison is on the file **name**, so the fence covers the session copies
- * (`agent/sessions/<id>/task.md`) exactly like a stray root file, and it needs no upkeep
- * when the folder policy changes (`utils/tracking-store.js`).
+ * The name comparison is what makes `edit_file` and `delete_file` answer in any folder,
+ * because a stray copy is still a document they must not touch. `write_file` is the one
+ * tool that could *create* one, so it is stricter still: a tracking name is accepted
+ * **only** under `agent/sessions/<id>/` and refused anywhere else, root included. The
+ * pair belongs to a conversation (`utils/tracking-store.js`), so a root `task.md` is not
+ * a checklist that lost its session — it is a file the harness must not create.
  */
 
 /** The file names the harness owns, whichever folder they sit in. */
@@ -30,6 +34,15 @@ export const TRACKING_TOOL = 'update_task';
 
 /** The stable code a refused patch comes back with. */
 export const TRACKING_FILE_REFUSAL = 'TRACKING_FILE_TOOL_OWNED';
+
+/** The stable code for a tracking name outside a session folder. */
+export const TRACKING_LOCATION_REFUSAL = 'TRACKING_FILE_NOT_IN_SESSION';
+
+/** The path's segments, with `\` accepted as a separator and `.`/empty dropped. */
+function segmentsOf(value) {
+  return String(value ?? '').trim().replace(/\\/g, '/').split('/')
+    .filter((part) => part !== '' && part !== '.');
+}
 
 /** The last path segment, with `\` accepted as a separator. */
 function basename(value) {
@@ -43,6 +56,45 @@ function basename(value) {
 export function isToolOwnedFile(path) {
   const name = basename(path);
   return name !== '' && TOOL_OWNED_FILES.includes(name);
+}
+
+/**
+ * True when `path` names a tracking file **inside** a session folder:
+ * `agent/sessions/<id>/task.md`, one folder deep and nothing deeper.
+ */
+export function isSessionTrackingPath(path) {
+  const parts = segmentsOf(path);
+  const prefix = segmentsOf(SESSION_DIR);
+  if (parts.length !== prefix.length + 2) return false;
+  if (!prefix.every((segment, i) => parts[i] === segment)) return false;
+  return parts[parts.length - 2] !== '' && TOOL_OWNED_FILES.includes(parts[parts.length - 1]);
+}
+
+/**
+ * The refusal for a write that would put a tracking file outside a session folder.
+ *
+ * `write_file` is the only writer that can create one, so it is the only caller, but the
+ * rule is the protocol's: the pair belongs to a conversation, so the project root is not
+ * a place either file may appear (`docs/agent/task-tracking`).
+ *
+ * @param {string} path the path argument of the call
+ * @returns {object|null} the refusal, or `null` when the path is fine (or not tracking)
+ */
+export function trackingLocationRefusal(path) {
+  const kind = toolOwnedKind(path);
+  if (!kind) return null;
+  if (isSessionTrackingPath(path)) return null;
+  return {
+    status: 'error',
+    code: TRACKING_LOCATION_REFUSAL,
+    message:
+      `${basename(path)} belongs to the conversation working through it, not to the project, so a `
+      + `copy at "${path}" is never created.`,
+    guidance:
+      `Call ${TRACKING_TOOL} instead — every reply of its names the paths to use `
+      + '(`action: "list"` to read, `"start"`/`"complete"` with `steps` to write).',
+    path,
+  };
 }
 
 /** `'task'` or `'plan'` for a tracking path, `null` for anything else. */

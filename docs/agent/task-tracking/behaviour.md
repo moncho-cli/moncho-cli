@@ -20,30 +20,46 @@ The `agent/` tree is gitignored, so a checklist never ships in a commit, and two
 conversations over the same repository never fight over one file.
 `utils/tracking-store.js` is the single place that decides the paths, and every reader
 and writer goes through it — `update_task`, the `work:on` drive and `/work`.
-`trackingPaths()` returns the two project-relative paths of the current session, and the
-project-root names only when **no** session is registered (a bare tool call, which is
-what the tool-level tests drive).
+`trackingPaths()` returns the two project-relative paths of the current session, and
+`null` paths when **no** session is registered: a checklist belongs to a conversation, so
+a session-less process has no store to read or write.
 
-Three sources, consulted in this order and never a fourth:
+Two sources, consulted in this order and never a third:
 
 1. the **session file** — the copy a human can hot-edit, the escape hatch
    `docs/interface/modes` names;
 2. the **session record** — the snapshot inside `<session-id>.json`
    (`docs/runtime/session-store`), used only when the file is gone, so a resumed
-   conversation whose folder was cleaned still reads its checklist;
-3. the **project-root file** — only when no session is registered at all.
+   conversation whose folder was cleaned still reads its checklist.
 
 **Writes** always land in the session file and are mirrored into the session record, so
-a resumed conversation is self-contained. A session never brings a root file back: the
-checklist belongs to the session, not to the tree.
+a resumed conversation is self-contained. Without a session a write is refused with
+`NO_SESSION` rather than falling back to the tree.
+
+### The project root is not a place the pair lives
+
+There is deliberately **no project-root fallback**, in either direction:
+
+- `readTaskContent()` never reads a root `task.md`, so a file the operator keeps in the
+  tree is never mistaken for the conversation's checklist;
+- `writeTaskContent()` throws `NO_SESSION` and `ensureTrackingFiles()` is a no-op, so the
+  harness can never create one;
+- `write_file` refuses a tracking name outside `agent/sessions/<id>/`
+  (`utils/tracking-fence.js#trackingLocationRefusal`, code
+  `TRACKING_FILE_NOT_IN_SESSION`), which is the one writer that could have created it;
+- `design` mode's writable targets are the same shape (`app/mode-policy.js#isDesignWritable`
+  reads `isSessionTrackingPath()`), so the mode and the fence cannot disagree.
+
+A root `task.md` was an artefact of the flat layout the per-session move replaced. Where
+it still exists in a tree it is the operator's file: leaving it there changes nothing, and
+nothing writes it again.
 
 `ensureTrackingFiles()` is called when a session is registered (`main.js`) and again on
-resume, and makes the session folder own a canonical pair. A fresh session is **seeded**
-from the project-root files when they exist, so an operator who already has a `task.md`
-in the tree keeps working; a resumed session is re-seeded from its own record when its
-folder went missing. Without that seed a session starts with an empty checklist while a
-`task.md` sits right there, and the tracking loop refuses every selection because it sees
-zero items — one reader on the file, another on the session copy, and the two disagreeing.
+resume, and makes the session folder own a canonical pair. A fresh session starts from
+the **canonical skeleton** — an empty checklist, no items — and a resumed session is
+re-seeded from its own record when its folder went missing. Without that re-seed a session
+would report an empty checklist while its record still held one: one reader on the file,
+another on the record, and the two disagreeing.
 
 ## The canonical shape
 
@@ -100,8 +116,15 @@ it with placeholders, and that exact text is quoted in the two places the model 
 
 The three copies (renderer, prompt, tool description) cannot drift: the template case in
 `tests/tracking-format.test.js` fails when either text stops matching `trackingTemplate()`.
-Every reply of `update_task` also reports the **resolved** `taskFile`/`planFile` paths — the
-session-folder ones — so the model learns *where* the pair lives, not only its shape.
+
+**Where** the pair lives is not part of what is taught. The prompt and the tool
+.description state the rule the model has to follow — the pair belongs to the conversation,
+not to the project tree, and `update_task` is the one thing that writes it — while the
+absolute location stays the harness's business. The model never has to compute
+`agent/sessions/<id>/`: every reply of `update_task` reports the **resolved**
+`taskFile`/`planFile` paths, so the path arrives as *data* at the moment it is needed, which
+is the only form it is good for (a fresh session's id did not exist when the prompt was
+written, and a resumed one may have moved).
 
 ## A decision is recorded as it is agreed
 
@@ -109,10 +132,10 @@ The checklist is not a summary written after the work: it is the record of what 
 conversation decided. A discussion that reaches an agreement and ends without an item
 on `task.md` loses that agreement, because the transcript is then the only place it
 ever lived. A decision therefore becomes an item **when it is agreed**: a `design`
-session authors the draft with `write_file` (normalised into the canonical document,
-see below), and a `work` session starts the item with `update_task` (`action: "start"`
-plus the `steps` just agreed). The prompt states the rule (`prompt.md`, section 8)
-because the model is the one that has to follow it.
+session authors the draft with `write_file` at the path `update_task` reported
+(normalised into the canonical document, see below), and a `work` session starts the item
+with `update_task` (`action: "start"` plus the `steps` just agreed). The prompt states the
+rule (`prompt.md`, section 8) because the model is the one that has to follow it.
 
 ## Who may author them
 
@@ -125,12 +148,21 @@ tools answer differently because the operations differ in kind:
   and immediately replaced by the canonical document built from it, and the reply carries
   `canonicalised: true`. The model cannot produce a malformed file; it can only produce a
   *draft* that is normalised.
-- **`patch_file` is refused** with `TRACKING_FILE_TOOL_OWNED`. A unified diff into a
-  document the harness re-renders is never the right move — its hunks would be undone by
-  the next `update_task` call — so the refusal names the tool to use instead.
+- **`write_file` also checks the place.** The name is accepted only under
+  `agent/sessions/<id>/`; a root `task.md` or `implementation_plan.md` is refused with
+  `TRACKING_FILE_NOT_IN_SESSION`
+  (`utils/tracking-fence.js#trackingLocationRefusal`), because this is the one writer that
+  could create the pair outside a conversation.
+- **`edit_file` is refused** with `TRACKING_FILE_TOOL_OWNED`, in either shape (a pasted
+  diff or a search/replace). A change into a document the harness re-renders is never the
+  right move — its hunks would be undone by the next `update_task` call — so the refusal
+  names the tool to use instead. `delete_file` answers the same way: the loop keeps both
+  files in place for the whole session.
 
-The comparison is on the file **name**, so the fence covers the session copies exactly like
-a stray root file, and it needs no upkeep when the folder policy changes.
+The comparison is on the file **name** for the two editing writers, so the fence covers
+the session copies exactly like a stray root file and needs no upkeep when the folder
+policy changes. The *location* rule is the stricter, writer-specific half: only
+`write_file` can create a file, so only `write_file` asks where it would land.
 
 ## The item list and the plan steps
 
