@@ -10,9 +10,11 @@ import { withStamp } from './transcript-stamp.js';
  * — the exact bytes stay in `block.body`.
  *
  * An entry may also carry a `stamp` (`HH:MM:SS`, app/transcript-stamp.js): the time
- * it was appended, shown at the head of its **first** display line. It is
- * presentation only — the payload, the display-line ranges and the click math are
- * untouched by it, and nothing here ever reaches the model.
+ * it was appended, shown at the head of its **first** display line, and a `role`
+ * (`user` or `assistant`), which is the side of the dialogue the prose band is
+ * painted from (`docs/interface/prose-bands`). Both are presentation only — the
+ * payload, the display-line ranges and the click math are untouched by them, and
+ * neither ever reaches the model.
  *
  * Pure: no neo-blessed, no screen, so every rule below is unit testable.
  */
@@ -87,10 +89,18 @@ export class TranscriptModel {
    *
    * `stamp` (optional) is the `HH:MM:SS` mark shown at the head of the line; it is
    * stored on the entry, so a repaint — a toggle, a scroll-driven `setContent()` —
-   * paints the very same mark instead of a new one.
+   * paints the very same mark instead of a new one. `role` (optional) names the
+   * *side of the dialogue* the line belongs to (`user` or `assistant`), which is what
+   * the prose band is painted from (app/transcript-view.js); it is stored on the entry
+   * so a repaint paints the same band.
    */
-  addLine(text, { stamp = null } = {}) {
-    this.#entries.push({ type: 'line', text: String(text ?? ''), stamp: stamp || null });
+  addLine(text, { stamp = null, role = null } = {}) {
+    this.#entries.push({
+      type: 'line',
+      text: String(text ?? ''),
+      stamp: stamp || null,
+      role: role || null,
+    });
     return this.#entries.length;
   }
 
@@ -105,7 +115,7 @@ export class TranscriptModel {
    *
    * `stamp` marks the entry the way `addLine()` does, on the header line.
    */
-  addBlock({ header = '', body = '', bodyLines = null, collapsed = null, stamp = null } = {}) {
+  addBlock({ header = '', body = '', bodyLines = null, collapsed = null, stamp = null, role = null } = {}) {
     const source = String(body ?? '');
     const lines = Array.isArray(bodyLines) ? [...bodyLines] : source.split('\n');
     const block = {
@@ -116,6 +126,7 @@ export class TranscriptModel {
       bodyLines: lines,
       chars: source.length,
       stamp: stamp || null,
+      role: role || null,
       collapsed: collapsed == null
         ? lines.length > 1 || source.length > COLLAPSE_THRESHOLD_CHARS
         : Boolean(collapsed),
@@ -154,14 +165,38 @@ export class TranscriptModel {
     return block;
   }
 
-  /** The display lines, derived from the entries (collapsed blocks show one). */
-  get lines() {
+  /**
+   * The display lines with the options each was built with, in order: `{ text, role,
+   * stamp }`. The view paints from this (it needs the role and the width), while
+   * `lines` below stays the plain string array every earlier caller expects.
+   */
+  lineRecords() {
     const out = [];
+    const emit = (text, entry, stamp = null) => {
+      out.push({
+        text,
+        role: entry.role || null,
+        stamp: stamp ?? entry.stamp ?? null,
+      });
+    };
+
     for (const entry of this.#entries) {
-      if (entry.type === 'line') out.push(withStamp(entry.text, entry.stamp));
-      else out.push(...blockLines(entry));
+      if (entry.type === 'line') {
+        emit(withStamp(entry.text, entry.stamp), entry, entry.stamp);
+        continue;
+      }
+      const rendered = blockLines(entry);
+      // A block carries its marker on the header line only; the mark is part of the
+      // header string (formatBlockHeader), so the records mirror `lines`
+      // byte-for-byte.
+      rendered.forEach((text, index) => emit(text, entry, index === 0 ? entry.stamp : null));
     }
     return out;
+  }
+
+  /** The display lines, derived from the entries (collapsed blocks show one). */
+  get lines() {
+    return this.lineRecords().map((record) => record.text);
   }
 
   get content() {

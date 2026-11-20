@@ -23,7 +23,7 @@ code:
   - path: app/tui.js
     symbols: [createTui, sanitize, formatArg, formatTranscript, collapsePaste, expandPastes, PASTE_THRESHOLD, SPINNER_FRAMES, SPINNER_INTERVAL_MS, createStamper, formatStamp, withStamp, STAMP_RE, STAMP_WIDTH]
   - path: app/tui-render.js
-    symbols: [sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD]
+    symbols: [sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD, QUOTE_COLOR]
   - path: app/tui-keys.js
     symbols: [bindKeys]
   - path: app/tui-teardown.js

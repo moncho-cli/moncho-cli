@@ -38,6 +38,8 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `edit.test.js` | Exact literal search/replace: literal matching, the two refusals with their evidence, order, all-or-nothing. |
 | `edit-engine.test.js` | The pure edit engine and its miss diagnostics: literal matching, the candidate report, the bounds. |
 | `tui.test.js` | The blessed TUI layout, transcript rendering and pastes. |
+| `prose-bands.test.js` | The background band around each side of the dialogue: the two roles and their colours, the fill to the region's own width, the one-line margin (collapsed where two bands meet), and the fact that nothing else is banded. |
+| `markdown-table.test.js` | A markdown table as aligned display rows: the delimiter-row rule that recognises one, the alignment it carries, the cell-based widths, and that a lone pipe stays prose. |
 | `tui-modules.test.js` | The TUI's extracted parts: the paste registry, the compaction notice, and the key bindings — interrupts and Tab taken pre-dispatch, scrolling on the screen. |
 | `tui-status.test.js` | The status row: right-aligned context meter and spinner. |
 | `transcript-blocks.test.js` | Collapsible tool output: the transcript model, clicks and toggles. |

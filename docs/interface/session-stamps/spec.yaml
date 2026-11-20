@@ -1,0 +1,43 @@
+id: interface/session-stamps
+domain: interface
+title: The stored time each block of a resumed conversation shows
+status: active
+summary: >
+  A reloaded conversation shows when each block was written, taken from the times the
+  session record kept rather than from the clock at reopen. Each chunk's append time is
+  held in a parallel stamps array beside the chunks — never on a chunk, which the
+  provider is sent verbatim — and utils/chunk-stamps.js keeps the two index-aligned
+  through an append, a restore and a compaction that rebuilds the list by chunk
+  identity. utils/session-time.js renders the stored instant in local time as the usual
+  HH:MM:SS mark, and opens each calendar day the conversation spans with a
+  "--- YYYY-MM-DD, Weekday ---" divider; a record without the field replays unmarked,
+  byte-for-byte as before. Only the TUI paints the marks: a front end whose log is
+  console.log receives the text and nothing else.
+code:
+  - path: utils/chunk-stamps.js
+    symbols: [NO_STAMP, isStamp, stampRepeated, normalizeStamps, alignStamps]
+  - path: utils/session-time.js
+    symbols: [formatStampAt, stampDay, weekdayOf, dayDividerFor]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: app/session-replay.js
+    symbols: [replayChunks, renderReplay, reloadConversation]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: utils/session-format.js
+    symbols: [serializeSession, parseSession, sessionChunks, sessionStamps]
+  - path: app/session-recorder.js
+    symbols: [createSessionRecorder]
+  - path: app/prose-band.js
+    symbols: [takeBandOptions]
+tests:
+  - path: tests/session-stamps.test.js
+    cases:
+      - "a chunk's time is recorded beside the chunks, never on a chunk"
+      - "a compaction keeps the survivors' marks and dates the summary"
+      - "the record carries the times, and an older record yields one null per chunk"
+      - "a stored instant renders in local time, and a day divider names the day"
+      - "replay marks each entry and opens each calendar day once"
+      - "a session without stored times replays unmarked, byte-for-byte as before"
+      - "the TUI reload paints the stored marks and the line CLI prints no options object"
+      - "the transcript view takes a stored mark ahead of its own clock"

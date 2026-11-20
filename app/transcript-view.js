@@ -1,5 +1,8 @@
 import { TranscriptModel, blockAtClick } from './transcript.js';
 import { formatArg, formatTranscript } from './tui-render.js';
+import { bandWidthOf, composeBanded, takeBandOptions } from './prose-band.js';
+import { appendLines } from './transcript-append.js';
+import { STAMP_RE } from './transcript-stamp.js';
 import {
   FOLLOW_BOTTOM_PERCENT,
   WHEEL_STEP_ROWS,
@@ -29,10 +32,18 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
   const model = new TranscriptModel();
   let closed = false;
   const stampOf = typeof stamp === 'function' ? stamp : () => null;
-  // Switched off while a stored conversation is replayed: those rows appeared in a
-  // past run, so marking them with the reload time would state something false.
+  // Switched off while a stored conversation is replayed without stored times: those
+  // rows appeared in a past run, so marking them with the reload time would state
+  // something false. A replay that *has* the stored times passes each one explicitly
+  // (the `{ stamp }` option below), so the record's own clock is what gets painted
+  // (`docs/interface/session-stamps`).
   let stamping = true;
   const mark = () => (stamping ? stampOf() : null);
+  /** The mark for one entry: an explicit stored time first, the clock otherwise. */
+  const markFor = (stamp) => {
+    const explicit = typeof stamp === 'string' && STAMP_RE.test(`${stamp} `) ? stamp : null;
+    return explicit ?? mark();
+  };
 
   /** One display-ready line list from raw text (sanitised + markdown-coloured). */
   const formatLines = (text) => formatTranscript(text).split('\n');
@@ -99,7 +110,10 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
     // auto-jump stays suppressed (`_userScrolled` left raised) and apply() below
     // is the only thing that moves the view.
     widget._userScrolled = true;
-    widget.setContent(model.content);
+    // The band is a full-width background, so the width is resolved here, at paint
+    // time, instead of being baked into a line (app/prose-band.js). A row whose role
+    // has no band comes back byte-for-byte.
+    widget.setContent(composeBanded(model.lineRecords(), bandWidthOf(widget)));
     apply();
 
     // blessed's handlers run on their own tick, so re-assert the decision there:
@@ -159,20 +173,27 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
     widget.on('wheeldown', wheelDown);
   }
 
-  /** Append plain text (prose, notices, tool call headers). */
+  /**
+   * Append plain text (prose, notices, tool call headers).
+   *
+   * A trailing `{ role }` marks the entry as one side of the dialogue and paints it
+   * with that side's background band, with one blank banded row above and below it
+   * (`docs/interface/prose-bands`); without one the entry is exactly what it always
+   * was. The margins and the stamp belong to `appendLines()`
+   * (app/transcript-append.js), so this stays the widget binding.
+   */
   const log = (...args) => {
+    const { role = null, stamp = null } = takeBandOptions(args);
     const text = args.map(formatArg).join(' ');
-    const lines = formatLines(text);
-    // One mark per entry, on its first line that is not blank: a reply spanning ten
-    // lines is stamped once, so a long answer never becomes a column of identical
-    // times, and an entry that opens with a blank line (the `\n  [tool Output]`
-    // shape main.js builds) is stamped where its text really starts.
-    const first = lines.findIndex((line) => String(line).trim() !== '');
-    lines.forEach((line, index) => {
-      model.addLine(line, { stamp: index === first ? mark() : null });
-    });
+    appendLines(model, formatLines(text), { role, mark: () => markFor(stamp) });
     return paint();
   };
+
+  /**
+   * Append one side of the dialogue as a background-banded entry: the band, plus its
+   * blank top and bottom margin (`docs/interface/prose-bands`).
+   */
+  const logProse = (role, text, { stamp = null } = {}) => log(text, { role, stamp });
 
   /**
    * Append a collapsible block. `header` is the one-line label the block keeps
@@ -184,7 +205,7 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
    * block asks for the tracking colour so the file it quotes reads as a milestone
    * rather than as an ordinary tool result (`docs/interface/tracking-block`).
    */
-  const logBlock = ({ header = '', body = '', collapsed = null, bodyColor = null } = {}) => {
+  const logBlock = ({ header = '', body = '', collapsed = null, bodyColor = null, stamp = null } = {}) => {
     const source = String(body ?? '');
     const colour = typeof bodyColor === 'string' && bodyColor ? bodyColor : null;
     const bodyLines = formatLines(source).map((line) => (
@@ -195,7 +216,7 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
       body: source,
       bodyLines,
       collapsed,
-      stamp: mark(),
+      stamp: markFor(stamp),
     });
     paint();
     return block;
@@ -251,6 +272,7 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
   return {
     model,
     log,
+    logProse,
     logBlock,
     toggleBlock,
     expandBlock,

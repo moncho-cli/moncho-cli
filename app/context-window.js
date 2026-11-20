@@ -6,6 +6,7 @@ import {
 import { compactChunks, needsCompaction } from '../utils/compaction.js';
 import { estimateRequestTokens, formatUsage } from '../utils/tokens.js';
 import { formatContextLimit, CONTEXT_SIZE_SOURCE } from '../utils/context-size.js';
+import { alignStamps, normalizeStamps, stampRepeated } from '../utils/chunk-stamps.js';
 
 /**
  * The conversation context modelled as an ordered array of chunks (task.md items
@@ -32,6 +33,10 @@ export class ContextWindow {
   // compaction: the *uncompacted* history (task-backlog: "save a conversation.json …
   // the uncompacted version and has all the chunks all the way back").
   #journal = [];
+  // The append time of each chunk in `#chunks`, index-aligned and never on the chunk
+  // itself (utils/chunk-stamps.js): the chunks are what the provider is sent verbatim,
+  // so the bookkeeping cannot ride on them. Presentation only — see `stamps`.
+  #stamps = [];
 
   constructor({
     maxTokens = CONTEXT_MAX_LENGTH,
@@ -39,7 +44,11 @@ export class ContextWindow {
     configuredTokens = null,
     realTokens = null,
     source = CONTEXT_SIZE_SOURCE.DEFAULT,
+    now = () => new Date(),
   } = {}) {
+    // The clock the marks are taken from. Injected, so a test names the exact time and
+    // the TUI is not the only front end that can produce marks.
+    this.now = typeof now === 'function' ? now : () => new Date();
     this.maxTokens = maxTokens;
     this.getTools = typeof tools === 'function' ? tools : () => tools || [];
     // Where the limit came from (task.md item 3): a config override may differ
@@ -73,15 +82,38 @@ export class ContextWindow {
     return this.#chunks.length;
   }
 
+  /**
+   * The append time of each chunk, index-aligned with `chunks` (alias: `chunkStamps`).
+   *
+   * A chunk without a known time is `null` and the array is never shorter than the
+   * window, so index `i` always answers for chunk `i`. Presentation only: these marks
+   * are stored in the session file beside the chunks and replayed into the transcript
+   * on a resume (`docs/interface/session-stamps`), and they are never sent to the
+   * provider.
+   */
+  get stamps() {
+    return this.#stamps;
+  }
+
+  /** The one mark a chunk appended *now* would carry, or `null` for an unreadable clock. */
+  #nowStamp() {
+    const at = this.now();
+    return stampRepeated(at, 1)[0] ?? null;
+  }
+
   add(chunk) {
     this.#chunks.push(chunk);
     this.#journal.push(chunk);
+    this.#stamps.push(this.#nowStamp());
     return chunk;
   }
 
   addMany(chunks) {
-    this.#chunks.push(...chunks);
-    this.#journal.push(...chunks);
+    const list = Array.isArray(chunks) ? chunks : [];
+    this.#chunks.push(...list);
+    this.#journal.push(...list);
+    // One clock reading for the batch: a tool batch's chunks are one moment, not several.
+    this.#stamps.push(...stampRepeated(this.now(), list.length));
     return this.#chunks.length;
   }
 
@@ -91,16 +123,22 @@ export class ContextWindow {
    * `journal` carries the uncompacted history the stored session kept; without it
    * the window itself is the best record available, so the journal restarts from
    * exactly what is being restored rather than from nothing.
+   *
+   * `stamps` carries the append times the record kept beside the same chunks; a record
+   * written before they existed (or a caller that only knows the chunks) yields no
+   * marks, which is what a stored conversation shows when its times were never written.
    */
-  replace(chunks, { journal = null } = {}) {
+  replace(chunks, { journal = null, stamps = null } = {}) {
     this.#chunks = [...chunks];
     this.#journal = Array.isArray(journal) ? [...journal] : [...chunks];
+    this.#stamps = normalizeStamps(Array.isArray(stamps) ? stamps : [], this.#chunks.length);
     return this.#chunks.length;
   }
 
   clear() {
     this.#chunks = [];
     this.#journal = [];
+    this.#stamps = [];
     this.compactions = [];
   }
 
@@ -178,6 +216,15 @@ export class ContextWindow {
     });
 
     if (result.compacted) {
+      // The marks follow their chunks by identity: the summary is a new chunk and takes
+      // the moment of the compaction, while the carried user message and the kept tail
+      // keep the times they were written (utils/chunk-stamps.js#alignStamps).
+      this.#stamps = alignStamps({
+        previousChunks: this.#chunks,
+        previousStamps: this.#stamps,
+        nextChunks: result.chunks,
+        fallback: this.#nowStamp(),
+      });
       this.#chunks = result.chunks;
       const report = {
         at: new Date().toISOString(),

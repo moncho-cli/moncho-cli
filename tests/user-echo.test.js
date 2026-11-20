@@ -115,10 +115,10 @@ test('formatUserEcho() labels the message and quotes every one of its lines', ()
 });
 
 test('the echoed message renders as a coloured quote, not as raw markdown', async () => {
-  assert.equal(formatTranscript('> quoted line'), '{green-fg}│ quoted line{/green-fg}');
+  assert.equal(formatTranscript('> quoted line'), '{bright-white-fg}│ quoted line{/bright-white-fg}');
   assert.equal(
     formatTranscript('> **bold** and `code`'),
-    '{green-fg}│ {bold}bold{/bold} and {cyan-fg}code{/cyan-fg}{/green-fg}',
+    '{bright-white-fg}│ {bold}bold{/bold} and {cyan-fg}code{/cyan-fg}{/bright-white-fg}',
   );
 
   await withTui(async (tui, { painted }) => {

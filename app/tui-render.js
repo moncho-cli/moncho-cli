@@ -1,5 +1,6 @@
 import { colorizeLines, USER_ECHO_HEADER } from './theme.js';
 import { displayWidth, clustersWithin } from './cell-width.js';
+import { tableAt } from './markdown-table.js';
 
 /**
  * Pure text helpers for the TUI: sanitising, the markdown-ish transcript
@@ -36,6 +37,20 @@ export function formatArg(value) {
 const FENCE_RE = /^\s*```\s*([\w+-]*)\s*$/;
 const HEADING_RE = /^\s*(#{1,6})\s+(.*)$/;
 const LIST_RE = /^(\s*)[-*+]\s+(.*)$/;
+/**
+ * The foreground of a quoted line (`│ …`).
+ *
+ * This one colour serves both quoters, because `formatUserEcho()` writes the user's
+ * message as `> ` lines and a markdown blockquote the model wrote arrives the same way:
+ * the branch below cannot tell them apart (see `docs/interface/user-messages`).
+ *
+ * It is **bright white**, the fullest white a terminal has — not `white`, which
+ * neo-blessed renders as the ordinary 16-colour white and reads as light grey. It was
+ * green, which did not read as a quotation; on the user's blue band it also sat close to
+ * the tool palette's write green.
+ */
+export const QUOTE_COLOR = 'bright-white';
+
 /** A quoted line: what formatUserEcho() produces, and a markdown blockquote. */
 const QUOTE_RE = /^\s*>\s?(.*)$/;
 
@@ -123,8 +138,8 @@ function renderDelimiter(raw) {
 }
 
 /**
- * Minimal markdown-ish renderer for the conversation: fenced code blocks, tool
- * delimiters, headings, lists, bold and inline code become neo-blessed tags.
+ * Minimal markdown-ish renderer for the conversation: fenced code blocks, tables,
+ * tool delimiters, headings, lists, bold and inline code become neo-blessed tags.
  *
  * Pure (no screen needed) so it can be unit tested without a terminal. It
  * sanitizes first, so raw model output can neither break rendering nor inject
@@ -133,8 +148,10 @@ function renderDelimiter(raw) {
 export function formatTranscript(text) {
   const out = [];
   let inFence = false;
+  const lines = sanitize(text).split('\n');
 
-  for (const raw of sanitize(text).split('\n')) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index];
     const fence = raw.match(FENCE_RE);
     if (fence) {
       if (inFence) {
@@ -159,10 +176,20 @@ export function formatTranscript(text) {
       continue;
     }
 
+    // A markdown table is consumed whole: its header, its delimiter row and its body
+    // are re-laid so every column lines up (`app/markdown-table.js`). Inline markup is
+    // applied per cell *before* the widths are measured, so `**bold**` costs no column.
+    const table = tableAt(lines, index, { decorate: (cell) => inlineMarkup(escapeTags(cell)) });
+    if (table) {
+      out.push(...table.lines);
+      index = table.end;
+      continue;
+    }
+
     const line = escapeTags(raw);
     const quote = line.match(QUOTE_RE);
     if (quote) {
-      out.push(`{green-fg}│ ${inlineMarkup(quote[1])}{/green-fg}`);
+      out.push(`{${QUOTE_COLOR}-fg}│ ${inlineMarkup(quote[1])}{/${QUOTE_COLOR}-fg}`);
       continue;
     }
 

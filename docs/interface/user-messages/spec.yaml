@@ -8,12 +8,14 @@ summary: >
   first model call, and formatUserEcho() renders it as a "You:" header plus one
   quoted line per message line. The echo is presentation only: the chunk stored in
   the window and sent to the provider stays exactly { role: 'user', content },
-  and a missing or throwing hook never costs the user their prompt.
+  and a missing or throwing hook never costs the user their prompt. A quoted line
+  renders in QUOTE_COLOR (bright white): one colour serves both the echo and a markdown
+  blockquote from the model, because formatTranscript() cannot tell them apart.
 code:
   - path: app/conversation-manager.js
     symbols: [ConversationManager]
   - path: app/tui-render.js
-    symbols: [formatUserEcho, formatTranscript, USER_ECHO_HEADER, USER_ECHO_PREFIX]
+    symbols: [formatUserEcho, formatTranscript, USER_ECHO_HEADER, USER_ECHO_PREFIX, QUOTE_COLOR]
   - path: app/tui.js
     symbols: [createTui, formatUserEcho, USER_ECHO_HEADER]
   - path: main.js

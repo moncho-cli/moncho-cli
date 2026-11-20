@@ -67,13 +67,24 @@ export function createTuiSurface({
      * run, so marking them with the time the file was reopened would state
      * something false (`docs/interface/conversation-timestamps`).
      */
-    reload: (chunks) => {
+    reload: (chunks, { stamps = [] } = {}) => {
       // The transcript is replaced, so a compaction already announced is no
       // longer on screen: the next one must be reported again.
       compaction.reset();
       if (typeof view.setStamping === 'function') view.setStamping(false);
       try {
-        return reloadConversation(chunks, { log, logBlock, clear: () => view.clear() });
+        return reloadConversation(chunks, {
+          log,
+          // The same prose route the live loop uses, so a resumed conversation shows
+          // its two sides banded exactly as they were (docs/interface/prose-bands).
+          logProse: tui.logProse,
+          logBlock,
+          clear: () => view.clear(),
+          // The append times the record kept, so the rows are marked with when they
+          // were written rather than with the time the file was reopened
+          // (docs/interface/session-stamps).
+          stamps,
+        });
       } finally {
         if (typeof view.setStamping === 'function') view.setStamping(true);
       }
@@ -81,6 +92,13 @@ export function createTuiSurface({
     close,
     // TUI extras
     log,
+    /**
+     * Print one side of the dialogue as a background-banded entry: the user's echoed
+     * prompt or the model's prose (`docs/interface/prose-bands`). The host wires it to
+     * the seams that log those two, so the banding rule stays in the transcript pane
+     * (app/transcript-view.js).
+     */
+    logProse: (role, text, { stamp = null } = {}) => view.logProse(role, text, { stamp }),
     logBlock,
     setStatus: (text) => statusRow.setStatus(text),
     setTokens: (text) => statusRow.setMeter(text),

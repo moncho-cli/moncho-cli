@@ -47,8 +47,9 @@ Seven regions, laid out relatively so blessed relayouts them on resize:
   braces are escaped because blessed reads `{…}` as tags.
 - `log()` splits multi-line text and writes one transcript row per line.
 - A small markdown-ish renderer colours fenced code blocks, tool delimiters,
-  headings, lists, bold and inline code. It is pure (no screen needed) so it can be
-  unit tested. Every discovery/read tool has a delimiter branch: `<file …>` (path +
+  **markdown tables** (re-laid so their columns line up,
+  `docs/interface/markdown-tables`), headings, lists, bold and inline code. It is
+  pure (no screen needed) so it can be unit tested. Every discovery/read tool has a delimiter branch: `<file …>` (path +
   line range), `<grep …>` (pattern, path, match/file counts), `<blobs …>` / `<blob …>`
   (path, byte and line counts, `skipped` markers), and each carries its `truncated`
   flag into the header instead of printing the raw tag.
@@ -59,7 +60,10 @@ Seven regions, laid out relatively so blessed relayouts them on resize:
   expands it (the next click collapses it) without touching the payload. The rules
   live in `docs/interface/transcript-blocks`.
 - The user's own message is part of the transcript too, echoed as a `You:` header
-  plus one quoted line per message line (`docs/interface/user-messages`).
+  plus one quoted line per message line (`docs/interface/user-messages`). Both sides
+  of the dialogue — that echo and the model's prose — are painted with a full-width
+  background band, one colour each, with a one-line banded margin above and below
+  (`docs/interface/prose-bands`).
 - The status bar is one row with two slots: the logical status text (or the
   spinner frame) starts at the left edge and the **context meter is pinned to the
   right edge** — the token usage string plus the configured-vs-real label the
@@ -83,6 +87,9 @@ Seven regions, laid out relatively so blessed relayouts them on resize:
   (`docs/interface/session-replay`), so opening a session shows it as it was left.
   Stamping is switched off for that replay: those rows appeared in a past run, so
   marking them with the reload time would state something false.
+  A replay that carries the stored times marks each row with when it was written
+  instead, behind a divider wherever the calendar day changes
+  (`docs/interface/session-stamps`).
 
 ## The last-prompt hint (task-backlog)
 

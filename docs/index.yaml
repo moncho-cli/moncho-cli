@@ -51,6 +51,7 @@ specs:
   - interface/json-display
   - interface/user-messages
   - interface/session-replay
+  - interface/session-stamps
   - interface/commands
   - interface/line-cli
   - interface/input-focus
@@ -64,4 +65,6 @@ specs:
   - runtime/logging
   - context/working-time
   - interface/conversation-timestamps
+  - interface/prose-bands
+  - interface/markdown-tables
   - maintainer/version-bump

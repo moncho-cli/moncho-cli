@@ -24,9 +24,11 @@ the implementation is linked below.
 
 - The colours are **distinct**: the parts of a turn never share one, so a glance at
   the colour is enough to tell "what I asked" from "what the agent did".
-- Ordinary prose gets **no** colour. It is the majority of the screen and the
-  terminal default reads best; the markdown renderer already colours the parts of a
-  reply that carry structure.
+- Ordinary prose gets **no foreground** colour. It is the majority of the screen and
+  the terminal default reads best; the markdown renderer already colours the parts of a
+  reply that carry structure, and the two sides of the dialogue are told apart by a
+  **background** band instead (`docs/interface/prose-bands`), which leaves every
+  foreground this palette sets exactly as it was.
 
 ## The tool families (task-backlog)
 

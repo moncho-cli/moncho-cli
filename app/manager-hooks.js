@@ -10,7 +10,8 @@ import { recordProviderCall, totalUsage } from '../utils/usage-stats.js';
  * (`docs/runtime/startup-wiring`).
  *
  * 1. **The hooks.** The manager announces what happened — the window changed, the
- *    conversation changed, a notice, a retried attempt — and every hook is
+ *    conversation changed, a notice, a retried attempt, one side of the dialogue
+ *    (`announceProse`) — and every hook is
  *    presentation-adjacent, so a listener that throws must never cost the user their
  *    turn (`docs/context/usage-refresh`). `announceChunksChange` is the *event* the
  *    host autosaves on (a chunk landed, a compaction rewrote the array) while
@@ -40,6 +41,22 @@ export function announceChunksChange(host, reason = 'chunk') {
   if (!host.onChunksChange) return null;
   try {
     return host.onChunksChange(reason) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Print one side of the dialogue on the prose route.
+ *
+ * `role` is `user` or `assistant` and names the band the row is painted with
+ * (`docs/interface/prose-bands`); the hook is presentation only, so a listener that
+ * throws must never cost the user their turn — the caller falls back to `log()`.
+ */
+export function announceProse(host, role, text) {
+  if (!host.onProse) return null;
+  try {
+    return host.onProse(role, text);
   } catch {
     return null;
   }

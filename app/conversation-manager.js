@@ -60,6 +60,8 @@ export class ConversationManager {
     // The user's own message is announced before the model is called, so both
     // front ends can echo it: the transcript is otherwise one-sided.
     this.onUserMessage = options.onUserMessage || null;
+    // One side of the dialogue on the prose route (docs/interface/prose-bands).
+    this.onProse = options.onProse || null;
     // Transient notices (app/notice-overlay.js): a recovered failure is shown in
     // the overlay and expires, instead of staying in the transcript forever.
     this.onNotice = options.onNotice || null;

@@ -44,8 +44,11 @@ that seam with a stub provider.
   (`docs/interface/session-replay`).
 - One user input is appended as a `user` chunk, then the loop repeats until a
   final (tool-free) assistant message arrives or an error/abort ends the task.
-- The prompt is also announced through `onUserMessage` before the first model
-  call, so the conversation view shows both sides (`docs/interface/user-messages`).
+- The prompt is also announced before the first model call — on the prose route
+  (`onProse`, so the TUI bands it) with `onUserMessage` as the fallback — so the
+  conversation view shows both sides (`docs/interface/user-messages`,
+  `docs/interface/prose-bands`). The model's own prose, next to its calls and in the
+  reply that ends the turn, rides the same route.
 - **Before every model call** the window is checked against the budget and
   compacted when needed, so the model is never called with an over-budget window.
 - **Every change to the window is announced** — the user chunk, the assistant

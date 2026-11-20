@@ -1,4 +1,5 @@
 import { handleToolBatch } from './tool-batch.js';
+import { announceProse } from './manager-hooks.js';
 
 /**
  * The two steps one turn takes on the conversation, kept out of the class.
@@ -42,6 +43,9 @@ export async function runToolBatch(host, toolCalls, signal, options = {}) {
       notify: () => host.notifyContextChange(),
       gate: options.gate ?? host.toolGate,
       content: options.content ?? null,
+      // The prose next to the calls is banded like the final reply, so both halves of
+      // "what the agent wrote" read the same (docs/interface/prose-bands).
+      logProse: (role, text) => announceProse(host, role, text),
       ...(host.maxParallelToolCalls ? { max: host.maxParallelToolCalls } : {}),
     });
     host.lastBatch = report;
@@ -65,8 +69,17 @@ export function storeFinalResponse(host, content) {
   host.notifyChunksChanged('reply');
   host.notifyContextChange();
 
+  // The reply is one side of the dialogue, so it is printed on the prose route: a
+  // front end with a band paints it on one (docs/interface/prose-bands), and without
+  // one — or with a hook that throws — the line is exactly what it always was. The
+  // delimiters stay chrome: they are the frame around the band, not part of it.
+  const prose = (text) => {
+    if (announceProse(host, 'assistant', text) != null) return;
+    host.log(text);
+  };
+
   host.log('\n--- AI Response ---');
-  host.log(content);
+  prose(content);
   host.log('----------------------');
   host.log(`[Context] ${host.contextWindow.usage()}\n`);
 }

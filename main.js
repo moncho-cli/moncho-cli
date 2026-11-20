@@ -166,6 +166,8 @@ async function main() {
     // transcript reads as a dialogue; the chunk the model receives is untouched
     // (app/tui-render.js#formatUserEcho is display only).
     onUserMessage: (text) => log(formatUserEcho(text)),
+    // The same echo on the prose route, which the TUI bands (docs/interface/prose-bands).
+    onProse: tui ? (role, text) => tui.logProse(role, text) : null,
     // Recovered failures go to the overlay, never to the transcript.
     onNotice: (kind, text, options) => notify(kind, text, options),
     // Half 2 of the mode policy: every call still passes the pre-dispatch gate
@@ -231,6 +233,10 @@ async function main() {
         // keeps every chunk all the way back for conversation.json
         // (docs/runtime/conversation-log).
         journal: manager.contextWindow.journal,
+        // The append time of each chunk, so a resumed transcript can show when each
+        // block was written instead of the time the file was reopened
+        // (utils/chunk-stamps.js, docs/interface/session-stamps).
+        stamps: manager.contextWindow.stamps,
         stats: manager.contextWindow.stats(),
         // What each model consumed so far, so the session file is the accounting
         // record and `/usage` survives a restart.

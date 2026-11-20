@@ -1,0 +1,63 @@
+id: interface/prose-bands
+domain: interface
+title: A full-width background band around each side of the dialogue, with a one-line margin
+status: active
+summary: >
+  app/prose-band.js names a background band for exactly two roles — the user's echoed
+  prompt (blue) and the model's prose (the dark red) — and
+  app/transcript-view.js paints every
+  row of such an entry as one, with a blank banded row above and below it; two bands
+  that meet share one blank row (the margins collapse). bandLine() pads the line to the
+  region's own wrap width inside the tag (measured in display cells by
+  app/tagged-text.js), so the whole row is coloured rather than only the text, and a
+  role with no band is returned byte-for-byte so the band can never be applied by
+  accident. The two sides reach the view through the prose route:
+  ConversationManager.onProse/notifyProse (app/manager-hooks.js#announceProse), wired
+  from the user echo (app/turn-runner.js#runTurn, with an onUserMessage fallback), the
+  prose next to a tool batch (app/tool-batch.js#handleToolBatch) and the reply that
+  ends a turn (app/manager-turn.js#storeFinalResponse); each falls back to its own
+  log() when the route answers null, and main.js leaves onProse null for the line CLI,
+  which has no band. A resumed conversation is banded like the live one (replay emits a
+  prose op, app/session-replay.js). Colour is presentation only: the band is tags on a
+  display line, never on a chunk or a session file, it adds no visible glyph beyond its
+  padding and its two declared rows, so the block-click row math is unchanged.
+code:
+  - path: app/prose-band.js
+    symbols: [PROSE_BANDS, BAND_BACKGROUNDS, isBandRole, bandColor, bandLine, bandMargin, takeBandOptions, isBlankBand, bandWidthOf, composeBanded]
+  - path: app/tagged-text.js
+    symbols: [untag, visibleWidth, padVisible]
+  - path: app/transcript-append.js
+    symbols: [appendLines]
+  - path: app/transcript.js
+    symbols: [TranscriptModel]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: app/tui-transcript.js
+    symbols: [createTranscriptPane]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/manager-hooks.js
+    symbols: [announceProse]
+  - path: app/manager-turn.js
+    symbols: [storeFinalResponse]
+  - path: app/tool-batch.js
+    symbols: [handleToolBatch]
+  - path: app/turn-runner.js
+    symbols: [runTurn]
+  - path: app/session-replay.js
+    symbols: [replayChunks, renderReplay, reloadConversation]
+tests:
+  - path: tests/prose-bands.test.js
+    cases:
+      - "the two sides of the dialogue get one background colour each, and nothing else does"
+      - "bandLine() pads a line to the region width and leaves a bandless role untouched"
+      - "the transcript model records the side of each entry, and a margin is a blank banded row"
+      - "appendLines() adds the margins and stamps the first non-blank line"
+      - "the real widget paints the two backgrounds, keeps the glyphs, and pads to its own width"
+      - "a banded line paints a full-width background with one blank banded row above and below"
+      - "two bands that meet share one blank row, so the margins never double up"
+      - "only the two sides are banded: a notice, a tool header and prose are not"
+      - "the band is presentation only: the model text and the echo carry no escape"
+      - "the band never changes the block-click math: a coloured block still toggles"

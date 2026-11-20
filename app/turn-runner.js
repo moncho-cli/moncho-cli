@@ -30,6 +30,7 @@
  */
 
 import { logEvent } from '../utils/logger.js';
+import { announceProse } from './manager-hooks.js';
 import {
   APPROACH_REQUIRED_NOTICE,
   APPROACH_SKIPPED_NOTICE,
@@ -70,11 +71,18 @@ export async function runTurn(session, userInput) {
   // the host writes the session record on this hook (`app/session-autosave.js`), so a
   // turn that dies before it ends still leaves the user's own message behind.
   session.notifyChunksChanged?.('user');
-  // The chunk is what the model receives, verbatim; the hook is presentation only,
-  // and a hook that throws must never cost the user their prompt.
-  if (typeof session.onUserMessage === 'function') {
-    try { session.onUserMessage(userInput); } catch { /* display only */ }
-  }
+  // The chunk is what the model receives, verbatim; the hook is presentation only.
+  // The prose route is tried first, so the TUI can band the echo
+  // (docs/interface/prose-bands); a front end without it, and a hook that throws,
+  // fall back to the generic `onUserMessage` — a broken renderer must never cost the
+  // user their prompt.
+  const echo = (role, text) => {
+    if (announceProse(session, role, text) != null) return;
+    if (typeof session.onUserMessage === 'function') {
+      try { session.onUserMessage(text); } catch { /* display only */ }
+    }
+  };
+  echo('user', userInput);
   // The prompt is a chunk too, so the meter moves before the first call is even
   // sent instead of once the whole turn is over.
   session.notifyContextChange();

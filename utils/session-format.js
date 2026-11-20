@@ -1,4 +1,5 @@
 import { normalizeModelUsage } from './usage-stats.js';
+import { isStamp, normalizeStamps } from './chunk-stamps.js';
 
 /**
  * The **shape** of a stored conversation.
@@ -45,6 +46,7 @@ export function serializeSession({
   work = false,
   cwd = null,
   chunks = [],
+  stamps = null,
   stats = {},
   usage = {},
   taskContent = null,
@@ -78,6 +80,14 @@ export function serializeSession({
     usage: normalizeModelUsage(usage),
     chunks: chunks.map((chunk) => ({ ...chunk })),
   };
+
+  // The append time of each chunk, beside the chunks and never on them
+  // (utils/chunk-stamps.js, docs/interface/session-stamps). Written only when a caller
+  // supplies them, so a record without them is byte-for-byte what it always was — and a
+  // file written before the field existed still parses, because the marks are optional.
+  if (Array.isArray(stamps) && stamps.some(isStamp)) {
+    record.stamps = normalizeStamps(stamps, record.chunks.length);
+  }
 
   if (taskContent !== null) record.taskContent = taskContent;
   if (planContent !== null) record.planContent = planContent;
@@ -149,6 +159,18 @@ export function sessionPlanContent(session) {
 export function sessionChunks(session) {
   const parsed = parseSession(formatSession(session));
   return parsed.chunks.map((chunk) => ({ ...chunk }));
+}
+
+/**
+ * The append times stored beside the session's chunks, index-aligned with them.
+ *
+ * A record written before the field existed answers one `null` per chunk, so every
+ * later reader can index the list without a length check and the resumed conversation
+ * shows no marks rather than a wrong time.
+ */
+export function sessionStamps(session) {
+  const parsed = parseSession(formatSession(session));
+  return normalizeStamps(Array.isArray(parsed.stamps) ? parsed.stamps : [], parsed.chunks.length);
 }
 
 /** The per-model token table of a session, ready to seed a usage meter. */

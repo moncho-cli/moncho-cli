@@ -19,11 +19,16 @@ summary: >
   file minutes behind the messages already exchanged. The recorder stays dumb about
   when to save; the loop settles the throttle after each of its own saves, because
   that write already holds the whole window.
+  The record also carries the append time of each chunk in a parallel stamps array,
+  index-aligned with the chunks and never written on a chunk itself — the chunks are
+  sent to the provider verbatim. The field is optional and is written only when a caller
+  supplies times, so a record written before it existed still parses and a conversation
+  with no times serialises to the bytes it always did (docs/interface/session-stamps).
 code:
   - path: utils/session-store.js
     symbols: [SESSION_DIR, SESSION_RECORD_FILE, SessionStoreError, sessionId, sessionDir, sessionPath, legacySessionPath, formatSession, parseSession, serializeSession, countRoles, writeSession, sessionsDirExists, listSessions, loadSession, migrateSession, latestSession, describeSession]
   - path: utils/session-format.js
-    symbols: [SESSION_FORMAT_VERSION, SessionStoreError, sessionId, serializeSession, countRoles, formatSession, parseSession, sessionTaskContent, sessionPlanContent, sessionChunks, sessionUsage, sessionModeState]
+    symbols: [SESSION_FORMAT_VERSION, SessionStoreError, sessionId, serializeSession, countRoles, formatSession, parseSession, sessionTaskContent, sessionPlanContent, sessionChunks, sessionStamps, sessionUsage, sessionModeState]
   - path: app/session-recorder.js
     symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
   - path: app/session-autosave.js
@@ -48,7 +53,6 @@ tests:
       - "the session recorder snapshots the live window under a dated name"
       - "a recorded session can be replayed into a context window"
       - "the mode and the lock sail with the session file, so a resumed session opens as it was left"
-      - "a session file written before the mode existed still resumes"
   - path: tests/session-layout.test.js
     cases:
       - "the conversation record lives inside the session folder, next to its tracking files"

@@ -145,9 +145,14 @@ export async function handleToolBatch({
   notify = () => {},
   gate = null,
   content = null,
+  logProse = null,
 } = {}) {
   const plan = planToolBatch(toolCalls, { max });
   const notifyChange = typeof notify === 'function' ? notify : () => {};
+  // The prose route (docs/interface/prose-bands): prose next to the calls is piped
+  // through it so a front end can band it, and anything other than a real return
+  // (no hook, a throwing one) falls back to the generic log.
+  const proseLog = typeof logProse === 'function' ? logProse : () => null;
   let lastStoredIntent = null;
   let lastLoggedIntent = null;
 
@@ -174,7 +179,9 @@ export async function handleToolBatch({
   // The model's own words next to its calls are printed *before* the calls they
   // introduce, so the reader sees the approach that was stated — the same prose the
   // assistant chunk carries for the model (`docs/agent/approach-gate`).
-  if (typeof content === 'string' && content.trim() !== '') log(content);
+  if (typeof content === 'string' && content.trim() !== '') {
+    if (proseLog('assistant', content) == null) log(content);
+  }
 
   if (plan.total > 1) {
     log(formatBatchLine({ accepted: plan.accepted.length, refused: plan.refused.length, max: plan.max }));

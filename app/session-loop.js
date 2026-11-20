@@ -98,14 +98,18 @@ export async function handleCommand(input, {
   }
 
   if (result.ok && result.code === 'RESUMED') {
+    // The stored append times travel with the chunks they belong to
+    // (docs/interface/session-stamps): a reloaded row shows when it was written, and a
+    // record written before they existed carries one `null` per chunk.
+    const stamps = result.resumed?.stamps || [];
     const chunks = result.resumed?.chunks || manager?.chunks || [];
     // The stored intent mode is *restored*, never requested: `/sessions` brings back the
     // state the conversation was left in, and `setMode()` would be refused while a
     // resumed `work:on` lock is on (app/session-mode.js#restore). A file written before
     // the mode existed restores nothing, so the session keeps the state it opened with.
     mode?.restore?.(result.resumedMode);
-    if (typeof tui?.reload === 'function') tui.reload(chunks);
-    else reloadConversation(chunks, { log });
+    if (typeof tui?.reload === 'function') tui.reload(chunks, { stamps });
+    else reloadConversation(chunks, { log, stamps });
 
     if (result.resumed?.id && typeof sessions?.adopt === 'function') {
       sessions.adopt(result.resumed.id, {

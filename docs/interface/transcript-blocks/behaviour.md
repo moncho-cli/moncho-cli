@@ -11,7 +11,9 @@ implementation is linked below.
 `app/transcript.js` holds the transcript as an ordered list of entries, with no
 terminal widget involved (pure, so every rule here is unit testable):
 
-- a **plain line** — prose, notices, tool-call headers;
+- a **plain line** — prose, notices, tool-call headers — which may carry the
+  **role** of the side of the dialogue it belongs to (`user` / `assistant`), the one
+  thing the prose band is painted from (`docs/interface/prose-bands`);
 - a **block** — one header line plus the payload (`body`, stored verbatim) and the
   formatted `bodyLines` actually painted.
 
@@ -28,8 +30,10 @@ terminal widget involved (pure, so every rule here is unit testable):
 
 `app/transcript-view.js` binds the model to a blessed scrollable widget:
 
-- `log()` appends plain lines, `logBlock()` appends a collapsible block; both
-  repaint from the model, so the widget is a pure function of the model.
+- `log()` appends plain lines, `logProse(role, text)` appends one side of the
+  dialogue (banded, `docs/interface/prose-bands`), `logBlock()` appends a collapsible
+  block; all three repaint from the model, so the widget is a pure function of the
+  model.
 - Rendering (sanitising, tag escaping, markdown colouring) happens in
   `formatTranscript()` (`app/tui-render.js`); the model stays plain text.
 - A click resolves through `blockAtClick()` — the screen row, the widget's

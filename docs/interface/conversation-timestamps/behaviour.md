@@ -38,16 +38,21 @@ mark instead of a new one.
 
 ## It is display only
 
-The stamp lives on the transcript entry, never on a context chunk: it cannot reach
-the model and it is not stored in a session file. Two consequences follow:
+The stamp lives on the transcript entry, never on a context chunk: it cannot reach the
+model. Two consequences follow:
 
 - the line CLI, the pure view tests and any other front end build their rows with
   `stamp = null` and are byte-for-byte what they always were;
 - a resumed conversation is replayed with stamping switched **off**
   (`app/transcript-view.js#createTranscriptView` → `setStamping(false)`, driven by
-  `app/tui-surface.js#createTuiSurface`'s `reload()`): those rows appeared in a past
-  run, so marking them with the time the file was reopened would state something
-  false.
+  `app/tui-surface.js#createTuiSurface`'s `reload()`), because those rows appeared in a
+  past run and marking them with the time the file was reopened would state something
+  false. What a reloaded conversation shows instead — the times the record kept, plus a
+  divider wherever the calendar day changes — is `docs/interface/session-stamps`.
+
+The live mark never reaches a chunk and is never stored: the times a reload paints are
+the *stored* ones, written by the window as each chunk is appended and read back by the
+replay (`utils/chunk-stamps.js`).
 
 ## Composing with the palette and the click
 
@@ -68,5 +73,6 @@ tolerates it by seeing through it:
   `app/tui-surface.js`
 - The blocks it marks: `docs/interface/transcript-blocks`
 - The palette that sees through it: `docs/interface/conversation-colors`
+- The times a reloaded conversation shows: `docs/interface/session-stamps`
 - A reloaded conversation: `docs/interface/session-replay`
 - Proof: `tests/transcript-stamp.test.js`

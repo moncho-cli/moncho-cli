@@ -30,6 +30,11 @@ export function createTranscriptPane({ transcript, refresh = () => {}, stamp = n
     /** Append plain text (prose, notices, tool-call headers, the user echo). */
     log: (...args) => view.log(...args),
     /**
+     * Append one side of the dialogue with its background band: the user's echoed
+     * prompt or the model's prose (`docs/interface/prose-bands`).
+     */
+    logProse: (role, text) => view.logProse(role, text),
+    /**
      * Append a tool result as a collapsible block: one header line carrying the
      * "X char response" size, expanded by a click.
      */

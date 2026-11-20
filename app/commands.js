@@ -1,4 +1,4 @@
-import { listSessions, loadSession, describeSession, sessionChunks, sessionUsage, sessionModeState, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
+import { listSessions, loadSession, describeSession, sessionChunks, sessionStamps, sessionUsage, sessionModeState, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
 import { readConversationLog } from '../utils/conversation-log-store.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
@@ -144,6 +144,7 @@ export function sessionsCommand() {
 
       const session = loadSession(picked.id, { dir });
       const chunks = sessionChunks(session);
+      const stamps = sessionStamps(session);
       // The uncompacted history, when the session kept one: `null` for a session written
       // before the log existed, in which case the live window is the best record there is
       // (docs/runtime/conversation-log). Loading it here is what makes a resumed session
@@ -153,7 +154,7 @@ export function sessionsCommand() {
       if (!manager || typeof manager.contextWindow?.replace !== 'function') {
         return { ok: false, code: 'NO_WINDOW', message: 'This front end cannot load a session.' };
       }
-      manager.contextWindow.replace(chunks, { journal });
+      manager.contextWindow.replace(chunks, { journal, stamps });
       // The session file is the accounting record of the conversation, so its
       // per-model table becomes the live one: resuming continues the counts
       // instead of starting them again at zero.
@@ -171,7 +172,7 @@ export function sessionsCommand() {
         // A resumed `work:on` session opens locked; a file written before the mode
         // existed carries `null` and leaves the session in the state it opened with
         // (docs/interface/modes).
-        resumed: { id: session.id, createdAt: session.createdAt, model: session.model, chunks },
+        resumed: { id: session.id, createdAt: session.createdAt, model: session.model, chunks, stamps },
         resumedMode: sessionModeState(session),
         taskContent: sessionTaskContent(session),
         planContent: sessionPlanContent(session),

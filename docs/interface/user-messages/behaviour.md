@@ -32,14 +32,23 @@ same branch that renders a markdown blockquote coming from the model. The raw
 marker never reaches the screen, and inline markup inside the quoted text
 (`**bold**`, `` `code` ``) is rendered as usual.
 
+The quote is **bright white** (`QUOTE_COLOR`), the one colour that serves both quoters:
+this same branch renders a markdown blockquote the model wrote, and it cannot tell the
+two apart. Bright white rather than `white`, which neo-blessed paints as the ordinary
+16-colour white and reads as light grey; the quote was green before, which did not read
+as a quotation and sat close to the tool palette's write green.
+
 The `You:` header itself is painted in the palette's user colour
-(`docs/interface/conversation-colors`), so a prompt is recognisable at a glance.
+(`docs/interface/conversation-colors`), so a prompt is recognisable at a glance, and
+the whole echo is painted with the user side's background band
+(`docs/interface/prose-bands`).
 
 The host (`main.js`) wires the hook to the front end's own logger, so both front
 ends echo the message without knowing how it is formatted:
 
 - **TUI**: the echo is transcript lines (`log()`), scrolled into view like any
-  other output.
+  other output — and on the **prose route** (`onProse`) so it is banded; a front end
+  without that route falls back to `onUserMessage`, which is what the line CLI uses.
 - **line CLI**: the echo is printed as plain lines, `You:` header included.
 
 ## See also

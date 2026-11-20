@@ -1,0 +1,32 @@
+id: interface/markdown-tables
+domain: interface
+title: Markdown tables rendered with their columns aligned
+status: active
+summary: >
+  A reply that prints a markdown table verbatim shows ragged pipes, because every cell
+  keeps its own width. app/markdown-table.js recognises a table the way markdown
+  defines one — a header row immediately followed by a delimiter row (`| --- | :--: |`,
+  whose colons carry the column alignments) — reads its body, and re-lays every row so
+  the `│`/`┼` separators land on the same columns; a line with a pipe but no delimiter
+  row under it, and a one-cell "table", stay prose, so a shell pipeline in a sentence
+  survives untouched. formatTranscript() (app/tui-render.js) consumes a table whole and
+  applies inline markup to each cell *before* the widths are measured, so `**bold**`
+  costs no column. Widths are counted in display cells with app/tagged-text.js, so a
+  wide glyph (a CJK character, an emoji) is charged the two columns a terminal paints
+  it in and the tags are never charged for. Rendered rows open with the transcript's
+  own cyan frame, so the palette leaves them untouched, exactly like a fence.
+code:
+  - path: app/markdown-table.js
+    symbols: [splitTableRow, isDelimiterRow, alignmentOf, readTable, columnWidths, renderTable, tableAt]
+  - path: app/tagged-text.js
+    symbols: [untag, visibleWidth, padVisible]
+  - path: app/tui-render.js
+    symbols: [formatTranscript]
+tests:
+  - path: tests/markdown-table.test.js
+    cases:
+      - "a markdown table is re-laid so every column lines up"
+      - "the delimiter row carries the alignment, and a lone pipe stays prose"
+      - "the table renderer measures in display cells, so a wide glyph and inline markup fit their column"
+      - "renderTable() and columnWidths() pad a short row and a short body"
+      - "a table in a real transcript paints aligned rows"

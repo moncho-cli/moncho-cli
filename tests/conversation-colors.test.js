@@ -114,7 +114,7 @@ test('a line the markdown renderer already coloured is left untouched', () => {
     '{cyan-fg}┌─ js ─{/cyan-fg}',
     '{cyan-fg}│ const a = {open} b: 1 {close};{/cyan-fg}',
     '{cyan-fg}┌─ app/tui.js from=1 to=3 · lines=3{/cyan-fg}',
-    '{green-fg}│ quoted line{/green-fg}',
+    '{bright-white-fg}│ quoted line{/bright-white-fg}',
     '{green-fg}•{/green-fg} first item',
     '{bold}{underline}Title{/underline}{/bold}',
     '{bright-blue-fg}{bold}(intent: already painted){/bold}{/bright-blue-fg}',
@@ -197,7 +197,7 @@ test('formatTranscript() colours the parts of a turn and keeps the markdown colo
   ].join('\n')).split('\n');
 
   assert.equal(rendered[0], '{cyan-fg}You:{/cyan-fg}', 'the echo header is the user colour');
-  assert.equal(rendered[1], '{green-fg}│ what does the layout do?{/green-fg}', 'the quoted message keeps its markdown colour');
+  assert.equal(rendered[1], '{bright-white-fg}│ what does the layout do?{/bright-white-fg}', 'the quoted message keeps its markdown colour');
   assert.equal(rendered[2], '{bright-cyan-fg}  -> Calling read_file(path: app/tui-layout.js){/bright-cyan-fg}');
   assert.equal(
     rendered[3],

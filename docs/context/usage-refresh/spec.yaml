@@ -14,7 +14,7 @@ code:
   - path: app/conversation-manager.js
     symbols: [ConversationManager, detectCompactionRequest]
   - path: app/manager-hooks.js
-    symbols: [announceContextChange, announceChunksChange, announceNotice, announceRetry]
+    symbols: [announceContextChange, announceChunksChange, announceNotice, announceProse, announceRetry]
   - path: app/context-window.js
     symbols: [ContextWindow]
   - path: app/compaction-notice.js

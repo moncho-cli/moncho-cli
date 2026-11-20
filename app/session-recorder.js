@@ -112,6 +112,10 @@ export function createSessionRecorder({
           work: Boolean(state.work),
           cwd,
           chunks,
+          // The append time of each chunk, index-aligned with them and never on a
+          // chunk: the chunks are sent to the provider verbatim (utils/chunk-stamps.js,
+          // docs/interface/session-stamps). Absent for a caller that only knows the window.
+          stamps: Array.isArray(extra.stamps) ? extra.stamps : null,
           stats: extra.stats || {},
           usage: extra.usage || {},
           taskContent,

@@ -30,7 +30,7 @@ So the two are split at the source:
 - `main.js` keeps the handle of the current retry notice and dismisses it the moment
   the turn lands, so a recovered 502 disappears at once rather than at its TTL.
 
-`notifyNotice()`/`notifyRetry()` are presentation only, exactly like
+`notifyNotice()`/`notifyRetry()`/`notifyProse()` are presentation only, exactly like
 `onUserMessage` and `onContextChange`: a hook that throws is swallowed, and a
 manager without a hook drops the message instead of falling back to the transcript
 (that fallback *is* the bug). The line CLI, which has no floating box, prints the

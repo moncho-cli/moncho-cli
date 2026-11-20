@@ -66,11 +66,14 @@ test('replayChunks() rebuilds the dialogue the live loop had written', () => {
   const { ops, calls, blocks, notices, skipped } = replayChunks(CHUNKS);
 
   assert.deepEqual(ops, [
-    { kind: 'log', text: 'You:\n> read the fixture' },
+    // the two sides of the dialogue are prose ops, so a front end can band them
+    { kind: 'prose', role: 'user', text: 'You:\n> read the fixture' },
     { kind: 'log', text: '\n  -> Calling read_file(path: fixture.txt, intent: load the fixture)' },
     { kind: 'log', text: '     intent: load the fixture' },
     { kind: 'block', header: '\n  [read_file Output] (intent: load the fixture)', body: 'line one\nline two\nline three' },
-    { kind: 'log', text: `${REPLAY_REPLY_HEADER}\nAll done: the file holds one line.\n${REPLAY_REPLY_FOOTER}` },
+    { kind: 'log', text: REPLAY_REPLY_HEADER },
+    { kind: 'prose', role: 'assistant', text: 'All done: the file holds one line.' },
+    { kind: 'log', text: REPLAY_REPLY_FOOTER },
   ]);
   assert.equal(calls, 1);
   assert.equal(blocks, 1);
@@ -81,6 +84,11 @@ test('replayChunks() rebuilds the dialogue the live loop had written', () => {
   assert.match(textOf(ops), /^You:\n> read the fixture/);
   // the tool result is a block, so it is collapsible rather than plain text
   assert.equal(ops[3].body, 'line one\nline two\nline three', 'the intent is unwrapped from the body');
+  // ...and the reply is prose between two chrome rows, exactly as the live loop
+  // printed it: the delimiters are the frame, never part of the band
+  assert.equal(ops[4].text, REPLAY_REPLY_HEADER);
+  assert.equal(ops[5].role, 'assistant');
+  assert.equal(ops[6].text, REPLAY_REPLY_FOOTER);
 });
 
 test('a carried user chunk replays as the user echo it was', () => {
@@ -94,8 +102,10 @@ test('a carried user chunk replays as the user echo it was', () => {
   const { ops, notices } = replayChunks(carried);
 
   assert.match(ops[0].text, /earlier context was compacted/);
+  assert.equal(ops[1].kind, 'prose', 'the carried message is one side of the dialogue');
+  assert.equal(ops[1].role, 'user');
   assert.equal(ops[1].text, 'You:\n> the ask that must survive', 'the carried message replays as the user echo');
-  assert.match(ops[2].text, /All done\./);
+  assert.match(textOf(ops), /All done\./);
   assert.equal(notices, 1);
 });
 
@@ -175,6 +185,8 @@ test('an announced approach replays as the prose it was, before the calls', () =
     { role: 'tool', tool_call_id: 'a', content: 'intent: load\nbody' },
   ]);
 
+  assert.equal(ops[0].kind, 'prose', 'the approach is the assistant side of the dialogue');
+  assert.equal(ops[0].role, 'assistant');
   assert.equal(ops[0].text, 'I will read the fixture, then grep for the symbol.');
   assert.match(ops[1].text, /-> Calling read_file/);
   assert.ok(
@@ -186,13 +198,29 @@ test('an announced approach replays as the prose it was, before the calls', () =
 test('renderReplay() drives a block-aware front end and a plain one', () => {
   const { ops } = replayChunks(CHUNKS);
 
+  // A front end that bands prose: the two sides go through logProse, every other
+  // line through log, and a block through logBlock.
   const tuiCalls = [];
   renderReplay(ops, {
     log: (text) => tuiCalls.push(['log', text]),
+    logProse: (role, text) => tuiCalls.push(['prose', role, text]),
     logBlock: ({ header, body }) => tuiCalls.push(['block', header, body]),
   });
-  assert.deepEqual(tuiCalls.map((entry) => entry[0]), ['log', 'log', 'log', 'block', 'log']);
+  assert.deepEqual(tuiCalls.map((entry) => entry[0]), [
+    'prose', 'log', 'log', 'block', 'log', 'prose', 'log',
+  ]);
+  assert.deepEqual(tuiCalls[0], ['prose', 'user', 'You:\n> read the fixture']);
   assert.deepEqual(tuiCalls[3], ['block', '\n  [read_file Output] (intent: load the fixture)', 'line one\nline two\nline three']);
+  assert.deepEqual(tuiCalls[5], ['prose', 'assistant', 'All done: the file holds one line.']);
+
+  // A front end with no band route (the line CLI) prints a prose op as a plain line,
+  // so it behaves exactly as it did before the band existed.
+  const plainCalls = [];
+  renderReplay(ops, { log: (text) => plainCalls.push(['log', text]) });
+  // seven ops become nine lines: the block expands to header, body and a blank line
+  assert.equal(plainCalls.length, 9);
+  assert.deepEqual(plainCalls[0], ['log', 'You:\n> read the fixture']);
+  assert.deepEqual(plainCalls[1], ['log', '\n  -> Calling read_file(path: fixture.txt, intent: load the fixture)']);
 
   // the line CLI has no widget: a block is printed header, body, blank line —
   // exactly how main.js echoes a live tool result there
@@ -217,7 +245,7 @@ test('reloadConversation() empties the view before it replays the session', () =
   assert.equal(calls[0], 'clear', 'the previous conversation is dropped first');
   assert.equal(report.calls, 1);
   assert.equal(report.blocks, 1);
-  assert.equal(calls.length, 6, 'one clear plus five rendered entries');
+  assert.equal(calls.length, 8, 'one clear plus seven rendered entries');
 });
 
 test('opening a session in the TUI reloads the conversation on screen', async () => {
