@@ -125,23 +125,31 @@ export function readTitle(content) {
 export function extractNotes(content) {
   const notes = [];
   let inNotes = false;
+  // True while the line just read belongs to the note above: its bullet or a
+  // continuation of it. A blank line ends the note, so the fold cannot reach forward and
+  // swallow the line under a later one (the same guard the checkbox parser keeps).
+  let attached = false;
   for (const line of String(content ?? '').split('\n')) {
     const heading = line.match(HEADING_PATTERN);
     if (heading) {
       inNotes = heading[1].trim().toLowerCase() === 'notes';
+      attached = false;
       continue;
     }
     if (!inNotes) continue;
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
     if (bullet) {
       notes.push(bullet[1].trim());
+      attached = true;
       continue;
     }
     // A note written across several lines is one note: an indented continuation is
     // folded into the bullet above it, the way an entry is (utils/plan-file.js).
-    if (notes.length > 0 && /^[ \t]+\S/.test(line)) {
+    if (notes.length > 0 && attached && /^[ \t]+\S/.test(line)) {
       notes[notes.length - 1] = `${notes[notes.length - 1]} ${line.trim()}`;
+      continue;
     }
+    attached = false;
   }
   return notes;
 }

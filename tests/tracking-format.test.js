@@ -8,6 +8,7 @@ import {
   entriesOf, renderTaskFile, renderPlanFile, validateTrackingFile,
   canonicalizeTrackingFile, trackingTemplate,
 } from '../utils/tracking-format.js';
+import { parseCheckboxItems } from '../utils/plan-file.js';
 import { definition as updateTaskDefinition } from '../tools/update_task.js';
 import { definition as writeFileDefinition } from '../tools/write_file.js';
 
@@ -183,6 +184,67 @@ test('a wrapped entry keeps its whole text through a re-render', () => {
 
   // Re-rendering an already canonical document changes nothing: the fold is idempotent.
   assert.equal(canonicalizeTrackingFile('task', kept), kept);
+});
+
+test('a note is never folded into the item above it', () => {
+  // The bug this proves: writing a checklist whose notes wrap glued the note text onto
+  // the *last item*, so the item grew a sentence nobody wrote into it. The fold had no
+  // boundary, so it ran past the blank line and the `## Notes` heading to the end of the
+  // document. A continuation belongs to the entry above only while it is contiguous with
+  // it; a blank line, a heading or any other line ends the entry.
+  const polluted = [
+    '# Task list',
+    '',
+    'status: in progress: the second item',
+    '',
+    '## Items',
+    '',
+    '- [x] the first item',
+    '- [ ] the second item',
+    '',
+    '## Notes',
+    '',
+    '- a note that wraps onto',
+    '  its own continuation line',
+    '- another note',
+  ].join('\n');
+
+  const items = parseCheckboxItems(polluted);
+  assert.deepEqual(
+    items.map((item) => item.text),
+    ['the first item', 'the second item'],
+    'the items are the two items and nothing else',
+  );
+  assert.deepEqual(extractNotes(polluted), [
+    'a note that wraps onto its own continuation line',
+    'another note',
+  ], 'the wrapped note stays a note, and the next note stays its own');
+
+  // Through the canonicalizer the document round-trips unchanged: the note did not move.
+  const kept = canonicalizeTrackingFile('task', polluted);
+  assert.ok(kept.includes('- [ ] the second item\n'), 'the item ends where it ended');
+  assert.ok(kept.includes('- a note that wraps onto its own continuation line'), 'the note survives as a note');
+  assert.equal(kept.split('\n').filter((line) => /^- \[/.test(line)).length, 2, 'still exactly two items');
+  assert.equal(canonicalizeTrackingFile('task', kept), kept, 'and the fix is idempotent');
+
+  // A continuation directly under its own entry still folds, which is the behaviour the
+  // guard must not cost: contiguity is the whole rule.
+  const wrapped = [
+    '# Task list',
+    '',
+    'status: pending',
+    '',
+    '## Items',
+    '',
+    '- [ ] an item that wraps onto',
+    '      a second line',
+    '- [ ] the next item',
+  ].join('\n');
+  assert.deepEqual(
+    parseCheckboxItems(wrapped).map((item) => item.text),
+    ['an item that wraps onto a second line', 'the next item'],
+    'a contiguous continuation is still one entry',
+  );
 });
 
 test('the template the model is shown is the shape the renderer really writes', () => {

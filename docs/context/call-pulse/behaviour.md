@@ -36,11 +36,13 @@ a property of the change, not a taste:
   the provider bills and the cache hashes;
 - `ContextWindow.request()` keeps its `filter(Boolean)`, so a `null` prelude
   contributes nothing and the request is the agent prompt followed by the
-  conversation.
+  conversation. The one message that does ride the prelude is the conversation's own
+  identity block, which is constant for the whole session and so costs the cache
+  nothing (`docs/agent/session-context`).
 
 The pause is what buys the cache back, and it is worth stating as an invariant
-rather than as "the line is off": **with no prelude, call N+1 of a stretch repeats
-call N byte-for-byte and only appends.** The agent prompt is read once and cached in
+rather than as "the line is off": **with no volatile prelude, call N+1 of a stretch
+repeats call N byte-for-byte and only appends.** The agent prompt is read once and cached in
 `api/ollama.js`, the chunks only grow, and a summary chunk carries `content` and
 metadata — no clock, no counter — so nothing a provider hashes changes under it. A
 prefix that only ever grows is the prefix a prompt cache can hit; the position was

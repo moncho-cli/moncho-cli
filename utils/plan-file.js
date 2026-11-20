@@ -29,6 +29,10 @@ export function parseCheckboxItems(content) {
   if (typeof content !== 'string') return [];
   const lines = content.split('\n');
   const items = [];
+  // True while the line just read belongs to the entry above: its checkbox line or a
+  // continuation of it. A blank line, a heading or any other line ends the entry, so a
+  // note under `## Notes` is never glued onto the item above it.
+  let attached = false;
 
   lines.forEach((line, index) => {
     const match = line.match(CHECKBOX_PATTERN);
@@ -40,16 +44,24 @@ export function parseCheckboxItems(content) {
         done: match[3].toLowerCase() === 'x',
         text: match[4].trim()
       });
+      attached = true;
       return;
     }
     // A wrapped entry is one entry: its continuation lines are indented, carry no
     // checkbox of their own, and are folded back into the text. Without this an entry
     // written across three lines came back as a single line ending mid-sentence, which
     // reads like the harness cut the text rather than re-rendered the document.
+    //
+    // The fold only applies while the continuation is *contiguous* with the entry: a
+    // blank line, a heading or any other line ends it. Without that guard the fold ran
+    // to the end of the document, so a note in `## Notes` was absorbed by the last item
+    // and the item's text grew a sentence nobody wrote into it.
     const last = items[items.length - 1];
-    if (last && last.line < index + 1 && /^[ \t]+\S/.test(line)) {
+    if (last && attached && /^[ \t]+\S/.test(line)) {
       last.text = `${last.text} ${line.trim()}`;
+      return;
     }
+    attached = false;
   });
 
   return items;

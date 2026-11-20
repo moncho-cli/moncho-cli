@@ -110,13 +110,15 @@ test('no agent request carries a pulse line or an empty system message while it 
   assert.equal(lines.length, 2, 'the turn makes two agent calls');
   assert.deepEqual(lines, [null, null], 'the line is disabled, so none is carried');
 
-  // The request is the agent prompt followed by the conversation: a disabled line
-  // must not leave an empty `system` message behind, which would still be a role
-  // marker the provider bills and the prompt cache hashes.
+  // The request is the agent prompt, then the session block, then the conversation: a
+  // disabled line must not leave an empty `system` message behind, which would still be
+  // a role marker the provider bills and the prompt cache hashes.
   const first = requests.at(0);
   assert.equal(first.messages[0].role, 'system');
   assert.match(first.messages[0].content, /MONCHO-CLI/, 'the agent prompt stays first');
-  assert.equal(first.messages[1].role, 'user', 'the conversation follows the agent prompt');
+  assert.equal(first.messages[1].role, 'system', 'the session block follows the agent prompt');
+  assert.match(first.messages[1].content, /^\[session\]/, 'and it is the conversation identity');
+  assert.equal(first.messages[2].role, 'user', 'the conversation follows the block');
   assert.ok(
     !first.messages.some((m) => (m.content ?? '') === ''),
     'no empty message is sent'

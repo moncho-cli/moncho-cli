@@ -6,6 +6,7 @@ import { createTaskPulse, formatPulseLimitNotice } from '../utils/task-pulse.js'
 import { createUsageMeter } from '../utils/usage-stats.js';
 import { createWorkingClock } from '../utils/working-time.js';
 import { createCompactionRunner, createSummaryCallModel } from './compaction-runner.js';
+import { sessionBlockMessage } from '../utils/session-context.js';
 import { formatFailureNotice } from './notice-overlay.js';
 import { runTurn } from './turn-runner.js';
 import { runToolBatch, storeFinalResponse } from './manager-turn.js';
@@ -226,15 +227,25 @@ export class ConversationManager {
    * only way the model can reset the pulse is by calling a tool, so refusing the
    * call would deadlock the turn (`docs/context/call-pulse`).
    *
-   * @returns {object[]} the call's prelude messages — today an empty array, because
-   *   the pulse line is paused and `message()` answers `null` for it
+   * The prelude also carries the conversation's own identity — its session id and the
+   * resolved paths of the files it owns (`utils/session-context.js`) — so the model
+   * knows where it lives instead of scanning the tree for it (task-backlog item 51).
+   * That block is *constant for the whole session*, so unlike the pulse line it costs
+   * the provider cache nothing: call N+1 repeats call N's prefix byte-for-byte.
+   *
+   * With no session registered the block is `null` and the prelude collapses to what it
+   * was before, which is what keeps a bare tool call and a stub session unchanged.
+   *
+   * @returns {object[]} the call's prelude messages — the session block when there is a
+   *   session, and the pulse line when its wording is enabled; `null` entries are dropped
+   *   by `ContextWindow.request()`
    */
   beginModelCall() {
     const state = this.pulse.tick();
     if (state.crossed) {
       this.notifyNotice('warn', formatPulseLimitNotice(state), { code: 'pulse-limit' });
     }
-    return [this.pulse.message()];
+    return [sessionBlockMessage(), this.pulse.message()];
   }
 
   /**

@@ -52,6 +52,7 @@ tests:
       - a legacy file is upgraded, not rejected, so an operator keeps working
       - the human parts of a file survive the upgrade
       - a wrapped entry keeps its whole text through a re-render
+      - a note is never folded into the item above it
       - the template the model is shown is the shape the renderer really writes
       - the prompt tells the agent to record a decision as it is agreed
       - the prompt states the tracking rule without teaching a session path

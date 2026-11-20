@@ -1,0 +1,40 @@
+id: agent/session-context
+domain: agent
+title: The conversation's own identity in the request
+status: active
+summary: >
+  Every request carries one system message naming the conversation's own session folder
+  and the resolved paths of the files it owns — task.md, implementation_plan.md and the
+  context record — so the model knows where it lives instead of grepping the tree for a
+  folder it is already sitting in. The block rides the request prelude rather than the
+  window: it is host data, it survives a compaction, and it stays byte-identical for the
+  whole session so the provider prompt cache still hits. A process with no session
+  registered sends no block at all, and the neutral compaction call never carries it.
+code:
+  - path: utils/session-context.js
+    symbols: [SESSION_MARKER, formatSessionBlock, sessionBlockMessage]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: utils/tracking-store.js
+    symbols: [trackingPaths]
+  - path: utils/session-store.js
+    symbols: [sessionPath]
+  - path: utils/host.js
+    symbols: [getSession]
+tests:
+  - path: tests/session-context.test.js
+    cases:
+      - the block states the session id and every resolved path, and says not to guess
+      - an incomplete session renders nothing, so no half-answer reaches the model
+      - without a registered session there is no block, so a bare call is unchanged
+      - the block resolves the paths of the registered session
+      - the block rides every agent request, after the prompt and before the conversation
+      - the block is never a window chunk, so the session record stays the conversation
+      - the block stays byte-identical across a turn, so the request prefix stays cacheable
+      - a window that needs compaction still sends the block on the agent call
+  - path: tests/call-pulse-loop.test.js
+    cases:
+      - no agent request carries a pulse line or an empty system message while it is disabled
+      - the request prefix never changes between agent calls, so the prompt cache can be hit

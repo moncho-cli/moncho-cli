@@ -96,6 +96,13 @@ status: <pending | in progress: <item> | done>
   re-render kept only the first line and the entry came back ending mid-sentence, which
   reads like the harness cut the text rather than re-rendered the document. The same
   fold applies to a note written across several lines.
+- The fold is **bounded by contiguity**, which is the whole rule: a continuation belongs
+  to the entry above only while it follows it directly. A **blank line**, a **heading** or
+  any other line ends the entry. Unbounded, the fold ran to the end of the document and
+  the first `## Notes` line was absorbed by the last item — so an item grew a sentence
+  nobody wrote into it, and the note it stole was rendered as part of the checklist.
+  `parseCheckboxItems()` and `extractNotes()` each carry that guard; `docs/agent/task-tracking`
+  states it once and the cases in `tests/tracking-format.test.js` prove it.
 
 `renderTaskFile()` / `renderPlanFile()` are the only way the harness writes the files, and
 `validateTrackingFile()` reports each broken rule (`ok`, `problems`, `status`, `notes`,
@@ -125,6 +132,13 @@ absolute location stays the harness's business. The model never has to compute
 `taskFile`/`planFile` paths, so the path arrives as *data* at the moment it is needed, which
 is the only form it is good for (a fresh session's id did not exist when the prompt was
 written, and a resumed one may have moved).
+
+The same rule is why the *location* is not left to the first `update_task` call alone. The
+prompt cannot teach the path, but the model still needs it before it writes anything, so the
+request carries the conversation's identity as a block: its id and the resolved paths of its
+`task.md`, its plan and its record, stated once and never recomputed
+(`docs/agent/session-context`). The model is told where it lives at the moment its first
+turn starts, which is what stops it scanning the tree for a folder it is already in.
 
 ## A decision is recorded as it is agreed
 

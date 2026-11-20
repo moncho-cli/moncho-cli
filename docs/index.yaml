@@ -29,6 +29,7 @@ specs:
   - agent/command-sandbox
   - agent/command-capture
   - agent/task-tracking
+  - agent/session-context
   - agent/project-discovery
   - agent/file-hint
   - context/token-accounting
