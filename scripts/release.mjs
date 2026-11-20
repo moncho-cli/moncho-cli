@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bumpDistance } from '../utils/version-bump.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -116,6 +117,22 @@ check(
   !localTags.includes(tag),
   previous ? `previous release: ${previous}` : 'no release yet'
 );
+
+// The bump rule (docs/maintainer/version-bump): a session that changes behaviour moves
+// the manifest, so the version about to be tagged must be *ahead* of the last release.
+// One step is enough however many things the session changed — this refuses only a
+// number that never moved, or one that moved backwards. Without a tag there is nothing
+// to be ahead of, and the check passes.
+if (previous) {
+  const distance = bumpDistance(previous.replace(/^v/, ''), version);
+  check(
+    'the manifest moved past the last release',
+    distance !== 'none' && distance !== 'backwards',
+    distance === null
+      ? `${previous} and ${version} cannot be compared`
+      : `${previous} -> ${version} (${distance})`
+  );
+}
 
 if (flag('--offline')) {
   warn('the remote tag lookup was skipped', '--offline');

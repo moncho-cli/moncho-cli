@@ -76,6 +76,36 @@ enforced here, but it is not a requirement for your fork: a fork may drop the li
 test, reorganise the docs, or keep a single test file. Nothing in the runtime depends on
 it — the agent loads no spec at run time.
 
+## Bump the version before you finish
+
+`package.json#version` is the single source of the release tag: `scripts/release.mjs`
+derives `v<version>` from it, and the installer fetches `archive/refs/tags/<ref>.tar.gz`.
+A session that changes behaviour and leaves the number alone makes the next release carry
+more than its tag says, so **every session that changes behaviour moves the version**.
+
+The move matches the change — a breaking change is a major, a new behaviour a minor, a
+fix, a document or a test a patch — and **one step is enough even when the session
+changed many things**. The bump marks the session, it does not measure it: three features
+and a fix in one session are still one release. What the rule refuses is a number that
+never moved, or one that moved backwards; a single step that understates the change is
+reported as a note, never as a failure.
+
+```bash
+node scripts/bump-version.mjs --minor     # 0.2.0 -> 0.3.0, manifest + lockfile
+node scripts/bump-version.mjs --check     # did this session move it past the last tag?
+```
+
+`package-lock.json` records the same version twice and npm reads both, so the manifest
+and the lockfile move together — the script rewrites both and verifies each write. The
+rule is stated in `docs/maintainer/version-bump/`, and `scripts/release.mjs` refuses a
+manifest that never moved past the last tag.
+
+This is a **maintainer habit, not a runtime rule**: the session bumps when you ask it to,
+and it is you who decides the step. It is deliberately absent from `config/prompt.md`,
+which is not a document of this repository but the system prompt of every install — the
+session reading it usually stands in a *user's* project, where this repository's version
+means nothing and the file it names may not even exist.
+
 ## Changing the agent
 
 1. Read the spec for the capability you are changing before you touch the code. If there

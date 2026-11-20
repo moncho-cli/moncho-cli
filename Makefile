@@ -9,6 +9,7 @@
 #   make probe         the docker-free half of the runner's behaviour
 #   make payload       stage the distribution payload into build/ and prove that
 #                      docs/ and tests/ did not come along
+#   make bump          move the version a session owes (default: a patch step)
 #   make release       check the next release and print the URLs the install uses
 #   make base          bake moncho-agent:$(VERSION) from this checkout, and nothing else
 #   make dev           run the agent on this checkout the way it has always been run
@@ -26,14 +27,16 @@
 
 SHELL := /bin/bash
 VERSION ?= dev
+BUMP ?= patch
 
-.PHONY: help test check-shell probe payload release base dev clean
+.PHONY: help test check-shell probe payload bump release base dev clean
 
 help:
 	@echo "make test         run the test suite"
 	@echo "make check-shell  bash -n every shipped script, set the exec bits"
 	@echo "make probe        docker-free checks of the runner's logic"
 	@echo "make payload      stage the distribution payload into build/payload"
+	@echo "make bump         move the version (BUMP=minor|major|patch)"
 	@echo "make release      check the next release, print the install URLs"
 	@echo "make base         build moncho-agent:$(VERSION) from this checkout"
 	@echo "make dev          run the agent on this checkout (./start.sh run)"
@@ -50,6 +53,12 @@ probe:
 
 payload:
 	node agent/utils/probe-payload.mjs $(VERSION)
+
+# One step is enough even when a session changed many things
+# (docs/maintainer/version-bump): this rewrites the manifest and both lockfile
+# versions together, which is the mistake it exists to prevent.
+bump:
+	node scripts/bump-version.mjs --$(BUMP)
 
 # The tag is declared by package.json#version, never discovered. Nothing is tagged,
 # committed or pushed: this checks the documents and prints the commands to run.

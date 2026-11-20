@@ -64,6 +64,9 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `logging.test.js` | The operational log as a value: the three levels and the `warning`/`off` spellings, the threshold from the environment, the one-line record, the deterministic rotation chain, and a broken path that never throws. |
 | `logging-sites.test.js` | The log at its real call sites: the turn-ending provider failure and the throwing tool are recorded through the registry without changing their outcome, an abort lands below an error threshold, and the path cannot escape the project. |
 | `session-layout.test.js` | Where a conversation is written now that a session is a folder: the record is `context.json` beside its `task.md` and plan, a flat `<id>.json` from the older layout is still read (the folder wins when both exist), the next save retires it, and the explicit migration moves it byte for byte. |
+| `version-bump.test.js` | The version a maintainer moves before a release: the semver arithmetic, the one-step-is-enough rule, the manifest and the lockfile moving together, the guide that states it, and the guard that keeps it out of the shipped agent prompt. |
+| `compact-command.test.js` | The `/compact [force]` slash command: the ordinary budget check, the forced compaction that restarts the pulse, and the refusals. |
+| `stale-read.test.js` | The stale-read guard: a read is fingerprinted, a write or patch into a file that changed since is refused with `STALE_READ`, and a never-read or brand-new file is written as before. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the
 suites import; they are not test files themselves.

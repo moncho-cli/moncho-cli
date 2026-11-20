@@ -57,3 +57,4 @@ specs:
   - runtime/logging
   - context/working-time
   - interface/conversation-timestamps
+  - maintainer/version-bump

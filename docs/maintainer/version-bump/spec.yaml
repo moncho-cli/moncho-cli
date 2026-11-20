@@ -1,0 +1,34 @@
+id: maintainer/version-bump
+domain: maintainer
+title: The version bump a session owes
+status: active
+summary: >
+  A session that changes behaviour moves `package.json#version`, and the move matches
+  the change: a breaking change is a major, a new behaviour a minor, a fix, a document
+  or a test a patch. One step is enough even when the session changed many things —
+  the bump marks the session, it does not measure it — so the check is loose in that
+  direction and strict in the other: no step at all, or a step backwards, is refused,
+  and a single step that understates the change is only reported as a note. The version
+  is the single source of the release tag (`v<version>`, `scripts/release.mjs`), and
+  `package-lock.json` records the same number twice, so the manifest and the lockfile
+  move together through `scripts/bump-version.mjs`.
+code:
+  - path: utils/version-bump.js
+    symbols: [BUMP_DISTANCES, parseSemver, bumpDistance, nextVersion, classifyChange, evaluateBump]
+  - path: scripts/bump-version.mjs
+    symbols: [MANIFEST, LOCKFILE, applyBump, lastReleaseTag, checkBump, gitIn]
+  - path: scripts/release.mjs
+    symbols: []
+tests:
+  - path: tests/version-bump.test.js
+    cases:
+      - parseSemver() accepts x.y.z with an optional prerelease, and rejects what is not a version
+      - bumpDistance() names the step between two versions, including none and backwards
+      - nextVersion() steps a version forward, and classifyChange() takes the largest kind named
+      - evaluateBump() refuses no step and a step backwards, and accepts one step however many things changed
+      - applyBump() rewrites the manifest and both lockfile versions together, verified
+      - checkBump() compares the manifest with the last release tag instead of a remembered number
+      - the manifest and the lockfile carry the same version, so npm ci installs what the tag names
+      - the maintainer guide states the rule, and names the command that carries it out
+      - the bump stays a maintainer affair, so the shipped prompt never mentions it
+      - the release check refuses a manifest that never moved past the last tag
