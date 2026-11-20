@@ -266,3 +266,40 @@ test('a block added through createTui() is reachable from the public surface', a
     assert.equal(tui_.toggleBlock('missing'), null);
   });
 });
+
+test('a bulk replay repaints once, not once per entry', async () => {
+  // Appending repaints the whole transcript, so a replay that painted per entry
+  // re-rendered a transcript that was still growing: O(N^2), which is where a large
+  // session spent its seconds (docs/interface/session-replay). `bulk()` suspends the
+  // repaint for the whole replay and takes it once at the end.
+  await withTui(async (tui) => {
+    const widget = tui.transcript;
+    const real = widget.setContent.bind(widget);
+    let paints = 0;
+    widget.setContent = (text) => { paints += 1; real(text); };
+    try {
+      tui.log('before the replay');
+      const before = paints;
+
+      // A conversation big enough that a per-entry repaint would be visible.
+      const chunks = [];
+      for (let i = 0; i < 40; i += 1) {
+        chunks.push({ role: 'user', content: `question ${i}` });
+        chunks.push({ role: 'assistant', content: `answer ${i}` });
+      }
+
+      tui.reload(chunks);
+      const during = paints - before;
+
+      assert.ok(during > 0, 'the replay really repainted the transcript');
+      assert.ok(
+        during <= 2,
+        `a bulk replay must paint once (plus the deferred re-assert), painted ${during}`,
+      );
+      assert.match(tui.transcript.getContent(), /answer 39/, 'the whole conversation is on screen');
+      assert.doesNotMatch(tui.transcript.getContent(), /before the replay/, 'the old transcript is gone');
+    } finally {
+      widget.setContent = real;
+    }
+  });
+});

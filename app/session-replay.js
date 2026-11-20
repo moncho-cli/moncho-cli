@@ -267,11 +267,18 @@ export function renderReplay(ops = [], { log, logProse, logBlock } = {}) {
  * Both front ends go through here, so opening a session looks the same in the TUI
  * and in the line CLI; only the block rendering differs.
  *
+ * `bulk` (optional) wraps the whole replay in a front end's suspension, so a front end
+ * that repaints per append (the TUI) pays for one repaint instead of one per entry
+ * (`docs/interface/session-replay`). A front end without one — the line CLI prints
+ * as it goes — is unchanged.
+ *
  * @returns {object} the replay report (see replayChunks)
  */
-export function reloadConversation(chunks = [], { log, logProse, logBlock, clear, stamps = [] } = {}) {
+export function reloadConversation(chunks = [], { log, logProse, logBlock, clear, bulk, stamps = [] } = {}) {
   const replay = replayChunks(chunks, { stamps });
   if (typeof clear === 'function') clear();
-  renderReplay(replay.ops, { log, logProse, logBlock });
+  const drive = () => renderReplay(replay.ops, { log, logProse, logBlock });
+  if (typeof bulk === 'function') bulk(drive);
+  else drive();
   return replay;
 }

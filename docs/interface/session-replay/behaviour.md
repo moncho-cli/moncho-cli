@@ -75,6 +75,24 @@ then replays. The TUI's `reload()` goes through it, hands it the same `logProse`
 live loop uses, and also resets the compaction notifier, because a compaction already
 announced is no longer on screen.
 
+## One repaint per replay, not one per entry
+
+Every append repaints the **whole** transcript:
+`app/transcript-view.js#createTranscriptView` re-renders the model and hands the widget
+the complete content. A replay that went entry by entry therefore re-rendered a transcript
+that was still growing, so N appends cost **O(N²)** — and that, not the reading or the
+parsing, is where opening a large session spent its seconds. Measured on a 2.6 MB record
+(1164 chunks → 2089 entries): reading, `JSON.parse` and `replayChunks` together were 26 ms,
+while driving the view was 4.7 s, and the view asked the widget to hold 419 MB for a 416 KB
+transcript (a 1007× amplification).
+
+The front end therefore offers a suspension: `view.bulk(fn)` runs `fn` with the per-append
+repaint suppressed and takes **one** repaint when the outermost call returns, following the
+bottom (a reload is not a scroll). `reloadConversation()` takes it as an optional `bulk`
+hook, so the TUI's `reload()` passes the view's own and the whole replay happens inside it,
+while a front end without one — the line CLI, which prints as it goes — is unchanged. The
+suspension changes no output: it removes the intermediate repaints, not any line.
+
 ## Continuing the conversation
 
 Resuming must *continue* the session that was opened, so the host adopts its

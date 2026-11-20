@@ -80,6 +80,11 @@ export function createTuiSurface({
           logProse: tui.logProse,
           logBlock,
           clear: () => view.clear(),
+          // The repaint is suspended for the whole replay and taken once at the end:
+          // painting per entry re-renders a transcript that is still growing, so a
+          // large session cost seconds instead of milliseconds
+          // (docs/interface/session-replay).
+          bulk: (fn) => view.bulk(fn),
           // The append times the record kept, so the rows are marked with when they
           // were written rather than with the time the file was reopened
           // (docs/interface/session-stamps).

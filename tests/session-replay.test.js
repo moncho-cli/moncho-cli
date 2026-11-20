@@ -248,6 +248,33 @@ test('reloadConversation() empties the view before it replays the session', () =
   assert.equal(calls.length, 8, 'one clear plus seven rendered entries');
 });
 
+test('reloadConversation() wraps the whole replay in the front end bulk hook', () => {
+  // A front end that repaints per append (the TUI) hands its suspension in as
+  // `bulk`: the whole replay must happen inside it and paint once, never once per
+  // op (docs/interface/session-replay).
+  const order = [];
+  const report = reloadConversation(CHUNKS, {
+    clear: () => order.push('clear'),
+    bulk: (fn) => { order.push('bulk:open'); fn(); order.push('bulk:close'); },
+    log: (text) => order.push(['log', text]),
+    logBlock: (block) => order.push(['block', block.header]),
+  });
+
+  assert.equal(order[0], 'clear', 'the view is emptied before the suspension opens');
+  assert.equal(order[1], 'bulk:open', 'the suspension opens before the first append');
+  assert.equal(order[order.length - 1], 'bulk:close', 'the suspension closes after the last append');
+  assert.ok(
+    order.indexOf('bulk:open') < order.findIndex((entry) => Array.isArray(entry)),
+    'no entry is appended outside the suspension',
+  );
+  assert.equal(report.blocks, 1, 'the report is still produced');
+
+  // Without a bulk hook the replay is driven directly: the line CLI is unchanged.
+  const plain = [];
+  reloadConversation(CHUNKS, { log: (text) => plain.push(text) });
+  assert.ok(plain.length > 0, 'a front end with no suspension still renders');
+});
+
 test('opening a session in the TUI reloads the conversation on screen', async () => {
   await withTui(async (tui) => {
     // a conversation already on screen, then the user resumes another one

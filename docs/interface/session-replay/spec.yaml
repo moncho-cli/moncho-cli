@@ -37,6 +37,10 @@ tests:
       - "a failed tool result keeps its error marker out of the body"
       - "renderReplay() drives a block-aware front end and a plain one"
       - "reloadConversation() empties the view before it replays the session"
+      - "reloadConversation() wraps the whole replay in the front end bulk hook"
       - "opening a session in the TUI reloads the conversation on screen"
       - "resuming keeps saving into the session it opened"
       - "a resumed conversation still answers commands and reaches /help"
+  - path: tests/transcript-blocks.test.js
+    cases:
+      - "a bulk replay repaints once, not once per entry"

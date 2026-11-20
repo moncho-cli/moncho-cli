@@ -31,6 +31,9 @@ export { FOLLOW_BOTTOM_PERCENT, WHEEL_STEP_ROWS, pageStepRows, isFollowingScroll
 export function createTranscriptView({ widget, refresh = () => {}, stamp = null } = {}) {
   const model = new TranscriptModel();
   let closed = false;
+  // Depth of the bulk-append suspension (see `bulk()` below): while it is above zero
+  // `paint()` returns without re-rendering, and the outermost `bulk()` paints once.
+  let suspended = 0;
   const stampOf = typeof stamp === 'function' ? stamp : () => null;
   // Switched off while a stored conversation is replayed without stored times: those
   // rows appeared in a past run, so marking them with the reload time would state
@@ -96,6 +99,10 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
    */
   const paint = ({ keepScroll } = {}) => {
     if (closed || !widget) return false;
+    // A bulk append suspends the repaint: painting once per entry re-renders the
+    // transcript as it grows, so N appends cost O(N^2) — which is where replaying a
+    // large session spent its seconds (`bulk()` below paints once at the end).
+    if (suspended > 0) return false;
     const hold = keepScroll === undefined ? !following() : Boolean(keepScroll);
     const offset = scrollOffset();
 
@@ -269,6 +276,31 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
     return paint({ keepScroll: false });
   };
 
+  /**
+   * Run `fn` with the per-append repaint suspended, then repaint once.
+   *
+   * Every append repaints the whole transcript: the model is re-rendered and handed to
+   * the widget in full. Replaying a stored conversation one entry at a time therefore
+   * re-renders a transcript that is still growing — N appends cost O(N^2), which is
+   * where a large session's load time went (the entries themselves and the chunks were
+   * milliseconds; the repaints were seconds). Suspending the repaint for the whole
+   * replay and painting once at the end makes it O(N) without changing a single line of
+   * what is drawn.
+   *
+   * The one paint follows the bottom, which is where the unpainted appends would have
+   * left it: a reload is not a scroll, and the reloaded conversation ends parked at its
+   * newest line. Nesting is allowed and only the outermost call paints.
+   */
+  const bulk = (fn) => {
+    suspended += 1;
+    try {
+      return typeof fn === 'function' ? fn() : undefined;
+    } finally {
+      suspended -= 1;
+      if (suspended === 0) paint({ keepScroll: false });
+    }
+  };
+
   return {
     model,
     log,
@@ -279,6 +311,7 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
     collapseBlock,
     clickAt,
     clear,
+    bulk,
     paint,
     scrollRows,
     scrollPage,
