@@ -7,7 +7,8 @@ instead of guessing.
 ## The short version
 
 - The only network traffic is to the provider you configure. There is no telemetry, no
-  analytics, no crash reporting and no update check.
+  analytics, no crash reporting and no update check. The one exception is deliberate and
+  visible: when the agent uses `web_fetch`, the URL it fetches is a request to that site.
 - The conversation is sent to that provider. That is how a model call works.
 - Everything else stays on your machine: sessions, the tracking files, the operational
   log, and the workspace itself.
@@ -16,14 +17,17 @@ instead of guessing.
 
 ## What leaves the machine
 
-Two calls, both to the base URL in `OPENAI_BASE_URL`:
+Three calls, the first two always to the base URL in `OPENAI_BASE_URL`:
 
 | Call | When | What it carries |
 | ---- | ---- | --------------- |
 | The chat completion | Every turn | The system prompt, the conversation so far, and the tool definitions |
 | The context-length probe | At startup | A request for the model's metadata, not the conversation |
+| A `web_fetch` GET | Only when the agent calls the tool | The URL, and the headers `utils/web-fetch.js` sends — no conversation, no key, no local file |
 
-Nothing else is fetched. `scripts/install.sh` downloads the release tarball once, from
+The first two happen by existing. The third happens because the agent *chose* to retrieve a
+URL, which is what `web_fetch` is for; the user sees the call in the transcript. Nothing else
+is fetched. `scripts/install.sh` downloads the release tarball once, from
 the repository named in `MONCHO_REPO`; that request happens at install time and not
 again. The agent does not check for updates.
 
@@ -37,6 +41,10 @@ The context sent to the provider is what the agent knows at that moment:
   applied — so **whatever the agent read is sent to the provider**. A secret in a file
   the agent opens is a secret in the request.
 - The tool definitions, which are the schemas in `tools/`.
+
+A `web_fetch` result is part of the conversation too: **whatever the agent fetched is sent
+to the provider on the next turn**. A page pulled from a URL the agent chose is a page the
+provider then reads.
 
 The agent reads what its tools are asked to read. It does not crawl the workspace. If a
 file should never leave the machine, do not let the agent read it.
@@ -86,6 +94,7 @@ sourced on the host; keep that file out of version control — it is ignored by 
 | The provider | A local Ollama keeps the conversation on your machine |
 | The model | A provider's model may have different retention than another's |
 | The workspace | The agent reads only what its tools are asked to read |
+| `web_fetch` | A `Chat` session may fetch; the tool is a reader, one GET, and it writes nothing |
 | `--state-in-repo` | Keeps the state in the repository instead of a volume |
 | The tracking files | `task.md` and the plan are prose you wrote and the agent updated |
 
@@ -110,7 +119,8 @@ policy, and this repository cannot delete it for you.
 
 ## Questions
 
-The behaviour described here is implemented in `api/ollama.js` (the only outbound call),
-`utils/session-store.js` (what a session holds), `utils/logger.js` (what the log holds)
+The behaviour described here is implemented in `api/ollama.js` (the provider calls),
+`utils/web-fetch.js` (the only other outbound request), `utils/session-store.js` (what a
+session holds), `utils/logger.js` (what the log holds)
 and `bin/lib/env.sh` (how the key reaches the container). If a change makes one of those
 statements false, the document and the code are both wrong until they agree.

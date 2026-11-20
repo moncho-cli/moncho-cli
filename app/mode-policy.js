@@ -50,8 +50,13 @@ import { isSessionTrackingPath } from '../utils/tracking-fence.js';
  * `read_capture` belongs here too: a capture lives in memory
  * (`utils/capture-store.js`) and the tool names a handle, never a file, so it can
  * change nothing on disk.
+ *
+ * `web_fetch` belongs here as well, and it is the one member that leaves the project: it
+ * is a **GET** over http(s) and nothing else (`utils/web-fetch.js`). A fetch reads a
+ * remote resource exactly as `read_file` reads a local one — it cannot post, upload,
+ * delete or write — so it is a reader and the read-only set is where it belongs.
  */
-export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 'grep', 'read_capture', 'compact_context']);
+export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 'grep', 'read_capture', 'web_fetch', 'compact_context']);
 
 /**
  * The one tool that authors the tracking files. It is a writer, but a *scoped* one:

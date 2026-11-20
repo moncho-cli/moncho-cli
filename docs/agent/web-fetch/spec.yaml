@@ -1,0 +1,57 @@
+id: agent/web-fetch
+domain: agent
+title: Retrieving a URL, bounded in every direction it can grow
+status: active
+summary: >
+  web_fetch is the one tool that reaches outside the project tree, so utils/web-fetch.js
+  makes the door narrow: http and https only (validateFetchUrl, ALLOWED_PROTOCOLS), the body
+  read streaming and cut at maxBytes with the reader cancelled (readBounded, DEFAULT_MAX_BODY_BYTES),
+  at most DEFAULT_MAX_REDIRECTS hops followed manually so a loop is TOO_MANY_REDIRECTS and
+  https is never downgraded (REDIRECT_DOWNGRADE), and one whole-exchange AbortSignal.timeout
+  (timeoutSignal). The request is always a GET with fixed headers, so the key, the
+  conversation and every local path stay out of it. tools/web_fetch.js answers in the
+  command-document shape (renderYamlHeader, ---, payload): HTML is reduced to readable text
+  by utils/html-text.js — raw elements dropped before entities are decoded, block elements
+  ending a paragraph, list and table members ending a line, an inline tag introducing
+  nothing, and an unknown entity left exactly as written (decodeEntity, breakFor, htmlToText)
+  — while JSON and plain text pass through as they arrived, and the charset comes from the
+  content-type, the document's own meta, else UTF-8 with a note (charsetFromBody, decodeBody).
+  The text is windowed from the top (windowBody) and, when either the window or the download
+  cut it, the whole text goes to the capture store with a capture: handle that read_capture
+  pages — no second paging grammar. A refusal before the request and a failure during it
+  answer the JSON envelope with a stable code and guidance, while a server answer such as 404
+  is a document, because the request worked. It is one GET and nothing else, so it is a
+  reader: READ_ONLY_TOOLS and the read family, offered in every mode, chat included, which is
+  the branch PRIVACY.md states — the provider plus any URL the agent itself chose to fetch.
+code:
+  - path: utils/web-fetch.js
+    symbols: [DEFAULT_FETCH_TIMEOUT_MS, MAX_FETCH_TIMEOUT_MS, DEFAULT_MAX_BODY_BYTES, MAX_MAX_BODY_BYTES, DEFAULT_MAX_REDIRECTS, DEFAULT_FETCH_LINES, MAX_FETCH_LINES, ALLOWED_PROTOCOLS, WebFetchError, validateFetchUrl, charsetFromContentType, charsetFromBody, normalizeCharset, isSupportedCharset, decodeBody, readBounded, timeoutSignal, fetchUrl, renderFetchDocument, windowBody, shownRange, fetchErrorDocument]
+  - path: utils/html-text.js
+    symbols: [isRawElement, decodeEntity, decodeEntities, normalizeWhitespace, breakFor, htmlToText, isHtmlType]
+  - path: tools/web_fetch.js
+    symbols: [definition, execute, responseHeaders, bodyText]
+  - path: utils/command-output.js
+    symbols: [windowLines, renderYamlHeader, renderCommandOutput]
+  - path: utils/capture-store.js
+    symbols: [putCapture]
+  - path: app/mode-policy.js
+    symbols: [READ_ONLY_TOOLS, refusalForMode]
+  - path: app/tool-palette.js
+    symbols: [TOOL_FAMILIES, toolFamily, toolColorFor]
+  - path: config/prompt.md
+    symbols: []
+tests:
+  - path: tests/web-fetch.test.js
+    cases:
+      - validateFetchUrl accepts http and https and refuses every other scheme
+      - decodeEntity decodes what it knows and leaves the rest exactly as written
+      - htmlToText drops raw elements, keeps block structure and invents no space
+      - charsetFromBody and decodeBody read the declaration, and an unknown label falls back with a note
+      - readBounded streams a body, cuts it at the cap and cancels the reader
+      - fetchUrl follows redirects and refuses a loop and a downgrade
+      - windowBody shows a body from the top and reports what it cut
+      - web_fetch answers an HTML page as a document of reduced text
+      - "web_fetch passes JSON through and reports an HTTP status as a document"
+      - web_fetch hands a long body to the capture store for read_capture
+      - web_fetch refuses a bad URL, an unsupported scheme and a dead host with a stable code
+      - web_fetch is a read-only tool in the read family

@@ -11,7 +11,7 @@
  *
  * | family  | tools                                        | colour       | reads as             |
  * | ------- | -------------------------------------------- | ------------ | -------------------- |
- * | `read`  | `read_file`, `hint_file`, `blob`, `grep`     | bright cyan  | looking, no change   |
+ * | `read`  | `read_file`, `hint_file`, `blob`, `grep`, `read_capture`, `web_fetch` | bright cyan | looking, no change |
  * | `write` | `write_file`, `edit_file`, `delete_file`     | green        | the tree changed     |
  * | `bash`  | `run_bash`, `run_npm`                        | yellow       | a process ran        |
  * | `other` | `update_task`, `compact_context`, anything unknown | yellow | neither of the above |
@@ -44,6 +44,7 @@ export const TOOL_FAMILIES = Object.freeze({
   blob: 'read',
   grep: 'read',
   read_capture: 'read',
+  web_fetch: 'read',
   write_file: 'write',
   edit_file: 'write',
   delete_file: 'write',

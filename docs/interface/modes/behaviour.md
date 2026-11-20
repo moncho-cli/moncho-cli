@@ -63,11 +63,15 @@ gate read the live session mode, so a `Tab` mid-turn tightens the very next call
   one or install a package, so they can never be restricted to two paths. They are
   therefore refused in `chat` **and** `design`, and advertised in neither — treating
   them as read-only would make every other rule here decorative.
-- The read-only set is `read_file`, `blob`, `grep` and `compact_context`. "Read-only"
+- The read-only set is `read_file`, `hint_file`, `blob`, `grep`, `read_capture`,
+  `web_fetch` and `compact_context`. "Read-only"
   is a claim about the **project tree**, not about the session: `compact_context`
   replaces the live context window and may call the provider, so it changes the
   conversation without writing a file. It is offered in every mode because it can
-  never name a path.
+  never name a path. `web_fetch` is the same kind of exception in the other
+  direction — it is the one reader that leaves the machine, and it is still a
+  reader: a GET, with no body and no upload (`docs/agent/web-fetch`), so it can
+  change nothing on disk and belongs in the read-only set in every mode.
 - **A delete is a writer, and the most final one**: `DESTRUCTIVE_TOOLS`
   (`delete_file`) is part of `WRITER_TOOLS`, so it is refused in `chat` and in
   `design` and advertised in neither. It is *not* a scoped writer: the path is only
