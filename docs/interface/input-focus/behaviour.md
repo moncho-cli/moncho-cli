@@ -18,6 +18,16 @@ every keystroke; a box that is reading but lost the focus never receives one. Th
 two facts are the same state, so `needsFocus()` treats "either half missing" as
 "arm the box again".
 
+The **listener** is a third fact, and it arrives a tick late. `readInput()` sets
+`_reading = true` synchronously and installs the keypress listener from a
+`nextTick` (`lib/widgets/textarea.js#Textarea`), so between the two there is a
+window where the box is focused and reading but still deaf. That window is not a
+bug and needs no repair: the scheduled tick always installs the listener, and the
+flag is set before it so the read cannot be lost in between. It does mean that
+"armed" is not readable from the two flags alone at an arbitrary instant — a
+caller that must observe the whole state waits for the listener too, which is what
+the periodic-check case does.
+
 ## Why the state is lost
 
 The widget layer does two things that are individually reasonable and jointly
@@ -72,3 +82,8 @@ fatal:
   screen's mouse dispatch is skipped while `lockKeys` is set.
 - A box that is already armed is not focused again: focusing an element that
   already owns the focus emits a `blur` on it and would end the read it is holding.
+- A check that lands in the tick between `_reading = true` and the listener being
+  installed sees a deaf box and arms it again; `arm()` is idempotent and
+  `readInput()` returns early while a read is live, so the repair costs nothing and
+  leaves one listener. A test that asserts the listener count must wait for the
+  whole armed state rather than the focus alone, or it reads the count mid-install.

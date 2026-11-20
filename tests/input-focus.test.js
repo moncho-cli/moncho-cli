@@ -38,6 +38,22 @@ function listenerCount(box) {
   return Array.isArray(raw) ? raw.length : 1;
 }
 
+/**
+ * Whether the box is fully armed: the focus, the read cycle **and** its listener.
+ *
+ * The listener is the third fact and it arrives a tick late: `readInput()` sets
+ * `_reading = true` synchronously and installs the keypress listener from a
+ * `nextTick` (`lib/widgets/textarea.js#Textarea`), so a box can be focused and
+ * reading while still deaf for one tick. Waiting on the focus alone therefore
+ * returns mid-install and reads as "zero listeners" — the race that made this
+ * suite flake. The contract is the whole armed state, so that is what is awaited.
+ */
+function armed(tui) {
+  return tui.screen.focused === tui.inputBox
+    && tui.inputBox._reading === true
+    && listenerCount(tui.inputBox) === 1;
+}
+
 /** Wait until `predicate()` is true, or fail the test with the elapsed time. */
 async function waitFor(predicate, timeoutMs = 2500) {
   const started = Date.now();
@@ -238,7 +254,7 @@ test('the periodic check repairs a lost focus within one interval', async () => 
     await flush();
     assert.equal(tui.inputBox._reading, false);
 
-    const elapsed = await waitFor(() => tui.screen.focused === tui.inputBox);
+    const elapsed = await waitFor(() => armed(tui));
     assert.ok(elapsed >= 0, 'the watchdog put the focus back without being asked');
     assert.ok(elapsed <= FOCUS_CHECK_INTERVAL_MS + 250, `repaired in ${elapsed}ms`);
     assert.equal(tui.inputBox._reading, true, 'the read cycle was restarted');
