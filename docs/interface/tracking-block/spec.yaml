@@ -1,0 +1,39 @@
+id: interface/tracking-block
+domain: interface
+title: The TUI-only block showing the full content of a tracking file
+status: active
+summary: >
+  app/tracking-block.js adds a second announcement to every tracking write: a titled block
+  carrying the full content of the file that changed, beside the [Tracking] rows that say
+  what happened. Which files get a block comes from the write itself
+  (trackingKindsWritten() reads taskWritten/planWritten), so a refusal shows none; the
+  payload is read back from disk through utils/tracking-store.js, so a normalised draft or a
+  human hot-edit is shown as it really is. The block leads with the [Tracking] label and
+  hands app/transcript-view.js#logBlock a bodyColor of app/theme.js#TRACKING_COLOR, so title
+  and payload paint bright green like the milestones. It is TUI only by construction — a
+  block is what the transcript pane draws, and the line CLI wires no logBlock, so the block
+  half is a no-op there and the rows are the whole announcement. Presentation only: never a
+  chunk, never a session file. createTrackingAnnouncer() composes both halves into the one
+  notify() the host registry calls.
+code:
+  - path: app/tracking-block.js
+    symbols: [TRACKING_BLOCK_COLOR, TRACKING_BLOCK_BOLD, TRACKING_BLOCK_TITLES, trackingKindsWritten, formatTrackingBlock, trackingReader, createTrackingBlockSink, createTrackingAnnouncer]
+  - path: app/tracking-notice.js
+    symbols: [formatTrackingUpdate, createTrackingNotifier]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: app/theme.js
+    symbols: [TRACKING_COLOR, TRACKING_BOLD, classifyLine]
+  - path: tools/update_task.js
+    symbols: [execute]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/tracking-block.test.js
+    cases:
+      - only the files a write really touched get a block, in the protocol order
+      - the block is titled, carries the full content verbatim, and paints it tracking
+      - the block is shown only where a block sink exists, so the line CLI is unchanged
+      - the announcer shows the rows and the content together, from one call
+      - the content is read back from disk, so a canonical rewrite is what is shown
+      - the block really reaches the screen, expanded, in the tracking colour

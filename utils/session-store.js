@@ -46,6 +46,16 @@ export const SESSION_DIR = process.env.SESSION_DIR || 'agent/sessions';
 /** The conversation record inside a session folder. */
 export const SESSION_RECORD_FILE = 'context.json';
 
+/**
+ * The **uncompacted** history written beside the record (`docs/runtime/session-store`).
+ *
+ * `context.json` holds the window that is sent to the model, so a compaction rewrites
+ * it; this file holds every chunk the conversation ever had, all the way back, and no
+ * compaction ever trims it (task-backlog: "save a conversation.json … the uncompacted
+ * version and has all the chunks all the way back").
+ */
+export const CONVERSATION_LOG_FILE = 'conversation.json';
+
 export { SESSION_FORMAT_VERSION, SessionStoreError, sessionId, formatSession, parseSession };
 export { countRoles, serializeSession, sessionChunks, sessionModeState, sessionPlanContent, sessionTaskContent, sessionUsage };
 
@@ -66,6 +76,14 @@ export function sessionDir(id, { dir = SESSION_DIR } = {}) {
 /** Project-relative path of the conversation record: `agent/sessions/<id>/context.json`. */
 export function sessionPath(id, { dir = SESSION_DIR } = {}) {
   return `${sessionDir(id, { dir })}/${SESSION_RECORD_FILE}`;
+}
+
+/**
+ * Project-relative path of the uncompacted history:
+ * `agent/sessions/<id>/conversation.json`.
+ */
+export function conversationPath(id, { dir = SESSION_DIR } = {}) {
+  return `${sessionDir(id, { dir })}/${CONVERSATION_LOG_FILE}`;
 }
 
 /**

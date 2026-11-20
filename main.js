@@ -15,7 +15,7 @@ import { runSessionLoop } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
 import { registerSession, registerTrackingNotifier, registerLogger } from './utils/host.js';
 import { createLogger, logEvent } from './utils/logger.js';
-import { createTrackingNotifier } from './app/tracking-notice.js';
+import { createTrackingAnnouncer } from './app/tracking-block.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
 } from './config/constants.js';
@@ -204,16 +204,25 @@ async function main() {
   registerSession(sessions);
   ensureTrackingFiles();
 
-  // A tracking update is announced in the transcript, in the palette's own contrasting
-  // colour (app/tracking-notice.js), so the user sees "item X done" / "plan reset for Y"
-  // instead of having to open the two files. Registered against the front end's logger,
-  // and the tool reports the update through utils/host.js.
-  registerTrackingNotifier(createTrackingNotifier({ log }));
+  // A tracking update is announced twice, both in the palette's own contrasting colour
+  // (app/tracking-block.js): the `[Tracking]` rows say *what happened* ("item X done",
+  // "plan reset for Y") and a titled block shows *what the files now hold* — their full
+  // content (docs/interface/tracking-block). The block is TUI only: with no `logBlock`
+  // the line CLI keeps just the rows. The tool reports the update via utils/host.js.
+  registerTrackingNotifier(createTrackingAnnouncer({
+    log,
+    logBlock: tui ? (block) => tui.logBlock(block) : null,
+  }));
 
   const saveSession = (reason) => {
     try {
       return sessions.save(manager.chunks, {
         reason,
+        // The *uncompacted* history (app/context-window.js#ContextWindow.journal): the
+        // window is what the model is sent and shrinks on a compaction, while the journal
+        // keeps every chunk all the way back for conversation.json
+        // (docs/runtime/conversation-log).
+        journal: manager.contextWindow.journal,
         stats: manager.contextWindow.stats(),
         // What each model consumed so far, so the session file is the accounting
         // record and `/usage` survives a restart.

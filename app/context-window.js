@@ -27,6 +27,10 @@ import { formatContextLimit, CONTEXT_SIZE_SOURCE } from '../utils/context-size.j
  */
 export class ContextWindow {
   #chunks = [];
+  // Every chunk the conversation ever held, appended once and never trimmed by a
+  // compaction: the *uncompacted* history (task-backlog: "save a conversation.json …
+  // the uncompacted version and has all the chunks all the way back").
+  #journal = [];
 
   constructor({
     maxTokens = CONTEXT_MAX_LENGTH,
@@ -50,27 +54,52 @@ export class ContextWindow {
     return this.#chunks;
   }
 
+  /**
+   * The uncompacted history: every chunk ever added, in the order it was said.
+   *
+   * A compaction rewrites `chunks` (the window that is sent) but a chunk that was
+   * summarised away is still part of what the conversation *was*, and losing it is
+   * losing the only verbatim record of that stretch of work. The journal is therefore
+   * append-only: `add()`/`addMany()` write to both, `compact()` touches only the
+   * window, and `clear()` is the one operation that empties both, because it means
+   * the conversation itself is gone.
+   */
+  get journal() {
+    return this.#journal;
+  }
+
   get length() {
     return this.#chunks.length;
   }
 
   add(chunk) {
     this.#chunks.push(chunk);
+    this.#journal.push(chunk);
     return chunk;
   }
 
   addMany(chunks) {
     this.#chunks.push(...chunks);
+    this.#journal.push(...chunks);
     return this.#chunks.length;
   }
 
-  replace(chunks) {
+  /**
+   * Replace the live window (resuming a stored conversation).
+   *
+   * `journal` carries the uncompacted history the stored session kept; without it
+   * the window itself is the best record available, so the journal restarts from
+   * exactly what is being restored rather than from nothing.
+   */
+  replace(chunks, { journal = null } = {}) {
     this.#chunks = [...chunks];
+    this.#journal = Array.isArray(journal) ? [...journal] : [...chunks];
     return this.#chunks.length;
   }
 
   clear() {
     this.#chunks = [];
+    this.#journal = [];
     this.compactions = [];
   }
 
@@ -172,6 +201,8 @@ export class ContextWindow {
   stats() {
     return {
       chunks: this.#chunks.length,
+      // The window that is sent, against the history it was compacted from.
+      journalChunks: this.#journal.length,
       maxTokens: this.maxTokens,
       configuredTokens: this.configuredTokens,
       realTokens: this.realTokens,

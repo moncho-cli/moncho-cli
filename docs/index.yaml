@@ -51,9 +51,11 @@ specs:
   - interface/line-cli
   - interface/input-focus
   - interface/tracking-notice
+  - interface/tracking-block
   - runtime/provider-calls
   - runtime/startup-wiring
   - runtime/session-store
+  - runtime/conversation-log
   - runtime/logging
   - context/working-time
   - interface/conversation-timestamps

@@ -1,0 +1,41 @@
+id: runtime/conversation-log
+domain: runtime
+title: The uncompacted conversation history stored beside the context record
+status: active
+summary: >
+  Every session folder holds two files: context.json, the window that is sent to the
+  model and that a compaction rewrites, and conversation.json, the uncompacted history
+  with every chunk all the way back. The history is append-only state on the window
+  (app/context-window.js#ContextWindow.journal): add()/addMany() write to it, a
+  compaction touches only the window, and clear() is the one operation that empties both.
+  Resuming a session restores the journal from its own log, so a conversation compacted
+  in a past run keeps its whole history. The log is written after the record and verified
+  byte-for-byte, while reading it is forgiving — a missing or unreadable file answers null
+  rather than throwing, because the live record can still describe the conversation and a
+  broken history must never block a resume.
+code:
+  - path: utils/conversation-log.js
+    symbols: [CONVERSATION_LOG_VERSION, ConversationLogError, serializeConversationLog, formatConversationLog, parseConversationLog, conversationLogChunks]
+  - path: utils/conversation-log-store.js
+    symbols: [writeConversationLog, readConversationLog, hasConversationLog]
+  - path: utils/session-store.js
+    symbols: [CONVERSATION_LOG_FILE, conversationPath, sessionPath, sessionDir]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: app/session-recorder.js
+    symbols: [createSessionRecorder]
+  - path: app/commands.js
+    symbols: [sessionsCommand]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/conversation-log.test.js
+    cases:
+      - the shape holds the chunks verbatim, versioned and counted
+      - parseConversationLog() refuses junk and unknown versions instead of guessing
+      - the compaction shrinks the window and leaves the journal untouched
+      - replace() restores the log a resumed session carried, and clear() empties both
+      - conversation.json is written beside context.json and read back byte-for-byte
+      - a missing or unreadable log answers null, so a resume is never blocked
+      - every session save writes the uncompacted history with it
+      - the error class is the one callers catch

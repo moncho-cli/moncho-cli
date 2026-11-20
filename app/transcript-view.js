@@ -178,13 +178,22 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
    * Append a collapsible block. `header` is the one-line label the block keeps
    * when collapsed (the "X char response" size is appended by the model) and
    * `body` is the payload, stored verbatim so expanding is lossless.
+   *
+   * `bodyColor` paints the whole payload in one blessed colour — a tool result keeps the
+   * markdown colours it was rendered with (the default, `null`), while the tracking content
+   * block asks for the tracking colour so the file it quotes reads as a milestone
+   * rather than as an ordinary tool result (`docs/interface/tracking-block`).
    */
-  const logBlock = ({ header = '', body = '', collapsed = null } = {}) => {
+  const logBlock = ({ header = '', body = '', collapsed = null, bodyColor = null } = {}) => {
     const source = String(body ?? '');
+    const colour = typeof bodyColor === 'string' && bodyColor ? bodyColor : null;
+    const bodyLines = formatLines(source).map((line) => (
+      colour && String(line).trim() !== '' ? `{${colour}-fg}${line}{/${colour}-fg}` : line
+    ));
     const block = model.addBlock({
       header: formatLines(header).join(' '),
       body: source,
-      bodyLines: formatLines(source),
+      bodyLines,
       collapsed,
       stamp: mark(),
     });

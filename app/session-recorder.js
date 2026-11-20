@@ -9,6 +9,7 @@ import {
   describeSession,
   SESSION_DIR,
 } from '../utils/session-store.js';
+import { writeConversationLog } from '../utils/conversation-log-store.js';
 import { getSessionTaskContent, getSessionPlanContent } from '../utils/host.js';
 
 /**
@@ -120,7 +121,19 @@ export function createSessionRecorder({
       );
       savedAt = at.toISOString();
       saves += 1;
-      return record;
+      // The uncompacted history, written *after* the record and never trimmed by a
+      // compaction (utils/conversation-log-store.js, docs/runtime/conversation-log).
+      // With no journal handed over (a caller that only knows the window) the window
+      // itself is the best record available.
+      const conversationLog = writeConversationLog({
+        id: sessionId_,
+        createdAt: created,
+        updatedAt: at,
+        model,
+        cwd,
+        chunks: Array.isArray(extra.journal) ? extra.journal : chunks,
+      }, { dir });
+      return { ...record, conversationLog };
     },
     /** Save only when the window holds something worth keeping. */
     saveIfUsed(chunks = [], extra = {}) {
