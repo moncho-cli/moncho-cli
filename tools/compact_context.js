@@ -1,18 +1,28 @@
 import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { getContextWindow } from '../utils/host.js';
 import { estimateRequestTokens } from '../utils/tokens.js';
+import { describeCompactionSplit } from '../utils/compaction.js';
 import { defineTool } from '../utils/tool-schema.js';
 
 /**
  * `compact_context` (task.md item 8).
  *
  * When the context window (an array of chunks) exceeds CONTEXT_MAX_LENGTH tokens,
- * this tool replaces the older 80% with a single summarised chunk and keeps the
- * newest 20% verbatim. The model-backed summary is produced by the host loop
+ * this tool replaces the older share with a single summarised chunk and keeps the
+ * newer share verbatim. Both shares are the configured factors, read through
+ * `describeCompactionSplit()` (`utils/compaction.js`) so the tool's own wording
+ * cannot drift from the split the code performs. The model-backed summary is
+ * produced by the host loop
  * (ConversationManager), which owns the provider connection; the tool therefore
  * either *requests* a compaction (`defer: true`) or performs a deterministic,
  * model-free dry run that reports the exact split.
  */
+
+/**
+ * The split as the tool words it, derived once from the configured factors so the
+ * description, the dry-run note and the request message all agree with the code.
+ */
+const split = describeCompactionSplit();
 
 /**
  * Decide whether a compaction is required and, if so, what it would split.
@@ -36,7 +46,7 @@ export function planCompaction(contextWindow, { force = false, dryRun = true } =
 const { definition, execute } = defineTool({
   name: 'compact_context',
   description:
-    `Summarise and shrink the conversation context window when it exceeds CONTEXT_MAX_LENGTH (${CONTEXT_MAX_LENGTH}) tokens. The older 80% of the window is replaced by one summary chunk covering original intent, tasks done and things pending; the newest 20% is kept verbatim, and the last message the user wrote inside the summarised block is carried over verbatim so the user's own intent survives.`,
+    `Summarise and shrink the conversation context window when it exceeds CONTEXT_MAX_LENGTH (${CONTEXT_MAX_LENGTH}) tokens. The older ${split.oldLabel} of the window is replaced by one summary chunk covering original intent, tasks done and things pending; the newer ${split.keepLabel} is kept verbatim, and the last message the user wrote inside the summarised block is carried over verbatim so the user's own intent survives.`,
   parameters: {
     properties: {
       force: {
@@ -45,7 +55,7 @@ const { definition, execute } = defineTool({
       },
       dryRun: {
         type: 'boolean',
-        description: 'Report the planned 80/20 split without calling the model (default true). Set false to actually run the summarisation via the host loop.'
+        description: `Report the planned ${split.label} split without calling the model (default true). Set false to actually run the summarisation via the host loop.`
       }
     }
   },
@@ -77,7 +87,7 @@ const { definition, execute } = defineTool({
     return JSON.stringify({
       status: 'requested',
       code: 'COMPACTION_REQUESTED',
-      message: 'Compaction needed; the host loop will summarise and replace the older 80% of the window.',
+      message: `Compaction needed; the host loop will summarise and replace the older ${split.oldLabel} of the window.`,
       defer: !dryRun,
       ...plan,
       usage: contextWindow.usage()

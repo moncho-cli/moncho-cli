@@ -14,16 +14,14 @@ import {
   formatTokenCount,
   formatUsage
 } from '../utils/tokens.js';
-import { SUMMARIZER_SYSTEM_PROMPT, buildSummaryPrompt, splitByTokenBudget, compactChunks, buildSummaryChunk, lastUserChunk } from '../utils/compaction.js';
-import { COMPACTION_SUMMARY_PREFIX } from '../config/constants.js';
-
+import { SUMMARIZER_SYSTEM_PROMPT, buildSummaryPrompt, splitByTokenBudget, compactChunks, buildSummaryChunk, lastUserChunk, describeCompactionSplit } from '../utils/compaction.js';import { COMPACTION_SUMMARY_PREFIX, COMPACTION_OLD_RATIO, COMPACTION_KEEP_RATIO } from '../config/constants.js';
 /**
- * The context machinery (docs/context/token-accounting, docs/context/compaction): the
- * token estimate, the 80/20 compaction, the live window and the compact_context tool.
+ * The context machinery (docs/context/compaction): the configurable-ratio
+ * compaction, the live window and the compact_context tool.
  *
  * Split out of tests/harness-tools.test.js so each suite stays small and named after the
  * capability it proves (tests/README.md); that suite keeps the tool contract and the file
- * tools.
+ * tools, and tests/token-accounting.test.js keeps the token estimate.
  */
 
 function chunk(text, role = 'user') {
@@ -31,43 +29,59 @@ function chunk(text, role = 'user') {
 }
 
 // ---------------------------------------------------------------------------
-// Tokens
-// ---------------------------------------------------------------------------
-
-test('token estimates are additive, rounded up and never negative', () => {
-  assert.equal(estimateMessageTokens('abcd'), 1);
-  assert.equal(estimateMessageTokens('abcde'), 2);
-  assert.equal(estimateMessagesTokens(['abcd', 'abcd']), 2);
-  assert.equal(estimateMessageTokens(null), 0);
-  assert.ok(estimateMessageTokens({ role: 'user', content: 'x'.repeat(100) }) > 100 / 4);
-  assert.ok(estimateRequestTokens([{ role: 'user', content: 'hi' }], [{ type: 'function' }]) > 0);
-});
-
-test('budget helpers and formatting', () => {
-  const messages = [{ role: 'user', content: 'x'.repeat(400) }];
-  assert.equal(exceedsTokenBudget(messages, 1000), false);
-  assert.equal(exceedsTokenBudget(messages, 10), true);
-  assert.equal(exceedsTokenBudget(messages, 0), false); // 0 = no limit
-  assert.equal(formatTokenCount(1500), '1.50k');
-  assert.match(formatUsage(messages, 1000), /tokens \(\d+%\)$/);
-  assert.match(formatUsage(messages, 0), /\(no limit\)$/);
-});
-
-// ---------------------------------------------------------------------------
 // Compaction
 // ---------------------------------------------------------------------------
 
-test('the older 70% / newest 30% split is driven by token mass', () => {
+test('the split is configurable and driven by token mass, and its wording follows the config', () => {
   const chunks = Array.from({ length: 5 }, (_, i) => chunk('x'.repeat(400), `m${i}`));
   const split = splitByTokenBudget(chunks);
 
   assert.equal(split.totalTokens, split.olderTokens + split.keptTokens);
   assert.ok(split.older.length > 0, 'something must be compacted');
   assert.ok(split.kept.length > 0, 'the newest chunks must survive');
-  assert.ok(split.keptTokens >= split.totalTokens * 0.2 * 0.9, 'kept block should be ~20%');
+  assert.ok(
+    split.keptTokens >= split.totalTokens * COMPACTION_KEEP_RATIO * 0.9,
+    `kept block should be ~${Math.round(COMPACTION_KEEP_RATIO * 100)}%`
+  );
   assert.ok(split.olderTokens >= split.keptTokens, 'the evicted block carries the bulk of the mass');
   assert.equal(split.older.at(-1), chunks[split.older.length - 1]);
   assert.equal(split.kept[0], chunks[split.older.length]);
+
+  // The message follows the config: the shares are read from the same factors the
+  // split uses, and the two always sum to 100.
+  const described = describeCompactionSplit();
+  assert.equal(described.oldRatio, COMPACTION_OLD_RATIO);
+  assert.equal(described.keepRatio, COMPACTION_KEEP_RATIO);
+  assert.equal(described.oldPercent + described.keepPercent, 100);
+  assert.equal(described.oldLabel, `${Math.round(COMPACTION_OLD_RATIO * 100)}%`);
+});
+
+test('the ratio to be compacted is overridable through the COMPACTION_OLD_RATIO env var', async () => {
+  // config/constants.js reads the env at module load, so a fresh instance is what
+  // proves the override: the query string defeats the ESM module cache.
+  const previous = process.env.COMPACTION_OLD_RATIO;
+  process.env.COMPACTION_OLD_RATIO = '0.5';
+  try {
+    const overridden = await import('../config/constants.js?ratio-override');
+    assert.equal(overridden.COMPACTION_OLD_RATIO, 0.5);
+    assert.equal(overridden.COMPACTION_KEEP_RATIO, 0.5, 'the keep ratio is derived, never a second knob');
+
+    // A percentage and a percentage with the sign mean the same thing.
+    process.env.COMPACTION_OLD_RATIO = '60%';
+    const percent = await import('../config/constants.js?ratio-percent');
+    assert.equal(percent.COMPACTION_OLD_RATIO, 0.6);
+    assert.equal(percent.COMPACTION_KEEP_RATIO, 0.4);
+
+    // Out of range falls back rather than evicting everything or keeping everything.
+    // (A bare value at or above 1 is read as a percentage, so 150 means 1.5, which
+    // is out of range; an empty value falls back too.)
+    process.env.COMPACTION_OLD_RATIO = '150';
+    const bad = await import('../config/constants.js?ratio-bad');
+    assert.equal(bad.COMPACTION_OLD_RATIO, 0.7);
+  } finally {
+    if (previous === undefined) delete process.env.COMPACTION_OLD_RATIO;
+    else process.env.COMPACTION_OLD_RATIO = previous;
+  }
 });
 
 test('a window of one chunk is never compacted away', () => {

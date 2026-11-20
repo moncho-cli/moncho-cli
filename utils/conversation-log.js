@@ -5,7 +5,7 @@ import { countRoles } from './session-format.js';
  * (`docs/runtime/conversation-log`).
  *
  * `context.json` holds the window that is *sent* to the model, so a compaction rewrites
- * it: the older 80% becomes one summary chunk and the original messages are gone from
+ * it: the older share becomes one summary chunk and the original messages are gone from
  * that file. That is the right shape for a request and the wrong shape for a record —
  * the verbatim stretch of work the summary paraphrases is exactly what a reader wants
  * back later. This module owns the shape of the second file, `conversation.json`:

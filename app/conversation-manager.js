@@ -260,7 +260,7 @@ export class ConversationManager {
    */
   async maybeCompact(signal, options = {}) {
     const result = await this.compactionRunner.run(signal, options);
-    // A compaction replaced the older 80% with one summary chunk: the array the
+    // A compaction replaced the older share with one summary chunk: the array the
     // session record holds is a different one now.
     if (result?.compacted) this.notifyChunksChanged('compaction');
     return result;

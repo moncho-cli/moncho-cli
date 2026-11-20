@@ -26,9 +26,9 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `tracking-store.test.js` | Where the pair lives: one folder per session, the file/record read order, the mirrored writes, and the fact that the project root is never a store — no root file is read, created or seeded. |
 | `tracking-fence.test.js` | Who may author them, and where: `write_file` re-renders a draft only inside a session folder and refuses a tracking name at the root, while `edit_file` and `delete_file` refuse any tracking file as tool-owned. |
 | `tracking-notice.test.js` | That an update is *visible*: the `[Tracking]` rows an item completion, a plan reset and a ticked step print, and the contrasting bright-green they are painted in. |
-| `context-window.test.js` | The context machinery: token estimation, the 80/20 compaction, the live window and the `compact_context` tool. |
-| `command-sandbox.test.js` | The sandbox rules: the allow-list, the shell-free refusals, and the structured npm failures. |
-| `command-output-window.test.js` | A command result as a document: the YAML header, the `---` delimiter, the `head`/`tail` window, and the structured failure envelope. |
+| `context-window.test.js` | The context machinery: the configurable-ratio compaction, the live window and the `compact_context` tool. |
+| `token-accounting.test.js` | Character-based token estimation and budget reporting: additive estimates, the no-limit rule and the usage string. |
+| `command-sandbox.test.js` | The sandbox rules: the allow-list, the shell-free refusals, and the structured npm failures. || `command-output-window.test.js` | A command result as a document: the YAML header, the `---` delimiter, the `head`/`tail` window, and the structured failure envelope. |
 | `task-plan-progress.test.js` | `implementation_plan.md` moving as steps are verified: the step parsing, the strict selection, the in-place tick and the `step` action. |
 | `tool-multicall.test.js` | The multicall grammar: the call signature, the `<tool-multicall result>` envelope, the round-trip and the replay of an enveloped chunk. |
 | `tool-batch.test.js` | Running one batch: the five-call cap, the simultaneous dispatch in call order, the refusal, and the chunks the loop stores. |

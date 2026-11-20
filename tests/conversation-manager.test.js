@@ -12,8 +12,8 @@ import path from 'node:path';
  *  - task.md item 6: the tool-call `intent` is printed and stored in the tool
  *    result chunk that goes back into the model context;
  *  - task.md item 3: the context window's token usage is reported;
- *  - task.md item 8: an over-budget window is compacted (older 80% summarised
- *    with a *neutral* call, newest 20% kept verbatim) before the next model call.
+ *  - task.md item 8: an over-budget window is compacted (the older share summarised
+ *    with a *neutral* call, the newer share kept verbatim) before the next model call.
  *
  * The env is set before the dynamic imports because config/constants.js reads it
  * at module load; Node gives this test file its own process.

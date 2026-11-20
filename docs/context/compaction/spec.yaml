@@ -1,12 +1,12 @@
 id: context/compaction
 domain: context
-title: 70/30 token-mass compaction with a self-contained neutral summariser
+title: Configurable-ratio token-mass compaction with a self-contained neutral summariser
 status: active
 summary: >
-  An over-budget window is compacted by summarising the older 70% (by token mass) into one marked summary chunk and keeping the newest 30% verbatim, never evicting the newest chunk. The last message the user wrote inside the summarised block is carried over verbatim between the summary and the kept tail by code, not by the model, unless that would not still shrink the window. The summariser call is a single self-contained request — its own instruction plus the evicted chunks, with the agent system prompt deliberately absent — and config/prompt.md says nothing about compaction at all. An empty summary or a provider error leaves the window untouched. compact_context reaches the live window via the host registry and defers the real call to the host loop.
+  An over-budget window is compacted by summarising the older share (by token mass) into one marked summary chunk and keeping the newer share verbatim, never evicting the newest chunk. The split comes from one configured factor, COMPACTION_OLD_RATIO (default 0.7, overridable through the COMPACTION_OLD_RATIO env var), with the keep ratio derived from it, and every message that names the split derives its percentages from that config through describeCompactionSplit(). The last message the user wrote inside the summarised block is carried over verbatim between the summary and the kept tail by code, not by the model, unless that would not still shrink the window. The summariser call is a single self-contained request — its own instruction plus the evicted chunks, with the agent system prompt deliberately absent — and config/prompt.md says nothing about compaction at all. An empty summary or a provider error leaves the window untouched. compact_context reaches the live window via the host registry and defers the real call to the host loop.
 code:
   - path: utils/compaction.js
-    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, lastUserChunk, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, compactChunks, needsCompaction]
+    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, lastUserChunk, describeCompactionSplit, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, compactChunks, needsCompaction]
   - path: app/context-window.js
     symbols: [ContextWindow]
   - path: app/compaction-runner.js
@@ -24,7 +24,8 @@ code:
 tests:
   - path: tests/context-window.test.js
     cases:
-      - the older 70% / newest 30% split is driven by token mass
+      - the split is configurable and driven by token mass, and its wording follows the config
+      - the ratio to be compacted is overridable through the COMPACTION_OLD_RATIO env var
       - a window of one chunk is never compacted away
       - compactChunks replaces the old block with one summary chunk and keeps the tail verbatim
       - the last user message of the evicted block is carried verbatim

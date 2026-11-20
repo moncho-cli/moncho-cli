@@ -2,11 +2,15 @@
 
 When the context window no longer fits its budget, the older part of the conversation is replaced by a single summary and the newest part is kept verbatim. This spec fixes the split rule, the summary contract, and the failure behaviour; the implementation is linked below.
 
-## The 70 / 30 split
+## The split is configurable, and its wording follows the config
 
-The entire conversation history is divided by token mass: the newest portion is kept verbatim while older context is summarised. This balance prioritises responsiveness over historical granularity when both are needed. A 70 / 30 arrangement means the window shrinks faster, preserving the most recent interactions for immediate reference; changing it would alter compaction timing and token consumption curves in predictable ways. The tail is always non-empty: the newest chunk is never evicted, and a window of two or more chunks is compactable, but a single-chunk window remains untouched.
+The entire conversation history is divided by token mass: the newest portion is kept verbatim while older context is summarised. This balance prioritises responsiveness over historical granularity when both are needed. How aggressively to compact is a **deployment decision**, so it is one configured factor rather than a constant baked into the prose:
 
-- The split is driven by **token mass**, not chunk count: the newest chunks are accumulated until they hold at least the keep ratio (30%) of the window's tokens; everything older is the block to summarise. Token mass prevents two huge chunks from skewing the split.
+- `COMPACTION_OLD_RATIO` (`config/constants.js`) is the **one knob**: the older share of the window that is replaced by a single summary chunk. It defaults to `0.7` and is overridable through the `COMPACTION_OLD_RATIO` env var, which accepts `0.7`, `70` and `70%` alike; anything out of range falls back to the default.
+- `COMPACTION_KEEP_RATIO` is **derived** (`1 - COMPACTION_OLD_RATIO`), so the two always sum to 1 and no second env var can contradict the first.
+- The split is driven by **token mass**, not chunk count: the newest chunks are accumulated until they hold at least the keep ratio of the window's tokens; everything older is the block to summarise. Token mass prevents two huge chunks from skewing the split.
+- **Every message that names the split derives it from the config** through `describeCompactionSplit()` (`utils/compaction.js`), which reports the two shares as whole percentages: the CLI budget line (`main.js`), the `compact_context` description and result messages (`tools/compact_context.js`). A message therefore cannot drift from the code again, and an operator who overrides the ratio sees the figure the code actually uses.
+- The tail is always non-empty: the newest chunk is never evicted, and a window of two or more chunks is compactable, but a single-chunk window remains untouched.
 
 ## The summary contract
 

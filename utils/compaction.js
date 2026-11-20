@@ -9,9 +9,12 @@ import { estimateMessageTokens, estimateMessagesTokens, exceedsTokenBudget } fro
  * Context-window compaction (task.md item 8).
  *
  * The context window is modelled as an ordered array of *chunks* (chat
- * messages). When its token count exceeds CONTEXT_MAX_LENGTH the older 80% of
+ * messages). When its token count exceeds CONTEXT_MAX_LENGTH the older share of
  * the window (by token mass) is replaced by a single summarised chunk while the
- * newest 20% is kept verbatim.
+ * newer share is kept verbatim. Both shares are the configured factors
+ * (`config/constants.js#COMPACTION_OLD_RATIO`, overridable through the
+ * `COMPACTION_OLD_RATIO` env var), and `describeCompactionSplit()` is the one
+ * place every message reads them from, so no figure is repeated in prose.
  *
  * The user's own words are the one thing a summary must never stand in for: the
  * last message the user wrote inside the evicted block is carried over
@@ -90,9 +93,36 @@ export function lastUserChunk(chunks = []) {
 }
 
 /**
+ * The split, in whole percentages, derived from the configured ratios.
+ *
+ * Every message that names the split — the CLI budget line, the
+ * `compact_context` description and results, the TUI notice — reads it from here
+ * rather than repeating a number. The factors come from `config/constants.js`, so
+ * an operator who overrides `COMPACTION_OLD_RATIO` sees the same figure the code
+ * actually uses, and no message can drift from the code again. The two
+ * percentages always sum to 100.
+ */
+export function describeCompactionSplit({
+  oldRatio = COMPACTION_OLD_RATIO,
+  keepRatio = COMPACTION_KEEP_RATIO
+} = {}) {
+  const oldPercent = Math.round(oldRatio * 100);
+  const keepPercent = 100 - oldPercent;
+  return {
+    oldRatio,
+    keepRatio,
+    oldPercent,
+    keepPercent,
+    oldLabel: `${oldPercent}%`,
+    keepLabel: `${keepPercent}%`,
+    label: `${oldPercent}/${keepPercent}`
+  };
+}
+
+/**
  * Split an ordered chunk list into the older block to summarise and the newer
  * block to keep, using token mass rather than chunk count so a couple of huge
- * chunks cannot skew the 80/20 split.
+ * chunks cannot skew the configured split.
  *
  * @returns {{older: any[], kept: any[], olderTokens: number, keptTokens: number, totalTokens: number}}
  */

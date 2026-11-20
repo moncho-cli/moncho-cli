@@ -88,7 +88,7 @@ turn after the first.
 The same accounting appears in the transcript, with the summary chunk in place of the
 block it replaced — the conversation above it is gone, its essence is not.
 
-![A transcript where the older 80% of the conversation has been replaced by one summary chunk](docs/metrics/memento-you-have-been-previously-compacted.jpeg)
+![A transcript where the older share of the conversation has been replaced by one summary chunk](docs/metrics/memento-you-have-been-previously-compacted.jpeg)
 
 ## The three realms
 

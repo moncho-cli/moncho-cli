@@ -149,6 +149,7 @@ cp .env.moncho.example .env.moncho
 | `OPENAI_API_KEY` | — | Bearer token; omit for Ollama |
 | `OPENAI_MODEL` | `qwen3.6:35b` | Model name |
 | `CONTEXT_MAX_LENGTH` | the provider's real total | Context budget override |
+| `COMPACTION_OLD_RATIO` | `0.7` | Share of the window summarised on compaction (`0.7`, `70` or `70%`) |
 | `PULSE_LIMIT` | `30` | Model calls before the pulse notice |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `off` |
 | `LOG_MAX_BYTES` | `524288` | Rotation threshold |

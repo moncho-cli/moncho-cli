@@ -73,15 +73,42 @@ function toPositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/**
+ * A share of the window, as a fraction strictly between 0 and 1.
+ *
+ * Accepts the three shapes a person actually writes in an env file: a fraction
+ * (`0.7`), a percentage (`70`) and a percentage with the sign (`70%`). Anything
+ * else — out of range, unparseable, empty — falls back, because a bad ratio must
+ * never produce a split that evicts everything or keeps everything.
+ */
+function toRatio(value, fallback) {
+  const raw = String(value ?? "").trim();
+  if (raw === "") return fallback;
+  const percent = raw.endsWith("%");
+  const parsed = Number.parseFloat(percent ? raw.slice(0, -1) : raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  const ratio = percent || parsed >= 1 ? parsed / 100 : parsed;
+  return ratio > 0 && ratio < 1 ? ratio : fallback;
+}
+
 /** Token budget for the context window; exceeding it triggers a compaction. */
 export const CONTEXT_MAX_LENGTH = toPositiveInt(process.env.CONTEXT_MAX_LENGTH, 128000);
 /** The raw CONTEXT_MAX_LENGTH override, or null when the user did not set one. */
 /** (task.md item 3: without an override the real total comes from the provider.) */
 export const CONTEXT_MAX_LENGTH_OVERRIDE = toPositiveInt(process.env.CONTEXT_MAX_LENGTH, null);
-/** Older share of the window that is replaced by a single summary chunk. */
-export const COMPACTION_OLD_RATIO = 0.7;
-/** Newer share of the window that is kept verbatim. */
-export const COMPACTION_KEEP_RATIO = 0.3;
+/**
+ * The one knob of the compaction split: the older share of the window that is
+ * replaced by a single summary chunk. Overridable through `COMPACTION_OLD_RATIO`
+ * (`0.7`, `70` and `70%` all mean the same), because how aggressively to compact
+ * is a deployment decision — a small window wants a bigger evicted share than a
+ * large one. Anything out of range falls back to the default.
+ */
+export const COMPACTION_OLD_RATIO = toRatio(process.env.COMPACTION_OLD_RATIO, 0.7);
+/**
+ * The newer share of the window that is kept verbatim, *derived* from the one knob
+ * above so the two always sum to 1 and no second env var can contradict the first.
+ */
+export const COMPACTION_KEEP_RATIO = 1 - COMPACTION_OLD_RATIO;
 /** Marker prefixed to the summarised chunk so it is identifiable in the window. */
 export const COMPACTION_SUMMARY_PREFIX = "[compacted summary of earlier context]";
 

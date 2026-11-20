@@ -17,7 +17,7 @@ agent/sessions/<id>/conversation.json  every chunk, all the way back (append-onl
 | | `context.json` | `conversation.json` |
 | --- | --- | --- |
 | what it holds | the window the model is sent | every chunk, oldest first |
-| a compaction | **rewrites** it (older 80% → one summary) | never touches it |
+| a compaction | **rewrites** it (the older share → one summary) | never touches it |
 | who writes it | `utils/session-store.js#writeSession` | `utils/conversation-log-store.js#writeConversationLog` |
 | who reads it | `/sessions` resume, `sessionChunks()` | the resumed window's journal, a reader |
 | shape | the session record | the log record (this spec) |
@@ -32,7 +32,7 @@ The live history is **append-only state on the window**, not a copy made at save
 into the window, and nothing else ever appends to it. That single rule is what makes the
 two files diverge exactly when they should:
 
-- a **compaction** replaces the window's older 80% with one summary chunk and leaves the
+- a **compaction** replaces the window's older share with one summary chunk and leaves the
   journal alone, so `context.json` shrinks and `conversation.json` does not;
 - `stats().journalChunks` reports the history size against `stats().chunks`, the window
   size, so the pair is visible;

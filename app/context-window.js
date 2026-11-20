@@ -11,9 +11,10 @@ import { formatContextLimit, CONTEXT_SIZE_SOURCE } from '../utils/context-size.j
  * The conversation context modelled as an ordered array of chunks (task.md items
  * 3 and 8). Every message pushed by the ConversationManager is a chunk; when the
  * array's estimated token count exceeds CONTEXT_MAX_LENGTH the window compacts
- * itself: the older 80% (by token mass) is replaced with one summary chunk and
- * the newest 20% is kept verbatim, with the last user message of the evicted
- * block carried over as written (`utils/compaction.js`).
+ * itself: the older share (by token mass) is replaced with one summary chunk and
+ * the newer share is kept verbatim, with the last user message of the evicted
+ * block carried over as written (`utils/compaction.js`). The shares are the
+ * configured factors (`config/constants.js#COMPACTION_OLD_RATIO`).
  *
  * Keeping this in its own object (rather than a bare array on the manager) lets
  * the `compact_context` tool reach the *live* window through the host registry.
