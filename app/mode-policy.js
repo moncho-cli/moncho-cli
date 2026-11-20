@@ -48,7 +48,7 @@ import { SESSION_DIR } from '../utils/session-store.js';
  * tree**: it replaces the live context window and may call the provider, so it changes
  * the conversation without ever naming a path.
  */
-export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'blob', 'grep', 'compact_context']);
+export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 'grep', 'compact_context']);
 
 /**
  * The one tool that authors the tracking files. It is a writer, but a *scoped* one:

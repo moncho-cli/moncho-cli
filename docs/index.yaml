@@ -21,11 +21,13 @@ realms:
 specs:
   - agent/tool-call-contract
   - agent/tool-multicall
+  - agent/tool-refusal
   - agent/file-safety
   - agent/patch-application
   - agent/command-sandbox
   - agent/task-tracking
   - agent/project-discovery
+  - agent/file-hint
   - context/token-accounting
   - context/compaction
   - context/context-size

@@ -18,6 +18,7 @@ the implementation is linked below.
 | `intent` | the `intent: …` row, and the `(intent: …)` span inside a tool row | bright blue, bold |
 | `context` | `[Context]` usage and compaction notices | magenta |
 | `tracking` | a `[Tracking]` task/plan milestone | bright green, bold |
+| `refusal` | a `✖ Refused …` row: a call the mode or the batch cap stopped (`docs/agent/tool-refusal`) | bright red, bold |
 | `error` | `Error …`, `[error] …`, a warning marker | red |
 | `notice` | `[Info]`, `[Session]`, `[pasted …]`, horizontal rules | grey |
 

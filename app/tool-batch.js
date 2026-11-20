@@ -5,6 +5,7 @@ import {
 } from '../config/constants.js';
 import { detectCompactionRequest } from './compaction-request.js';
 import { guardToolCall, formatGuardRefusal } from './tool-guard.js';
+import { formatRefusalLine } from './refusal-line.js';
 import { logEvent } from '../utils/logger.js';
 import {
   formatCallLines,
@@ -37,6 +38,11 @@ import {
  * (`docs/agent/tool-multicall`).
  */
 
+/** The plain-language reason a cap refusal carries, shared by the row and the JSON. */
+export function formatBatchRefusalReason({ requested = 0, max = MAX_PARALLEL_TOOL_CALLS } = {}) {
+  return `this message asked for ${requested} tool calls at once; only ${max} run in a batch`;
+}
+
 /** A call a batch refused to run because the message asked for too many. */
 export function formatBatchRefusal({ name, requested, max = MAX_PARALLEL_TOOL_CALLS } = {}) {
   return JSON.stringify({
@@ -44,7 +50,7 @@ export function formatBatchRefusal({ name, requested, max = MAX_PARALLEL_TOOL_CA
     code: TOO_MANY_TOOL_CALLS,
     tool: name,
     guidance: TOO_MANY_TOOL_CALLS_GUIDANCE,
-    message: `This message asked for ${requested} tool calls at once; only ${max} run in a batch.`,
+    message: formatBatchRefusalReason({ requested, max }),
     max,
   }, null, 2);
 }
@@ -118,6 +124,7 @@ export async function dispatchToolCalls(entries = [], toolFunctions = {}, { sign
     if (refusal) {
       outcome.isError = true;
       outcome.refused = true;
+      outcome.refusal = refusal;
       outcome.result = formatGuardRefusal({ name, ...refusal });
       return outcome;
     }
@@ -248,6 +255,8 @@ export async function handleToolBatch({
         calls: plan.total,
       }),
     });
+    // A refused call is news: one line to the reader, the structured refusal to the model.
+    if (outcome.refused) log(formatRefusalLine({ name: outcome.name, ...outcome.refusal }));
     lastStoredIntent = outcome.intent;
     // One tool result, one chunk: a long chain of calls then shows the usage
     // climbing call by call instead of jumping once the turn ends.
@@ -260,7 +269,7 @@ export async function handleToolBatch({
   for (const { call } of plan.refused) {
     lastLoggedIntent = null;
     lastStoredIntent = null; // Reset for refused calls
-    log(`\n  -> Refused ${call.name} (beyond the batch of ${plan.max})`);
+    log(formatRefusalLine({ name: call.name, reason: formatBatchRefusalReason({ requested: plan.total, max: plan.max }) }));
     window?.add({
       role: 'tool',
       tool_call_id: call.id,

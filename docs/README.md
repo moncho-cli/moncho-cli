@@ -35,7 +35,7 @@ docs/<domain>/<capability>/
 
 Domains:
 
-- `agent/` — the agent's tool contract and its sandboxing rules.
+- `agent/` — the agent's tool contract and its sandboxing rules, including the lossy `hint_file` sketch next to the exact read (`agent/file-hint`) and the bright row a refused call gets, worded like the chunk the model receives (`agent/tool-refusal`).
 - `context/` — the context window: token accounting (the live meter and the per-model totals), compaction, size resolution, the working-time counter the session adds up (`context/working-time`), and the per-call budget line (`context/call-pulse`) with its two resets.
 - `interface/` — what the user sees and presses: TUI (including the per-block timestamps, `interface/conversation-timestamps`), line CLI, interrupts.
 - `runtime/` — provider calls and startup wiring.

@@ -9,6 +9,7 @@ import { ContextWindow } from '../app/context-window.js';
 import { MAX_PARALLEL_TOOL_CALLS, TOO_MANY_TOOL_CALLS } from '../config/constants.js';
 import { loadTools } from '../utils/tool-loader.js';
 import { parseToolChunk } from '../app/tool-call-format.js';
+import { formatRefusalLine, isRefusalLine } from '../app/refusal-line.js';
 import {
   planToolBatch,
   dispatchToolCalls,
@@ -219,6 +220,35 @@ test('handleToolCalls() batches the calls of one assistant message', async () =>
     assert.match(parsed.body, /fixture content/, 'the real tool output travels in the envelope');
     assert.equal(parsed.calls, 2);
   }
+});
+
+test('a call beyond the cap is refused in one row, worded like its chunk', async () => {
+  const recorder = recordingTools();
+  const chunks = [];
+  const window = { add: (chunk) => { chunks.push(chunk); return chunk; } };
+  const lines = [];
+  const calls = [
+    ...[0, 1, 2, 3, 4].map((i) => call(`c${i}`, 'fast', { intent: `call ${i}` })),
+    call('c5', 'fast', { intent: 'one too many' }),
+  ];
+
+  const report = await handleToolBatch({
+    toolCalls: calls,
+    window,
+    toolFunctions: recorder.tools,
+    log: (line) => lines.push(String(line)),
+  });
+
+  assert.equal(report.refused, 1);
+  const payload = JSON.parse(parseToolChunk(chunks.at(-1).content).body);
+  assert.equal(payload.code, TOO_MANY_TOOL_CALLS);
+
+  // One row for the reader, carrying the very reason the model was handed: the two
+  // are built from the same string, so a rewrite of one is a rewrite of both.
+  const row = lines.find((line) => isRefusalLine(line));
+  assert.ok(row, `the refused call is shown in the transcript: ${JSON.stringify(lines)}`);
+  assert.equal(row, formatRefusalLine({ name: 'fast', reason: payload.message }));
+  assert.match(row, /only 5 run in a batch/);
 });
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));

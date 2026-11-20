@@ -25,6 +25,7 @@ const flush = async (rounds = 3) => {
 test('each tool name maps to its operation family, and an unknown name to other', () => {
   assert.deepEqual(TOOL_FAMILIES, {
     read_file: 'read',
+    hint_file: 'read',
     blob: 'read',
     grep: 'read',
     write_file: 'write',

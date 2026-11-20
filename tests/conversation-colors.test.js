@@ -5,13 +5,17 @@ import {
   CONVERSATION_COLORS,
   INTENT_COLOR,
   INTENT_BOLD,
+  REFUSAL_COLOR,
+  REFUSAL_BOLD,
   classifyLine,
   colorizeIntent,
   colorizeLine,
   colorizeLines,
+  colorizeRefusal,
   highlightIntentSpans,
   isTagged,
 } from '../app/theme.js';
+import { REFUSAL_MARK, REFUSAL_VERB, formatRefusalLine, isRefusalLine } from '../app/refusal-line.js';
 import { formatTranscript, formatUserEcho } from '../app/tui-render.js';
 import { withTui, visible, plainText } from './support/tui-harness.js';
 
@@ -36,7 +40,7 @@ const flush = async (rounds = 3) => {
 
 test('the palette names one colour per kind of conversation row', () => {
   assert.deepEqual(Object.keys(CONVERSATION_COLORS).sort(), [
-    'context', 'error', 'intent', 'notice', 'tool', 'tracking', 'user',
+    'context', 'error', 'intent', 'notice', 'refusal', 'tool', 'tracking', 'user',
   ]);
   for (const [kind, color] of Object.entries(CONVERSATION_COLORS)) {
     // blessed tag colours are hyphenated names ('bright-blue'), never hex

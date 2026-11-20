@@ -14,7 +14,7 @@ import { ConversationManager } from '../app/conversation-manager.js';
 const tool = (name) => ({ type: 'function', function: { name, parameters: {} } });
 
 const ALL = [
-  tool('read_file'), tool('blob'), tool('grep'), tool('compact_context'),
+  tool('read_file'), tool('hint_file'), tool('blob'), tool('grep'), tool('compact_context'),
   tool('update_task'), tool('write_file'), tool('patch_file'), tool('delete_file'),
   tool('run_bash'), tool('run_npm'),
 ];

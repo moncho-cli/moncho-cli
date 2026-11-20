@@ -1,0 +1,45 @@
+id: agent/file-hint
+domain: agent
+title: A lossy sketch of a file (hint_file) next to the exact read
+status: active
+summary: >
+  hint_file is read_file with the same paging and one deliberate difference: the page
+  comes back sketched. utils/file-hint.js normalises newlines, collapses every run of
+  blank lines to one, expands tabs on an eight-column grid, cuts long lines with a
+  "...[N chars after]" marker and finally caps the whole hint on a line boundary with
+  the same marker. The sketch is lossy about content and exact about coordinates: the
+  <hint path=... from=... to=... lines=... chars=... of=...> delimiter reports the line
+  range from the same offset maths read_file uses plus the characters returned against
+  the characters the page held, so the model can see what it did not see and switch to
+  read_file when it needs the bytes. The path goes through the path sandbox, a failure
+  is the shared JSON error shape (INVALID_PATH, NOT_FOUND, UNEXPECTED_ERROR), the tool
+  is read-only, and the delimiter renders as a header in its own branch so a hint can
+  never read as a read.
+code:
+  - path: utils/file-hint.js
+    symbols: [TAB_WIDTH, MAX_LINE_CHARS, MAX_HINT_CHARS, truncationMarker, expandTabs, compressBlankLines, truncateLine, hintFileText, hintSavings]
+  - path: tools/hint_file.js
+    symbols: [hintTag, wrapHint, definition, execute]
+  - path: tools/read_file.js
+    symbols: [lineNumberAtOffset]
+  - path: app/tui-render.js
+    symbols: [formatTranscript, escapeTags]
+  - path: app/mode-policy.js
+    symbols: [READ_ONLY_TOOLS, refusalForMode]
+  - path: app/tool-palette.js
+    symbols: [TOOL_FAMILIES, toolFamily]
+  - path: config/prompt.md
+    symbols: []
+tests:
+  - path: tests/hint-file.test.js
+    cases:
+      - expandTabs aligns on an eight-column grid
+      - compressBlankLines collapses a run to one line and drops the edges
+      - truncateLine keeps the head and reports the characters it dropped
+      - hintFileText applies the steps in order and reports what it cut
+      - hintFileText caps the whole hint on a line boundary
+      - hint_file wraps a sketch in <hint> tags with the page coordinates
+      - "hint_file pages a file the way read_file does, negative offsets included"
+      - hint_file refuses an escaping path and reports a missing one
+      - hint_file is a read-only tool in the read family
+      - "the hint delimiter renders as a header, not raw text"

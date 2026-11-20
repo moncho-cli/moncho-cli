@@ -73,6 +73,9 @@ intent: read the fixture
   `guidance`), stored in the call's own `tool` chunk, so the provider's pairing is
   untouched and the model learns *which* call was blocked and why. The batch then
   reports it as `guarded` next to `executed` and `refused`.
+- The **reader** gets the same news as one bright `✖ Refused …` row printed where the
+  call was announced (`docs/agent/tool-refusal`), so a refusal is never only inside a
+  collapsed body.
 - With **no gate installed** the batch behaves exactly as it did before: the abort
   check, the unknown-tool error and the throwing-tool error are unchanged. What the
   gate decides is a session policy (`docs/interface/modes`), never the batch's

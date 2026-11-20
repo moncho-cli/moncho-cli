@@ -4,8 +4,9 @@ title: One colour per kind of conversation row, one per tool family, and a brigh
 status: active
 summary: >
   app/theme.js names one blessed colour per kind of transcript row (the echoed
-  prompt, tool calls and tool results, the reason for a call, context notices,
-  errors, low-key chrome) and classifyLine()/colorizeLine() apply it at the end of
+  prompt, tool calls and tool results, the reason for a call, a refused call
+  (refusal: bright red, bold, from app/refusal-line.js), context notices, errors,
+  low-key chrome) and classifyLine()/colorizeLine() apply it at the end of
   formatTranscript(). The tool kind is subdivided by app/tool-palette.js, which maps
   a tool name to an operation family — read (read_file, blob, grep, bright cyan),
   write (write_file, patch_file, delete_file, green), bash (run_bash, run_npm,
@@ -27,7 +28,7 @@ summary: >
   mark itself is painted in the low-key chrome colour (STAMP_COLOR, colorizeStamp).
 code:
   - path: app/theme.js
-    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, INTENT_COLOR, INTENT_BOLD, STAMP_COLOR, colorizeIntent, colorizeStamp, highlightIntentSpans, splitStamp, isTagged, classifyLine, colorizeLine, colorizeLines]
+    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, INTENT_COLOR, INTENT_BOLD, REFUSAL_COLOR, REFUSAL_BOLD, STAMP_COLOR, colorizeIntent, colorizeRefusal, colorizeStamp, highlightIntentSpans, splitStamp, isTagged, classifyLine, colorizeLine, colorizeLines]
   - path: app/tool-palette.js
     symbols: [TOOL_FAMILIES, TOOL_COLORS, toolFamily, toolColorFor, toolNameOf]
   - path: app/tui-render.js

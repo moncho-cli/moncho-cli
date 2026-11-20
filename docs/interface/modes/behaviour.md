@@ -145,7 +145,9 @@ session start read-only, and both are wrong.
 - The refusal that stops a mode change and the refusal that stops a tool call are the
   same idea at two levels: the mode answers *what this session is for*, and the gate
   answers *what this particular call may do*. A refused call comes back to the model
-  as a structured `TOOL_REFUSED_BY_MODE` result naming the mode.
+  as a structured `TOOL_REFUSED_BY_MODE` result naming the mode, and the **reader sees
+  it too**: `handleToolBatch()` prints one `✖ Refused …` row where the call was
+  announced, in the palette's own bright-red bold refusal kind (`docs/agent/tool-refusal`).
 
 ## The label and the colour
 

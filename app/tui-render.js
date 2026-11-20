@@ -47,6 +47,8 @@ const BLOBS_TAG_RE = /^\s*<blobs\s+path="([^"]*)"\s+count=(\d+)\s+bytes=(\d+)/;
 const BLOBS_END_RE = /^\s*<\/blobs>\s*$/;
 const BLOB_TAG_RE = /^\s*<blob\s+path="([^"]*)"(?:\s+bytes=(\d+)\s+lines=(\d+)|\s+skipped="([^"]*)")?/;
 const BLOB_END_RE = /^\s*<\/blob>\s*$/;
+const HINT_TAG_RE = /^\s*<hint\s+path="([^"]*)"(?:\s+from=(\d+)\s+to=(\d+))?\s+lines=([^\s>]+)\s+chars=(\d+)\s+of=(\d+)/;
+const HINT_END_RE = /^\s*<\/hint>\s*$/;
 
 /** Blessed parses `{...}` as tags, so braces in untrusted text must be escaped. */
 export function escapeTags(text) {
@@ -78,6 +80,17 @@ function renderDelimiter(raw) {
     return `{cyan-fg}┌─ ${escapeTags(filePath)}${range} · lines=${escapeTags(lines)}{/cyan-fg}`;
   }
   if (FILE_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+
+  // A hint is a read too (same family, same cyan), but the header says "hint" and
+  // reports the characters saved, so a sketch can never read as exact bytes.
+  const hint = raw.match(HINT_TAG_RE);
+  if (hint) {
+    const [, hintPath, from, to, lines, chars, of] = hint;
+    const range = from && to ? ` from=${from} to=${to}` : '';
+    return `{cyan-fg}┌─ hint ${escapeTags(hintPath)}${range}`
+      + ` · lines=${escapeTags(lines)} · ${chars}/${of} chars${truncationSuffix(raw)}{/cyan-fg}`;
+  }
+  if (HINT_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
 
   const grep = raw.match(GREP_TAG_RE);
   if (grep) {

@@ -1,0 +1,43 @@
+id: agent/tool-refusal
+domain: agent
+title: A refused call is shown as its own bright row, worded like the chunk the model gets
+status: active
+summary: >
+  A call stopped before it runs — by the pre-dispatch gate of app/tool-guard.js or by
+  the batch cap of app/tool-batch.js — is news for the reader as much as for the
+  model. app/refusal-line.js#formatRefusalLine is the one wording (a leaf module that
+  imports nothing, so the pure palette can recognise it without pulling the app in),
+  naming the call, the mode when there is one, and the refusing layer's own reason;
+  REFUSAL_MARK/REFUSAL_VERB/REFUSAL_LINE_RE and isRefusalLine() are its signature. The
+  row is painted in its own kind — CONVERSATION_COLORS.refusal 'bright-red' plus
+  REFUSAL_BOLD, via colorizeRefusal()/classifyLine()/colorizeLine() — which is
+  deliberately not the plain red of an Error row, and the classification runs before
+  the Error rules so a reason mentioning an error stays a refusal. handleToolBatch()
+  prints it for both sources, and the cap refusal is worded from the same string it
+  puts in the chunk (formatBatchRefusalReason), so the reader and the model can never
+  be told different things. Colour is presentation only: the model still reads its
+  structured [error] body, and no row ever becomes a chunk.
+code:
+  - path: app/refusal-line.js
+    symbols: [REFUSAL_MARK, REFUSAL_VERB, REFUSAL_LINE_RE, formatRefusalLine, isRefusalLine]
+  - path: app/tool-batch.js
+    symbols: [formatBatchRefusalReason, formatBatchRefusal, planToolBatch, dispatchToolCalls, handleToolBatch]
+  - path: app/tool-guard.js
+    symbols: [allowAllGate, guardToolCall, formatGuardRefusal, TOOL_GUARD_REFUSAL]
+  - path: app/theme.js
+    symbols: [CONVERSATION_COLORS, REFUSAL_COLOR, REFUSAL_BOLD, colorizeRefusal, classifyLine, colorizeLine]
+  - path: app/tool-call-format.js
+    symbols: [formatToolResultChunk, formatCallSignature, parseToolChunk]
+tests:
+  - path: tests/tool-refusal.test.js
+    cases:
+      - "the refusal row names the call, the mode and the reason"
+      - "a refusal is bright red and bold, and never a plain error"
+      - "the refusal reaches a rendered transcript, and the glyphs are untouched"
+      - "the row is wired to the batch: a refused call prints it and still tells the model"
+  - path: tests/tool-guard.test.js
+    cases:
+      - "a refused call prints a bright row that names it, and still tells the model why"
+  - path: tests/tool-batch.test.js
+    cases:
+      - "a call beyond the cap is refused in one row, worded like its chunk"

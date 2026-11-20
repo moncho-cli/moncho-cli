@@ -1,5 +1,6 @@
 import { STAMP_RE } from './transcript-stamp.js';
 import { toolColorFor, toolNameOf } from './tool-palette.js';
+import { REFUSAL_LINE_RE } from './refusal-line.js';
 
 /**
  * The conversation palette (task-backlog: "conversation needs colors to be
@@ -67,6 +68,11 @@ export const CONVERSATION_COLORS = Object.freeze({
   notice: 'grey',
   /** a `[Tracking]` row: a task.md / implementation_plan.md update */
   tracking: 'bright-green',
+  /**
+   * a refused tool call: the `✖ Refused …` row `formatRefusalLine()` writes; the
+   * bright red no other row uses
+   */
+  refusal: 'bright-red',
 });
 
 /** The colour the intent is painted in (task-backlog: "a brightish blue"). */
@@ -83,6 +89,10 @@ export const TRACKING_BOLD = true;
 /** The colour a timestamp is painted in: chrome, never the row it introduces. */
 export const STAMP_COLOR = CONVERSATION_COLORS.notice;
 
+/** The colour a refused call is painted in: impossible to mistake for prose. */
+export const REFUSAL_COLOR = CONVERSATION_COLORS.refusal;
+/** A refusal is news, so it carries bold as well as the bright colour. */
+export const REFUSAL_BOLD = true;
 /** A line the markdown renderer already tagged (fences, delimiters, quotes…). */
 const ALREADY_TAGGED = /^\{(?:bold|underline|inverse|blink|invisible|[a-z-]+-bg|[a-z-]+-fg)/;
 
@@ -145,6 +155,17 @@ export function colorizeTracking(text) {
   return `{${TRACKING_COLOR}-fg}{bold}${body}{/bold}{/${TRACKING_COLOR}-fg}`;
 }
 
+/**
+ * One refusal row, painted the way the news it carries should read: the bright red
+ * no other row uses, plus bold, so a refused call is findable in a wall of tool
+ * output and can never be mistaken for a plain error (red, not bold) or for the
+ * yellow the batch cap's old line was printed in.
+ */
+export function colorizeRefusal(text) {
+  const body = String(text ?? '');
+  return `{${REFUSAL_COLOR}-fg}{bold}${body}{/bold}{/${REFUSAL_COLOR}-fg}`;
+}
+
 /** One timestamp, painted as chrome: the low-key colour, and never bold. */
 export function colorizeStamp(stamp) {
   const body = String(stamp ?? '');
@@ -187,6 +208,9 @@ export function classifyLine(line) {
   if (rest.trim() === '') return null;
   if (isTagged(rest)) return null;
 
+  // The refusal row comes first: it is the palette's own marker plus a verb, and a
+  // reason that happens to mention an error must not repaint it as one.
+  if (REFUSAL_LINE_RE.test(rest)) return 'refusal';
   if (/^\s*\[error\]/i.test(rest) || /^Error\b/.test(rest) || rest.includes('⚠️')) return 'error';
   // the echo header is exactly `You:` on a line of its own (formatUserEcho)
   if (rest === USER_ECHO_HEADER) return 'user';
@@ -213,6 +237,7 @@ export function colorizeLine(line) {
   // No kind: the line keeps whatever the markdown renderer gave it — but a stamp in
   // front of it is chrome and is still painted as such.
   if (!kind) return stamp ? `${prefix}${rest}` : text;
+  if (kind === 'refusal') return `${prefix}${colorizeRefusal(rest)}`;
   if (kind === 'intent') return `${prefix}${colorizeIntent(rest)}`;
   if (kind === 'tracking') return `${prefix}${colorizeTracking(rest)}`;
   // A tool row is painted by *what the tool does* — reading, writing, running a

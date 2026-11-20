@@ -8,6 +8,8 @@ import {
   TOOL_GUARD_REFUSAL,
 } from '../app/tool-guard.js';
 import { dispatchToolCalls, handleToolBatch } from '../app/tool-batch.js';
+import { formatRefusalLine, isRefusalLine } from '../app/refusal-line.js';
+import { classifyLine, colorizeLine } from '../app/theme.js';
 
 /**
  * The pre-dispatch call gate: the one seam that can refuse a call before it runs.
@@ -127,4 +129,37 @@ test('handleToolBatch() stores a refusal as the tool chunk of the refused call',
   assert.equal(report.guarded, 1);
   assert.equal(report.executed, 1);
   assert.deepEqual(report.order, [toolChunk.tool_call_id]);
+});
+
+test('a refused call prints a bright row that names it, and still tells the model why', async () => {
+  const window = { chunks: [], add(chunk) { this.chunks.push(chunk); } };
+  const lines = [];
+  const reason = 'Design writes only the tracking files';
+
+  const report = await handleToolBatch({
+    toolCalls: [call('write_file')],
+    window,
+    log: (line) => lines.push(String(line)),
+    toolFunctions: { write_file: async () => 'should not run' },
+    gate: () => ({ reason, mode: 'design' }),
+  });
+
+  // The reader gets one row, where the refused call was announced, saying which
+  // call, in which mode, and why.
+  const row = lines.find((line) => isRefusalLine(line));
+  assert.ok(row, `the refusal is shown next to the call: ${JSON.stringify(lines)}`);
+  assert.equal(row, formatRefusalLine({ name: 'write_file', reason, mode: 'design' }));
+  assert.match(row, /write_file/);
+  assert.match(row, /design/);
+  assert.match(row, new RegExp(reason));
+
+  // It is the palette's own refusal kind: bright red and bold, never the plain red
+  // an error row carries (the two sit side by side in a real transcript).
+  assert.equal(classifyLine(row), 'refusal');
+  assert.match(colorizeLine(row), /^\{bright-red-fg\}\{bold\}/);
+
+  // The model gets the same reason in its own chunk, so both halves agree.
+  const toolChunk = window.chunks.find((chunk) => chunk.role === 'tool');
+  assert.match(toolChunk.content, new RegExp(reason));
+  assert.equal(report.guarded, 1);
 });
