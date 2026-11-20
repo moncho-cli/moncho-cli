@@ -24,7 +24,7 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `harness-tools.test.js` | The tool contract (`intent`), the read_file delimiters, the verified writes and the task.md protocol. |
 | `tracking-format.test.js` | The canonical shape of both tracking files: the closed status set, the skeleton, the validator, the legacy upgrade, and the template the model is shown in the prompt and the tool description. |
 | `tracking-store.test.js` | Where the pair lives: one folder per session, the file/record/root read order, the mirrored writes, and the seeding that never recreates the root files. |
-| `tracking-fence.test.js` | Who may author them: a `write_file` draft re-rendered into the canonical document, and a `patch_file` into one refused as tool-owned. |
+| `tracking-fence.test.js` | Who may author them: a `write_file` draft re-rendered into the canonical document, and an `edit_file` into one refused as tool-owned. |
 | `tracking-notice.test.js` | That an update is *visible*: the `[Tracking]` rows an item completion, a plan reset and a ticked step print, and the contrasting bright-green they are painted in. |
 | `context-window.test.js` | The context machinery: token estimation, the 80/20 compaction, the live window and the `compact_context` tool. |
 | `command-sandbox.test.js` | The sandbox rules: the allow-list, the shell-free refusals, and the structured npm failures. |
@@ -33,6 +33,8 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `tool-multicall.test.js` | The multicall grammar: the call signature, the `<tool-multicall result>` envelope, the round-trip and the replay of an enveloped chunk. |
 | `tool-batch.test.js` | Running one batch: the five-call cap, the simultaneous dispatch in call order, the refusal, and the chunks the loop stores. |
 | `patch.test.js` | Unified-diff application, its error codes and all-or-nothing behaviour. |
+| `edit.test.js` | Exact literal search/replace: literal matching, the two refusals with their evidence, order, all-or-nothing. |
+| `edit-engine.test.js` | The pure edit engine and its miss diagnostics: literal matching, the candidate report, the bounds. |
 | `tui.test.js` | The blessed TUI layout, transcript rendering and pastes. |
 | `tui-modules.test.js` | The TUI's extracted parts: the paste registry, the compaction notice, and the key bindings — interrupts and Tab taken pre-dispatch, scrolling on the screen. |
 | `tui-status.test.js` | The status row: right-aligned context meter and spinner. |

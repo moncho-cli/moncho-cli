@@ -5,7 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { applyPatch, applyPatchToString } from '../utils/patch_lib.js';
-import { execute as patchFileExecute } from '../tools/patch_file.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-patch-test-'));
 process.chdir(root);
@@ -217,22 +216,6 @@ test('patches touching multiple files are rejected', () => {
 
   assert.throws(() => applyPatch(patch, 'one.txt'), (error) => error.code === 'MULTIPLE_FILES');
   assert.equal(readFile('one.txt'), 'a\n');
-});
-
-test('patch_file tool returns a structured success/error JSON contract', async () => {
-  writeFile('tool.txt', 'a\nb\n');
-  const good = diff('tool.txt', 1, 2, 1, 2, [' a', '-b', '+B']);
-
-  const ok = JSON.parse(await patchFileExecute({ path: 'tool.txt', patchStr: good }));
-  assert.equal(ok.status, 'success');
-  assert.equal(ok.verification.readbackMatches, true);
-  assert.equal(readFile('tool.txt'), 'a\nB\n');
-
-  const bad = diff('tool.txt', 1, 2, 1, 2, [' a', '-Z', '+Y']);
-  const failed = JSON.parse(await patchFileExecute({ path: 'tool.txt', patchStr: bad }));
-  assert.equal(failed.status, 'error');
-  assert.equal(failed.code, 'HUNK_MISMATCH');
-  assert.equal(readFile('tool.txt'), 'a\nB\n');
 });
 
 test('applyPatchToString applies a patch without touching the filesystem', () => {

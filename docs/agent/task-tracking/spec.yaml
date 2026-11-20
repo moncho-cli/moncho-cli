@@ -26,8 +26,6 @@ code:
     symbols: [parseTaskItems, readTaskStatus, findTaskItem, markItemDone, nextPendingItem, renderPlan, definition, execute]
   - path: tools/write_file.js
     symbols: [definition, execute]
-  - path: tools/patch_file.js
-    symbols: [definition, execute]
   - path: utils/plan-file.js
     symbols: [CHECKBOX_PATTERN, STATUS_PATTERN, parseCheckboxItems, parsePlanSteps, findCheckboxItem, findPlanStep, markCheckboxItem, markPlanStepDone, readStatusLine, replaceStatusLine, planProgress, renderPlan]
   - path: utils/session-store.js
@@ -61,8 +59,8 @@ tests:
       - a write_file draft is normalised instead of stored verbatim
       - write_file stores the canonical document when it is handed a checklist
       - write_file leaves an ordinary file byte-for-byte alone
-      - patch_file refuses a tracking target and names the tool to use
-      - patch_file still patches an ordinary file
+      - a pasted diff into a tracking file is refused, and names the tool to use
+      - the same diff still patches an ordinary file
   - path: tests/harness-tools.test.js
     cases:
       - parseTaskItems/markItemDone handle the task.md checkbox syntax

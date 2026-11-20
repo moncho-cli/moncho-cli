@@ -72,7 +72,7 @@ gate read the live session mode, so a `Tab` mid-turn tightens the very next call
   known once the call arrives, and unlike a write it cannot be corrected by writing
   again — so it never gets the two-file exception, and `design` refuses it exactly
   like the shell family.
-- `design` writes its two files through `write_file` / `patch_file`, whose target is
+- `design` writes its two files through `write_file` / `edit_file`, whose target is
   checked after `normalizeTargetPath()`: `./task.md`, `/task.md` and `a/../task.md`
   are the same file, and a path that walks out of the project is never writable.
 - A per-session target is accepted only in its exact shape,

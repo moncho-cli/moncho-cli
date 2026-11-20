@@ -1,9 +1,15 @@
 # Agent — patch application
 
-`patch_file` is the agent's precise editing tool. This spec fixes the accepted
-input format, the guarantees, and the exact failure codes so a caller can always
-tell *why* a patch was refused and what to do next. Nothing is ever written on a
-refusal.
+This is the **engine** behind `edit_file`'s `patchStr` argument, not a tool of its own:
+`docs/agent/line-edits` owns the interface, and a diff reaches the system only when the
+user pasted one. The engine itself is unchanged from when it had a tool of its own, which
+is why this spec still describes the format in full.
+
+The routine path moved for a measured reason: across the recorded sessions nearly every
+refusal here was `INVALID_PATCH_LINE` or `HUNK_COUNT_MISMATCH` — diff bookkeeping, not a
+disagreement about the file. The guarantees below are unchanged; this spec still fixes
+the accepted input format, the guarantees, and the exact failure codes so a caller can
+always tell *why* a patch was refused. Nothing is ever written on a refusal.
 
 ## Input
 
@@ -50,5 +56,6 @@ the first mismatching line.
 
 ## See also
 
+- The routine editor: `docs/agent/line-edits`
 - Implementation: `utils/patch_lib.js`, `tools/patch_file.js`
 - Proof: `tests/patch.test.js`, `tests/harness-tools.test.js`

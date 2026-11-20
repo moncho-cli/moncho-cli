@@ -10,7 +10,9 @@ of your repository, and talks to any OpenAI-compatible provider or to Ollama.
   the result and kept in the context.
 - **A sandbox, not a shell.** `run_bash` accepts one allow-listed command and no shell
   metacharacters; file tools refuse to leave the project root.
-- **Verified writes.** `patch_file` applies a unified diff and reads the file back
+- **Edits that are easy to drive.** `edit_file` replaces literal text, so there are no
+  diff headers and no line counts to get wrong; a diff the user pasted is applied verbatim.
+- **Verified writes.** `edit_file` writes through a temp file and reads it back
   byte-for-byte before reporting success.
 - **A context budget it manages.** Usage is estimated per call, compaction is announced
   before it runs, and the tail of the conversation stays verbatim.

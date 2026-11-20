@@ -57,7 +57,7 @@ tests:
       - a write into a file that changed since the read is refused with STALE_READ
       - re-reading clears the refusal, and the write then lands
       - a successful write leaves no stale view behind, so the next write is not refused
-      - patch_file refuses a stale target before it matches a single hunk
+      - a pasted diff is refused on a stale target before it matches a single hunk
       - a file the model never read, and a brand-new file, are written as before
       - hint_file and blob count as reads, because the model saw those bytes
       - delete_file forgets the path it removed, so a later create is not refused

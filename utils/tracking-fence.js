@@ -13,7 +13,7 @@ import { canonicalizeTrackingFile } from './tracking-format.js';
  *    one — a `design` session has no `add` action to grow a list from — so the content is
  *    accepted and immediately replaced by the canonical document built from it. The model
  *    cannot produce a malformed file; it can only produce a *draft* that is normalised.
- *  - **`patch_file` is refused.** A unified diff into a document the harness re-renders is
+ *  - **`edit_file` is refused.** A region change into a document the harness re-renders is
  *    never the right move: its hunks would be undone by the next `update_task` call, so
  *    the refusal names the tool to use instead.
  *
@@ -73,7 +73,7 @@ export function canonicalTrackingWrite(path, content) {
 }
 
 /**
- * The refusal for a `patch_file` call that names a tracking file, or `null`.
+ * The refusal for a `patch_file`-shaped call (`edit_file` with `patchStr`), or `null`.
  *
  * @param {string} path the path argument of the call
  * @returns {{status: string, code: string, message: string, guidance: string, path: string}|null}
@@ -116,6 +116,33 @@ export function trackingDeleteRefusal(path) {
     guidance:
       `Use ${TRACKING_TOOL} to change the document instead (\`action: "complete"\` to move on, `
       + '`"status"` to mark the list done).',
+    path,
+  };
+}
+
+/**
+ * The refusal for an `edit_file` call that names a tracking file, or `null`.
+ *
+ * The same rule as the patch above, said in the words of the other operation: a
+ * search/replace into a document the harness re-renders is undone by the next
+ * tracking call, because `update_task` writes the whole file rather than a region
+ * of it. Both refusals answer with the same code, so a caller learns only one.
+ *
+ * @param {string} path the path argument of the call
+ * @returns {{status: string, code: string, message: string, guidance: string, path: string}|null}
+ */
+export function trackingEditRefusal(path) {
+  const kind = toolOwnedKind(path);
+  if (!kind) return null;
+  return {
+    status: 'error',
+    code: TRACKING_FILE_REFUSAL,
+    message:
+      `${basename(path)} is rewritten whole by ${TRACKING_TOOL}: an edit into a document the `
+      + 'harness re-renders would be undone by the next tracking call.',
+    guidance:
+      `Use ${TRACKING_TOOL} instead (\`action: "list"\` to read, \`"start"\`/\`"complete"\` with `
+      + '`steps` to write, `"step"` to tick one step).',
     path,
   };
 }

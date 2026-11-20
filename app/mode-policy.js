@@ -21,7 +21,7 @@ import { SESSION_DIR } from '../utils/session-store.js';
  * | mode | may read | may write |
  * | ---- | -------- | --------- |
  * | `chat` | the read-only set | no tool: its own session record is the host's |
- * | `design` | the read-only set, plus `update_task` | `task.md` / `implementation_plan.md`, through `write_file` / `patch_file` |
+ * | `design` | the read-only set, plus `update_task` | `task.md` / `implementation_plan.md`, through `write_file` / `edit_file` |
  * | `work` | everything | everything |
  *
  * A **shell is not a scoped writer**: `run_bash` / `run_npm` can write a file, rewrite
@@ -29,7 +29,7 @@ import { SESSION_DIR } from '../utils/session-store.js';
  * therefore refused in both `chat` and `design`. Treating them as read-only would make
  * every other rule here decorative.
  *
- * A **delete is not a scoped write either**: `write_file` and `patch_file` are scoped by
+ * A **delete is not a scoped write either**: `write_file` and `edit_file` are scoped by
  * path because a `design` session authors exactly two documents, and a document can be
  * corrected by writing it again. Nothing a mode may write is anything it may destroy, so
  * `delete_file` is its own family (`DESTRUCTIVE_TOOLS`) and is refused in `chat` and
@@ -74,7 +74,7 @@ export const DESIGN_WRITABLE_FILES = Object.freeze(['task.md', 'implementation_p
 const SESSION_TRACKING_PREFIX = `${SESSION_DIR.replace(/\/+$/, '')}/`;
 
 /** Writers that name the file they touch, so the policy can scope them by path. */
-export const SCOPED_WRITER_TOOLS = Object.freeze(['write_file', 'patch_file']);
+export const SCOPED_WRITER_TOOLS = Object.freeze(['write_file', 'edit_file']);
 
 /**
  * The one tool that *removes* a file. It is a writer, and the strictest kind: a write

@@ -1,17 +1,19 @@
 id: agent/patch-application
 domain: agent
-title: Unified-diff patching with all-or-nothing verification
+title: Unified-diff engine with all-or-nothing verification
 status: active
 summary: >
-  patch_file applies one unified diff to one project file. It rejects malformed
-  headers, wrong hunk counts and mismatching context with stable error codes, is
-  all-or-nothing across hunks, and verifies the written result byte-for-byte. It
-  tolerates line-number drift inside a fuzz window and preserves CRLF and
-  no-newline-at-EOF.
+  The engine behind edit_file's patchStr argument (docs/agent/line-edits owns the
+  interface). It applies one unified diff to one project file, rejects malformed headers,
+  wrong hunk counts and mismatching context with stable error codes, is all-or-nothing
+  across hunks, and verifies the written result byte-for-byte. It tolerates line-number
+  drift inside a fuzz window and preserves CRLF and no-newline-at-EOF. It is reachable
+  only as edit_file's pasted-diff branch, because a diff the model authors itself is what
+  the line-edits spec exists to replace.
 code:
   - path: utils/patch_lib.js
     symbols: [PatchError, applyPatch, applyPatchToString, parsePatch, PATCH_FUZZ_FACTOR, FUZZ_WINDOW]
-  - path: tools/patch_file.js
+  - path: tools/edit_file.js
     symbols: [definition, execute]
 tests:
   - path: tests/patch.test.js
@@ -31,11 +33,10 @@ tests:
       - path traversal is rejected
       - a +++ header that disagrees with the path argument is rejected
       - patches touching multiple files are rejected
-      - patch_file tool returns a structured success/error JSON contract
       - applyPatchToString applies a patch without touching the filesystem
       - wrong-context patch is rejected with HUNK_MISMATCH and leaves the file unchanged
       - a git-style multi-file patch is rejected with MULTIPLE_FILES
       - a patch missing the +++ header is rejected as INVALID_PATCH
   - path: tests/harness-tools.test.js
     cases:
-      - patch_file still reports the structured success/error contract
+      - edit_file applies a pasted diff and reports the structured success/error contract

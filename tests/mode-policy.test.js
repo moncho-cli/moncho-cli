@@ -16,7 +16,7 @@ const tool = (name) => ({ type: 'function', function: { name, parameters: {} } }
 const ALL = [
   tool('read_file'), tool('hint_file'), tool('blob'), tool('grep'), tool('read_capture'),
   tool('compact_context'),
-  tool('update_task'), tool('write_file'), tool('patch_file'), tool('delete_file'),
+  tool('update_task'), tool('write_file'), tool('edit_file'), tool('delete_file'),
   tool('run_bash'), tool('run_npm'),
 ];
 
@@ -88,7 +88,7 @@ test('Design writes the two tracking files and nothing else', () => {
     assert.equal(refusalForMode(MODES.DESIGN, call(name)), null, name);
   }
   assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path: 'task.md' })), null);
-  assert.equal(refusalForMode(MODES.DESIGN, call('patch_file', { path: './task.md' })), null);
+  assert.equal(refusalForMode(MODES.DESIGN, call('edit_file', { path: './task.md' })), null);
   assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path: 'implementation_plan.md' })), null);
 
   // A session writes its own pair where they now live, under agent/sessions/<id>/.

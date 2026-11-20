@@ -47,7 +47,7 @@ test('formatCallSignature() summarises the tool name and the type of each parame
     'blob(paths=array, opts=object)',
   );
   // arguments that did not parse still describe something useful
-  assert.equal(formatCallSignature({ name: 'patch_file', args: 'not json' }), 'patch_file(raw=string(8))');
+  assert.equal(formatCallSignature({ name: 'edit_file', args: 'not json' }), 'edit_file(raw=string(8))');
   assert.equal(formatCallSignature({ name: 'pwd' }), 'pwd()');
   assert.equal(formatCallSignature(), 'unknown_tool()');
   assert.equal(formatArgType('abc'), 'string(3)');

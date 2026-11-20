@@ -16,7 +16,7 @@ import {
 import { execute as readFileExecute } from '../tools/read_file.js';
 import { execute as hintFileExecute } from '../tools/hint_file.js';
 import { execute as writeFileExecute } from '../tools/write_file.js';
-import { execute as patchFileExecute } from '../tools/patch_file.js';
+import { execute as editFileExecute } from '../tools/edit_file.js';
 import { execute as deleteFileExecute } from '../tools/delete_file.js';
 import { execute as blobExecute } from '../tools/blob.js';
 
@@ -123,13 +123,13 @@ test('a successful write leaves no stale view behind, so the next write is not r
   assert.equal(read('twice.txt'), 'c\n');
 });
 
-test('patch_file refuses a stale target before it matches a single hunk', async () => {
+test('a pasted diff is refused on a stale target before it matches a single hunk', async () => {
   clearReads();
   write('patchable.txt', 'a\nb\n');
   await readFileExecute({ path: 'patchable.txt', lineNumbers: false, intent: 'read before patching' });
   write('patchable.txt', 'a\nB\n');
 
-  const refused = parsed(await patchFileExecute({
+  const refused = parsed(await editFileExecute({
     path: 'patchable.txt',
     patchStr: '--- a/patchable.txt\n+++ b/patchable.txt\n@@ -1,2 +1,2 @@\n a\n-b\n+Z\n',
     intent: 'patch what I read',
@@ -142,7 +142,7 @@ test('patch_file refuses a stale target before it matches a single hunk', async 
 
   // Re-reading and retrying the patch is what clears it.
   await readFileExecute({ path: 'patchable.txt', lineNumbers: false, intent: 'learn the new bytes' });
-  const ok = parsed(await patchFileExecute({
+  const ok = parsed(await editFileExecute({
     path: 'patchable.txt',
     patchStr: '--- a/patchable.txt\n+++ b/patchable.txt\n@@ -1,2 +1,2 @@\n a\n-B\n+Z\n',
     intent: 'patch the bytes I just read',

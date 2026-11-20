@@ -30,7 +30,7 @@ test('each tool name maps to its operation family, and an unknown name to other'
     grep: 'read',
     read_capture: 'read',
     write_file: 'write',
-    patch_file: 'write',
+    edit_file: 'write',
     delete_file: 'write',
     run_bash: 'bash',
     run_npm: 'bash',
@@ -65,7 +65,7 @@ test('toolColorFor resolves a tool name, a family name and junk', () => {
   assert.equal(toolColorFor('read_file'), 'bright-cyan');
   assert.equal(toolColorFor('blob'), 'bright-cyan');
   assert.equal(toolColorFor('write_file'), 'green');
-  assert.equal(toolColorFor('patch_file'), 'green');
+  assert.equal(toolColorFor('edit_file'), 'green');
   assert.equal(toolColorFor('delete_file'), 'green');
   assert.equal(toolColorFor('run_bash'), 'yellow');
   assert.equal(toolColorFor('run_npm'), 'yellow');

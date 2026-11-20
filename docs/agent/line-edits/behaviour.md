@@ -1,0 +1,94 @@
+# Agent — diff-free line edits
+
+`edit_file` is the agent's **routine** editing tool. It replaces literal text: you give it
+the exact bytes to find and the bytes to put there, and it writes nothing until the search
+has matched. It exists because the *diff format* was the failure, not the edit — see
+"why this exists" below.
+
+It also takes `patchStr` — a unified diff applied verbatim, through the unchanged
+`utils/patch_lib.js` engine. That branch exists for exactly one case: **the user pasted a
+diff.** Then the model is forwarding a diff rather than authoring one, so the counts are
+the user's and cannot be got wrong; a malformed diff is reported back as a fact about the
+input. Never reach for it to express your own change.
+
+## Input
+
+- `path` (required) plus **one** of: `search`/`replace` (with `all`), an `edits`
+  array, or `patchStr`. Mixing them is `INVALID_ARGUMENTS`.
+- Or `edits: [{ search, replace, all? }]` — several edits, applied **in order**.
+  Passing both shapes at once is `INVALID_ARGUMENTS`, never a guess.
+- `search` is matched **literally**, by `indexOf`, never as a regular expression:
+  `a.b` matches `a.b` and not `aXb`. A model-supplied search is source code, and source
+  code is full of `*`, `(`, `[` and `$`.
+- An empty `search` is `EMPTY_SEARCH`; a `search` equal to its `replace` is `NO_CHANGES`
+  (the edit would do nothing); a missing file is `FILE_NOT_FOUND`.
+- At most 50 edits per call (`TOO_MANY_EDITS`), because a larger batch is a rewrite and
+  `write_file` says so in one place.
+
+## Guarantees
+
+- **All-or-nothing.** With several edits, nothing is written unless every one matched.
+  A batch that fails on its third edit leaves the file byte-identical, and the refusal
+  names which edit failed (`editIndex`, `editsInBatch`).
+- **Ordered.** Each edit matches against the result of the previous one, so a later edit
+  sees the earlier replacement.
+- **Verified.** The write goes through the shared atomic path (temp file, read-back,
+  rename), so success is only reported when the bytes on disk are the intended ones.
+- **Line endings are the file's.** A CRLF file whose search carries LF is matched as if it
+  were LF, and the CRLF is restored, so a model that types `\n` can still edit a Windows
+  file. A search that *does* carry `\r\n` is matched byte-for-byte.
+- **The shared rails hold.** The path sandbox refuses anything outside the project
+  (`INVALID_PATH`); a file the model read that changed on disk since is refused with
+  `STALE_READ`; `task.md` and `implementation_plan.md` are refused with
+  `TRACKING_FILE_TOOL_OWNED` and the tool to use instead.
+
+## Failure codes
+
+| Code | Meaning |
+| ---------------------- | -------------------------------------------------------------- |
+| `SEARCH_NOT_FOUND` | The search text is not in the file. Carries `candidates` and, when it can tell, a `hint`. |
+| `SEARCH_NOT_UNIQUE` | The search matched more than once and `all` was not set. Carries every `occurrences[].line`. |
+| `EMPTY_SEARCH` | `search` is missing or empty. |
+| `NO_CHANGES` | `search` equals `replace`, or the edits produced identical bytes. |
+| `INVALID_ARGUMENTS` | Neither shape supplied, both supplied, or a missing `path`. |
+| `TOO_MANY_EDITS` | More than 50 edits in one call. |
+| `FILE_NOT_FOUND` | There is no file at `path`. |
+| `INVALID_PATH` | The path escapes the project directory. |
+| `STALE_READ` | The file changed after the model read it. |
+| `TRACKING_FILE_TOOL_OWNED` | A tracking file: `update_task` owns it. |
+
+### A refusal is meant to be fixable in one retry
+
+A refusal that only says "not found" costs a re-read and another model call. So
+`SEARCH_NOT_FOUND` answers with **evidence**:
+
+- `candidates` — the lines that most resemble the search, best first, with their numbers.
+  The list is never empty when the file has any non-blank line: when nothing clears the
+  relevance floor the strongest lines are returned anyway, because an empty array tells
+  the caller nothing.
+- `hint` — *why* the text did not match, when the best candidate is the same text with
+  different bytes: indentation (`line N holds the same text but with 4 leading space(s),
+  not 2`), trailing whitespace, or a line-ending difference. This is the diagnosis
+  `HUNK_MISMATCH` never gave.
+
+`SEARCH_NOT_UNIQUE` answers with every matching line, so the caller can quote more
+context or set `all: true` deliberately.
+
+## Why this exists
+
+Measured across the recorded sessions, every `patch_file` failure was
+`INVALID_PATCH_LINE` (a hunk body line with a missing or wrong prefix) or
+`HUNK_COUNT_MISMATCH` (the `@@ -N,M` counts disagreeing with the body). Both are
+bookkeeping about the diff format, not a disagreement about the file. The genuine context
+mismatch (`HUNK_MISMATCH`) was roughly a tenth as common. A search/replace pair has no
+counts to get wrong and no per-line prefixes, so it removes the two dominant classes;
+what remains is `SEARCH_NOT_FOUND`, which is `HUNK_MISMATCH` with evidence attached.
+
+Nothing was ever written incorrectly under the old tool — every failure fired before the
+rename — so this is a change of *drivability*, not of safety.
+
+## See also
+
+- Implementation: `utils/edit_lib.js`, `tools/edit_file.js`
+- The diff-shaped fallback: `docs/agent/patch-application`
+- Proof: `tests/edit.test.js`

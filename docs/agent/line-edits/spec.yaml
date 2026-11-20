@@ -1,0 +1,53 @@
+id: agent/line-edits
+domain: agent
+title: Exact literal search/replace editing
+status: active
+summary: >
+  edit_file changes a file by replacing literal text. The search is matched exactly and is
+  never a regular expression; it must match once, or every occurrence with all: true.
+  Several edits in one call are applied in order and all-or-nothing, and nothing is written
+  unless every one matched. A miss is refused with SEARCH_NOT_FOUND carrying the nearest
+  candidate lines and, when it can tell, why the bytes differed (indentation, trailing
+  whitespace, line endings); an ambiguity is refused with SEARCH_NOT_UNIQUE carrying every
+  matching line. The search is matched against the file's own line endings, so a CRLF file
+  can be edited with an LF search. It is the routine edit tool because the diff format was
+  the measured failure: every recorded patch_file refusal was INVALID_PATCH_LINE or
+  HUNK_COUNT_MISMATCH, both of which a search/replace pair cannot express.
+code:
+  - path: utils/edit_lib.js
+    symbols: [applyOne, applyEditsToText, occurrences, MAX_EDITS]
+  - path: utils/edit-miss.js
+    symbols: [nearestCandidates, diagnoseMiss, similarity, splitLines, lineOfIndex, MAX_CANDIDATES, CANDIDATE_FLOOR, MIN_CANDIDATES]
+  - path: utils/edit-error.js
+    symbols: [EditError]
+  - path: tools/edit_file.js
+    symbols: [definition, execute]
+  - path: utils/tracking-fence.js
+    symbols: [trackingEditRefusal]
+tests:
+  - path: tests/edit-engine.test.js
+    cases:
+      - the search is literal, so regex metacharacters match themselves
+      - a miss caused by indentation is diagnosed
+      - an unrelated search still reports the strongest candidate lines
+      - an empty search is refused
+      - a search equal to its replacement is refused
+      - the edit engine is bounded and reports occurrences in order
+      - a replacement is literal, so a dollar sign is never a backreference
+  - path: tests/edit.test.js
+    cases:
+      - an edit replaces exactly the searched text and leaves the rest alone
+      - a search that does not appear is refused with the nearest candidates
+      - a search matching several times is refused with every line
+      - "all: true replaces every occurrence"
+      - several edits are applied in order
+      - a failing edit means nothing is written
+      - both the edits array and a search/replace pair are accepted, never both
+      - CRLF line endings are preserved
+      - a file that does not exist is refused with FILE_NOT_FOUND
+      - path traversal is rejected
+      - the tracking files are refused with the tool that owns them
+      - a file changed since it was read is refused with STALE_READ
+      - the tool returns a structured success/error JSON contract
+      - a pasted diff is applied verbatim, and refused when it does not fit
+      - the pasted-diff branch and a search/replace edit are never mixed

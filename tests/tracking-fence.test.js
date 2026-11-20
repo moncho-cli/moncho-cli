@@ -10,15 +10,16 @@ import {
 } from '../utils/tracking-fence.js';
 import { validateTrackingFile } from '../utils/tracking-format.js';
 import { execute as writeFileExecute } from '../tools/write_file.js';
-import { execute as patchFileExecute } from '../tools/patch_file.js';
+import { execute as editFileExecute } from '../tools/edit_file.js';
 
 /**
  * The fence around the two tracking files.
  *
  * They have a fixed shape and one owner (`update_task`), so the generic writers stay out
  * of the way in the two different ways the two operations deserve: `write_file` accepts
- * a draft and stores the canonical document, `patch_file` refuses outright because a
- * diff into a re-rendered file would be undone by the next tracking call.
+ * a draft and stores the canonical document, and both editing shapes of `edit_file`
+ * refuse outright because a region change into a re-rendered file would be undone by the
+ * next tracking call.
  */
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-fence-test-'));
@@ -89,7 +90,7 @@ test('write_file leaves an ordinary file byte-for-byte alone', async () => {
   assert.equal(read('notes.txt'), 'raw text\n');
 });
 
-test('patch_file refuses a tracking target and names the tool to use', async () => {
+test('a pasted diff into a tracking file is refused, and names the tool to use', async () => {
   fs.writeFileSync('implementation_plan.md', '# Plan\n\nstatus: pending\n\n## Steps\n\n- [ ] a\n', 'utf-8');
   const before = read('implementation_plan.md');
 
@@ -104,7 +105,7 @@ test('patch_file refuses a tracking target and names the tool to use', async () 
     ' ## Steps',
   ].join('\n');
 
-  const refused = JSON.parse(await patchFileExecute({
+  const refused = JSON.parse(await editFileExecute({
     path: 'implementation_plan.md',
     patchStr: patch,
     intent: 'edit the plan by hand',
@@ -117,9 +118,9 @@ test('patch_file refuses a tracking target and names the tool to use', async () 
   assert.equal(read('implementation_plan.md'), before, 'the fence never touches the file');
 });
 
-test('patch_file still patches an ordinary file', async () => {
+test('the same diff still patches an ordinary file', async () => {
   fs.writeFileSync('code.js', 'a\nb\n', 'utf-8');
-  const patched = JSON.parse(await patchFileExecute({
+  const patched = JSON.parse(await editFileExecute({
     path: 'code.js',
     patchStr: '--- a/code.js\n+++ b/code.js\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n',
     intent: 'change the fixture',

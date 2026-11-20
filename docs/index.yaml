@@ -23,6 +23,7 @@ specs:
   - agent/tool-multicall
   - agent/tool-refusal
   - agent/file-safety
+  - agent/line-edits
   - agent/patch-application
   - agent/command-sandbox
   - agent/command-capture

@@ -70,7 +70,7 @@ function parseSingleFile(patchString) {
   if (parsedList.length > 1) {
     throw new PatchError(
       'MULTIPLE_FILES',
-      'The patch contains more than one file section. Send one patch_file call per file.'
+      'The patch contains more than one file section. Send one edit_file call per file; the engine applies one file at a time.',
     );
   }
   const parsed = parsedList[0];

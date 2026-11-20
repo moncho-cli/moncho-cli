@@ -9,7 +9,7 @@ summary: >
   low-key chrome) and classifyLine()/colorizeLine() apply it at the end of
   formatTranscript(). The tool kind is subdivided by app/tool-palette.js, which maps
   a tool name to an operation family — read (read_file, blob, grep, bright cyan),
-  write (write_file, patch_file, delete_file, green), bash (run_bash, run_npm,
+  write (write_file, edit_file, delete_file, green), bash (run_bash, run_npm,
   yellow) and other (anything unlisted, the kind's own yellow) — so the backlog item
   "use different colors for read, write, and bash type of operations" holds; the read
   family is bright cyan because plain cyan is the user's own echo and the write family

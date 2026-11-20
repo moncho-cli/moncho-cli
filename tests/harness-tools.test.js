@@ -9,11 +9,11 @@ import { hasIntentParameter, parseToolArgs, getIntent, withIntentParameter } fro
 import { execute as readFileExecute, wrapFileContent } from '../tools/read_file.js';
 import { execute as writeFileExecute } from '../tools/write_file.js';
 import { execute as updateTaskExecute, parseTaskItems, markItemDone, renderPlan } from '../tools/update_task.js';
-import { execute as patchFileExecute } from '../tools/patch_file.js';
+import { execute as editFileExecute } from '../tools/edit_file.js';
 
 /**
  * The tool contract and the file tools: the shared `intent` parameter, the read_file
- * delimiters, the verified atomic writes of write_file/patch_file and the task.md
+ * delimiters, the verified atomic writes of write_file/edit_file and the task.md
  * protocol.
  *
  * The sandbox rules, the command-output document and the context machinery have their
@@ -47,7 +47,7 @@ test('every auto-loaded tool declares the required intent parameter', async () =
   }
 
   const names = tools.map((t) => t.function.name);
-  for (const expected of ['read_file', 'hint_file', 'write_file', 'patch_file', 'run_bash', 'run_npm', 'compact_context', 'update_task', 'grep', 'blob']) {
+  for (const expected of ['read_file', 'hint_file', 'write_file', 'edit_file', 'run_bash', 'run_npm', 'compact_context', 'update_task', 'grep', 'blob']) {
     assert.ok(names.includes(expected), `missing tool ${expected}`);
   }
 });
@@ -123,7 +123,7 @@ test('wrapFileContent is a pure, testable formatter', () => {
 });
 
 // ---------------------------------------------------------------------------
-// write_file + patch_file: verified atomic writes
+// write_file + edit_file: verified atomic writes
 // ---------------------------------------------------------------------------
 
 test('write_file reports verified success and rejects unsafe paths', async () => {
@@ -138,7 +138,7 @@ test('write_file reports verified success and rejects unsafe paths', async () =>
   assert.equal(fs.existsSync(path.join(path.dirname(root), 'escape.txt')), false);
 });
 
-test('patch_file still reports the structured success/error contract', async () => {
+test('edit_file applies a pasted diff and reports the structured success/error contract', async () => {
   writeFile('patch-tool.txt', 'a\nb\n');
   const good = [
     '--- a/patch-tool.txt',
@@ -149,12 +149,19 @@ test('patch_file still reports the structured success/error contract', async () 
     '+B'
   ].join('\n');
 
-  const ok = JSON.parse(await patchFileExecute({ path: 'patch-tool.txt', patchStr: good, intent: 'update fixture' }));
+  const ok = JSON.parse(await editFileExecute({ path: 'patch-tool.txt', patchStr: good, intent: 'update fixture' }));
   assert.equal(ok.status, 'success');
   assert.equal(readFile('patch-tool.txt'), 'a\nB\n');
 
-  const bad = JSON.parse(await patchFileExecute({ path: 'patch-tool.txt', patchStr: good.replace(' a', ' a') }));
+  // A diff that does not fit the file is refused, and the file is left alone.
+  const bad = JSON.parse(await editFileExecute({
+    path: 'patch-tool.txt',
+    patchStr: good.replace('-b', '-Z'),
+    intent: 'apply a diff that no longer fits',
+  }));
   assert.equal(bad.status, 'error');
+  assert.equal(bad.code, 'HUNK_MISMATCH');
+  assert.equal(readFile('patch-tool.txt'), 'a\nB\n', 'the refused diff changed nothing');
 });
 
 // ---------------------------------------------------------------------------
