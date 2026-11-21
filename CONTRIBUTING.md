@@ -56,6 +56,16 @@ that is where it should run: `/app/node_modules` is a volume seeded from the ima
 the suite resolves exactly the dependencies the agent does. Keeping the two the same is
 what makes a green suite mean something.
 
+### The host fence is off in this loop
+
+`./start.sh` runs *this* checkout, so it passes `MONCHO_MAINTAINER=1` into the container and
+the host fence is lifted (`docs/agent/host-fence`). A **user's** project gets the fence, which
+refuses git hooks and `.env.moncho` because the host executes both: a prompt-injected agent
+writing one would be running its own code on the host. A maintainer reads every diff and owns
+the repository, so a hook here is their tool, not an injection — the fence would only be in
+the way. The read-only shadow mounts are the user flow's boundary and are unaffected; this
+loop uses its own `docker run`.
+
 ## The three realms
 
 This repository keeps code, docs and tests in three realms, and a change is finished

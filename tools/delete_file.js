@@ -2,6 +2,7 @@ import { deleteFileVerified, FileIOError } from '../utils/file-io.js';
 import { forgetRead } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { trackingDeleteRefusal } from '../utils/tracking-fence.js';
+import { hostExecutableRefusal } from '../utils/host-fence.js';
 
 /**
  * Delete one file, inside the project and nowhere else.
@@ -54,6 +55,12 @@ const { definition, execute } = defineTool({
       // checklist the session is driving itself from off the disk.
       const fenced = trackingDeleteRefusal(args.path);
       if (fenced) return JSON.stringify(fenced);
+
+      // A path the host executes is refused here too: deleting the user's hook or env
+      // file is a host change, and one the fence never lets a tool make
+      // (`utils/host-fence.js`).
+      const hostExec = hostExecutableRefusal(args.path);
+      if (hostExec) return JSON.stringify(hostExec);
 
       const result = deleteFileVerified(args.path);
       // There is nothing left to guard: the path the model read is gone.

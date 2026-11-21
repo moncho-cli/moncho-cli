@@ -70,11 +70,18 @@ async function main() {
   // that into a cycle() plus a routed refusal, which needs the notice sink built below.
   const sessionMode = createSessionMode();
   let modeController = null;
+  // Slash commands: an iterable registry, so adding a command later needs no change in
+  // the loop. Anything that is not `/<name>` stays a prompt. Built **before** the screen
+  // because the input box's completion popup reads it live on every keystroke
+  // (app/slash-menu.js), and handed over as a function rather than a list so the popup
+  // can never hold commands that were registered later.
+  const commands = createDefaultCommands();
   const tui = createTui({
     modelLabel: label,
     mode: sessionMode,
     onInterrupt: () => abortManager?.interrupt(),
     onCycleMode: (options) => modeController?.cycle(options),
+    commands: () => commands.list(),
   });
   activeTui = tui;
   const cli = tui || createCLI();
@@ -254,10 +261,6 @@ async function main() {
   // of only when a turn ends. The loop still saves after every turn and on exit, and it
   // settles this throttle then, because that save already holds the whole window.
   autosave = createSessionAutosave({ save: () => saveSession('chunk') });
-
-  // Slash commands: an iterable registry, so adding a command later needs no
-  // change in the loop. Anything that is not `/<name>` stays a prompt.
-  const commands = createDefaultCommands();
 
   // The `work:on` self-drive (app/work-drive.js): while the lock is on, the next prompt
   // comes from `task.md` instead of the keyboard. It reads the mode live, so a `/work on`

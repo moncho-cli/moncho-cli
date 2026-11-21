@@ -2,6 +2,7 @@ import { writeFileVerified } from '../utils/file-io.js';
 import { forgetRead, staleWriteRefusal } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { canonicalTrackingWrite, isToolOwnedFile, trackingLocationRefusal } from '../utils/tracking-fence.js';
+import { hostExecutableRefusal } from '../utils/host-fence.js';
 
 /**
  * Overwrite a file with verified, atomic writes (see utils/file-io.js).
@@ -45,6 +46,12 @@ const { definition, execute } = defineTool({
       // (`utils/tracking-fence.js`), so the harness never puts the pair in the tree.
       const misplaced = trackingLocationRefusal(args.path);
       if (misplaced) return JSON.stringify(misplaced);
+
+      // A path the *host* executes — a git hook, the repo config, the env file the runner
+      // sources — is refused before the sandbox even resolves it: inside the project is
+      // not the question for these (`utils/host-fence.js`).
+      const hostExec = hostExecutableRefusal(args.path);
+      if (hostExec) return JSON.stringify(hostExec);
 
       const tracking = canonicalTrackingWrite(args.path, args.content);
       const content = tracking ? tracking.content : args.content;

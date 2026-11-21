@@ -1,0 +1,63 @@
+id: interface/slash-autocomplete
+domain: interface
+title: The slash-command popup over the input box
+status: active
+summary: >
+  A leading `/` in the input box opens a popup directly above it listing the registry's
+  own commands, filtered as the user types and navigated with the arrows. The query is a
+  slash and a name with no whitespace (app/slash-complete.js#slashQuery), so a space ends
+  it and the box goes back to typing arguments. The ranking answers through the command
+  name only — a prefix first, then a subsequence, aliases counting as names — and
+  deliberately does not search the description, which only buried the named command under
+  prose; a query nothing answers leaves the popup closed rather than showing an empty
+  frame. Rows are fitted to the bar in display cells so a wide glyph cannot wrap one into
+  a second line, and the command name is never truncated. Tab completes the name into the
+  box with a space and runs nothing, Enter submits the highlighted row exactly as if it had
+  been typed in full. The arrows and Enter belong to the popup only while it is open,
+  arbitrated live on each keypress (app/prompt-menu-keys.js#claimMenuKey), and Tab is
+  claimed before blessed dispatches it (app/tui-keys.js#bindKeys with onComplete) so it
+  completes rather than walking the mode ring. The box, the popup and the focus guard are
+  one stack (app/tui-input-stack.js) because they share those keys. Presentation only:
+  never a chunk, never a session file, never sent to a model.
+code:
+  - path: app/slash-complete.js
+    symbols: [slashQuery, rankCommands, formatSlashRow, slashRows, SLASH_MAX_ROWS]
+  - path: app/slash-menu.js
+    symbols: [createSlashMenu, slashCompleteText, slashAcceptText]
+  - path: app/prompt-menu-keys.js
+    symbols: [claimMenuKey, completeMenuKey]
+  - path: app/slash-bar.js
+    symbols: [createSlashBar, SELECTED_OPEN]
+  - path: app/theme.js
+    symbols: [SLASH_COLORS]
+  - path: app/tui-input-stack.js
+    symbols: [createInputStack]
+  - path: app/prompt-keys.js
+    symbols: [createPromptKeys]
+  - path: app/tui-keys.js
+    symbols: [bindKeys]
+  - path: app/commands.js
+    symbols: [createCommandRegistry, parseCommand]
+  - path: app/tui.js
+    symbols: [createTui]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: app/cell-width.js
+    symbols: [truncateToWidth]
+  - path: app/picker.js
+    symbols: [createPicker]
+tests:
+  - path: tests/slash-autocomplete.test.js
+    cases:
+      - "slashQuery() recognises a half-typed command name and nothing else"
+      - "rankCommands() answers by name: the prefix first, then a subsequence"
+      - "formatSlashRow() and slashRows() fit every row to the bar and keep the cursor in view"
+      - "createSlashMenu() opens on a query, filters, moves and closes on a space"
+      - "slashCompleteText() completes the name with a space, slashAcceptText() runs it"
+      - "claimMenuKey() owns the arrows and Enter only while the menu is open"
+      - "completeMenuKey() puts the completed name in the box and drops the popup"
+      - "createSlashBar() paints the rows, grows to hold them and hides when there are none"
+  - path: tests/slash-popup-screen.test.js
+    cases:
+      - "the selected row is a blue band filled to the bar, never a literal tag"
+      - "the slash popup opens, filters, moves, completes and runs commands in the real TUI"

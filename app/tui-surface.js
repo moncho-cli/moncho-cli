@@ -43,6 +43,7 @@ export function createTuiSurface({
   noticeBar,
   toastBar = null,
   brandBar = null,
+  slashBar = null,
   refresh,
   scrollBy,
   scrollPage,
@@ -247,6 +248,18 @@ export function createTuiSurface({
     // fit rule gave it, because the bar is a view of the line and never the other way
     // round.
     brandBar,
+    // The slash-command popup over the input box (app/slash-bar.js): the bar itself, plus
+    // the two facts a caller or a test asks about — whether it is up and which rows it
+    // shows. A view of the menu, never a second copy of it.
+    slashBar,
+    /** True while the popup offering matching commands is on screen. */
+    get slashOpen() {
+      return slashBar ? slashBar.visible : false;
+    },
+    /** The rows the popup shows right now, with the selected one flagged. */
+    get slashRows() {
+      return slashBar ? slashBar.rows() : [];
+    },
     get brandLine() {
       return brandBar ? brandBar.line : '';
     },

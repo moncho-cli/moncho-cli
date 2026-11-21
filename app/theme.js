@@ -93,6 +93,23 @@ export const STAMP_COLOR = CONVERSATION_COLORS.notice;
 export const REFUSAL_COLOR = CONVERSATION_COLORS.refusal;
 /** A refusal is news, so it carries bold as well as the bright colour. */
 export const REFUSAL_BOLD = true;
+
+/**
+ * The slash-command popup's selection (`app/slash-bar.js`): a **solid band** on the row
+ * the cursor is on, spelled as a blessed background tag.
+ *
+ * It is not part of `CONVERSATION_COLORS` because it is not a transcript row — it is a
+ * highlight painted *behind* a row for as long as the arrow keys leave it there. The
+ * background is the normal `blue` rather than the `bright-blue` the intent uses: a fill
+ * this wide at the intent's brightness glares, and the foreground is `white` rather than
+ * the default because a background cannot inherit the terminal's own text colour.
+ */
+export const SLASH_COLORS = Object.freeze({
+  /** the band behind the selected row */
+  selected: 'blue',
+  /** the text on top of that band */
+  selectedFg: 'white',
+});
 /** A line the markdown renderer already tagged (fences, delimiters, quotes…). */
 const ALREADY_TAGGED = /^\{(?:bold|underline|inverse|blink|invisible|[a-z-]+-bg|[a-z-]+-fg)/;
 

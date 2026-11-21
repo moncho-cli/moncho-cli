@@ -22,7 +22,7 @@ import { isInterruptKey, isTabKey, isShiftTabKey } from '../utils/keys.js';
  * behind.
  */
 export function bindKeys({
-  screen, onInterrupt, onCycleMode, scrollPage, transcript, refresh,
+  screen, onInterrupt, onCycleMode, scrollPage, transcript, refresh, onComplete = null,
 } = {}) {
   if (!screen) return { dispose() {} };
 
@@ -37,6 +37,12 @@ export function bindKeys({
   /**
    * The pre-dispatch gate: interrupts and Tab are answered here, before blessed
    * can hand the key to the focused widget. Anything else falls through untouched.
+   *
+   * Tab is the popup's while the popup is open: `onComplete` returns true when it took
+   * the key (and completed the command name into the box), in which case the mode ring
+   * does not move. That ordering is deliberate — a reader typing `/se` and pressing Tab
+   * means "finish this command", and only an open menu can tell that apart from a
+   * request to change mode.
    */
   const onProgramKeypress = (ch, key) => {
     if (isInterruptKey(ch, key)) {
@@ -45,6 +51,10 @@ export function bindKeys({
       return true;
     }
     if (isTabKey(ch, key)) {
+      if (typeof onComplete === 'function' && onComplete()) {
+        lockOnce();
+        return true;
+      }
       // Shift+Tab walks the ring the other way. The binding only decides the
       // direction; what a move means stays in app/session-mode.js.
       const direction = isShiftTabKey(ch, key) ? -1 : 1;

@@ -63,6 +63,7 @@ case "$1" in
       -v "$(pwd):/app" \
       -w /app \
       -v /app/node_modules \
+      -e MONCHO_MAINTAINER=1 \
       "${ENV_FLAGS[@]}" \
       "$IMAGE_NAME" \
       node main.js
@@ -94,6 +95,7 @@ case "$1" in
       -v "$(pwd):/app" \
       -w /app \
       -v /app/node_modules \
+      -e MONCHO_MAINTAINER=1 \
       "${ENV_FLAGS[@]}" \
       "$IMAGE_NAME" \
       node main.js

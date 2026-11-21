@@ -118,7 +118,7 @@ container can always be inspected and removed.
 | `--state-in-repo` | Keep the state in `./agent` instead of a named volume |
 | `--do-not-mount` | No bind mount: `/app` is what the image contains |
 | `--copy-files` | Copy the workspace into the image at build time |
-| `--sync-files` | Copy `/app` back into this directory when the run ends |
+| `--sync-files` | Copy `/app` back into this directory when the run ends (`agent/` is always excluded) |
 | `--sync-delete` | Let `--sync-files` delete host files (needs `rsync`) |
 | `--rebuild` | Rebuild the project image |
 | `--build-base` | Repaint the agent base image even when it exists |

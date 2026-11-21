@@ -1,5 +1,6 @@
 import { createPromptEditor } from './prompt-editor.js';
 import { createPromptHistory } from './prompt-history.js';
+import { claimMenuKey, completeMenuKey } from './prompt-menu-keys.js';
 import { EXIT_SENTINEL } from './input-hint.js';
 
 /**
@@ -46,12 +47,22 @@ function interiorWidth(inputBox) {
  * @param {Function} [options.onRecall] called with the text an up/down recall put in
  *   the box, so the caller can repaint a hint that is no longer accurate
  * @param {number} [options.historyLimit] how many prompts the walk keeps
+ * @param {object} [options.menu] the slash-command popup (app/slash-menu.js): while it
+ *   is open the arrows move its cursor and Enter accepts its row instead of submitting
+ *   the line — the whole difference between a menu and a history
+ * @param {Function} [options.onMenuChange] called with the box's text after every
+ *   keystroke, so the popup can follow it (it decides whether it is open)
+ * @param {Function} [options.onAccept] called with the text an accepted row stands for,
+ *   which the wiring submits exactly as Enter on the line would
  */
 export function createPromptKeys({
   inputBox = null,
   refresh = () => {},
   onRecall = null,
   historyLimit = undefined,
+  menu = null,
+  onMenuChange = null,
+  onAccept = null,
 } = {}) {
   if (!inputBox) {
     // No widget (the line CLI, a pure unit test): every entry point is a harmless no-op.
@@ -134,6 +145,9 @@ export function createPromptKeys({
     }
 
     paintCaret();
+    // Every change of the text reaches the popup through here, so the two can never
+    // fall out of step: `publish()` is the one path a keystroke takes into the box.
+    if (typeof onMenuChange === 'function') onMenuChange(text);
     refresh();
     return true;
   };
@@ -157,11 +171,20 @@ export function createPromptKeys({
   /**
    * The replacement key listener: handled keys mutate the editor and repaint, every
    * other key — Enter above all — goes to the widget's own listener unchanged.
+   *
+   * **The popup is asked first, and only while it is open**, which is what lets the two
+   * share the same keys: up/down recall a prompt from the history when no menu is up and
+   * move the menu's cursor when one is, and Enter submits the line or takes the
+   * highlighted command. That arbitration lives in `app/prompt-menu-keys.js`; the menu is
+   * asked live rather than consulted from a cache, because a keystroke is exactly what
+   * opens and closes it.
    */
   const onKey = (ch, key) => {
     if (closed) return delegate?.call(inputBox, ch, key);
     const name = key?.name;
     let handled = true;
+
+    if (claimMenuKey({ menu, name, refresh, accept: onAccept })) return undefined;
 
     if (name === 'left') editor.left();
     else if (name === 'right') editor.right();
@@ -215,6 +238,30 @@ export function createPromptKeys({
     /** Adopt a write that came from outside, then publish (the box is the source). */
     sync,
     /**
+     * Tab while the popup is open: complete the highlighted command's name into the box
+     * and leave the caret after the space it adds, so arguments can be typed next.
+     * Returns true when it took the key, which is what tells `app/tui-keys.js` not to
+     * move the mode ring. False when there is no popup — Tab then means what it did.
+     */
+    complete() {
+      if (closed) return false;
+      // The write goes through the editor and out through `publish()`, so the box, the
+      // caret and the popup all learn about the completed name exactly as they would from
+      // a keystroke (app/prompt-menu-keys.js#completeMenuKey).
+      const took = completeMenuKey({
+        menu,
+        write: (text) => {
+          editor.setValue(text);
+          publish();
+        },
+      });
+      return took;
+    },
+    /** The popup, when this seam was given one (null otherwise). */
+    get menu() {
+      return menu;
+    },
+    /**
      * Remember one prompt (a submission that was really sent). The `exit` sentinel and
      * a blank submission are not prompts, exactly as the last-prompt hint treats them.
      */
@@ -231,6 +278,10 @@ export function createPromptKeys({
       inputBox.value = '';
       inputBox._value = '';
       caretCells = 0;
+      // The box is empty, so nothing is being completed: the popup goes with the text it
+      // was offering. Announced through the same hook a keystroke uses, so there is one
+      // way the popup learns about the box.
+      if (typeof onMenuChange === 'function') onMenuChange('');
       paintCaret();
       return true;
     },

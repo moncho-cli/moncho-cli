@@ -82,6 +82,10 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `clipboard-selection-tui.test.js` | The whole gesture through a real screen: a release saves a file and a plain click still toggles a block, a wrapped line is saved from the line it started on, and the confirmation is a top-right toast naming the file, never a row in the conversation. |
 | `toast.test.js` | The copy confirmation model: the two sentences a copy can say (a proven one and a sent one), four seconds, a second copy replacing the first, and a blank message not being a toast. |
 | `tui-toast.test.js` | The toast box itself: top-right, only as wide as its sentence, and hidden by its own timer. |
+| `slash-autocomplete.test.js` | The slash-command popup: the query a leading `/` stands for, the name-only ranking (a prefix, then a subsequence, never the description), the cell-fitted rows, the two accept paths (Tab completes, Enter runs), and the live arbitration of the arrows and Enter. |
+| `slash-popup-screen.test.js` | The same popup on a real screen: the blue band that marks the selected row (filled to the bar's interior width, and the literal `{inverse}` it replaced), and the whole gesture — filter, arrows, Tab, Enter — through blessed. |
+| `host-fence.test.js` | The paths a host executes rather than reads: git hooks, `.git/config` (which redirects the hook directory) and `.env.moncho` (which the runner sources as shell). The classifier is segment-based so a spelling change cannot slip past it; all three writers refuse, and an ordinary file in the same tree is untouched. |
+| `container-mount.test.js` | The mount boundary the fence's refusals rest on: in bind mode `.git` and `.env.moncho` are shadowed read-only (a nested mount wins over its parent), `GIT_OPTIONAL_LOCKS=0` is set, and a path that does not exist gets no shadow. Sources the real `bin/lib/container.sh`, so the assertion is on the arguments docker would receive. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the
 suites import; they are not test files themselves.

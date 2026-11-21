@@ -1,0 +1,47 @@
+id: agent/host-fence
+domain: agent
+title: The fence around paths the host executes
+status: active
+summary: >
+  The path sandbox keeps a tool inside the project tree, but a handful of paths inside the
+  tree are executed by the host rather than read: git hooks and .git/config, which run at the
+  next commit, and .env.moncho, which the runner sources as shell. The workspace is
+  bind-mounted into the container, so a write made there lands on the host's filesystem —
+  which makes each of these a way for a prompt-injected model to reach the host. The fence
+  classifies a path by segment (so spelling cannot slip past it) and refuses it in all three
+  writers before the sandbox resolves it. It is a refusal, never a normalisation: there is no
+  draft a host-executable file could legitimately become. The fence is one layer of two; the
+  layer that closes the run_bash bypass is the read-only mount in bin/lib/container.sh.
+code:
+  - path: utils/host-fence.js
+    symbols: [hostExecutableKind, isHostExecutable, hostExecutableRefusal, HOST_EXEC_REFUSAL]
+  - path: tools/write_file.js
+    symbols: [definition, execute]
+  - path: tools/edit_file.js
+    symbols: [definition, execute]
+  - path: tools/delete_file.js
+    symbols: [definition, execute]
+  - path: bin/lib/container.sh
+    symbols: [build_run_args, sync_back]
+  - path: config/constants.js
+    symbols: [HOST_FENCE]
+tests:
+  - path: tests/host-fence.test.js
+    cases:
+      - the fence recognises a git hook, the repo config and the env file
+      - the same path is refused however the caller spells it
+      - the refusal names the mechanism and the way out
+      - write_file refuses to create a git hook or the env file
+      - edit_file refuses a hook even when the search would match
+      - delete_file refuses to remove a hook or the env file
+      - an ordinary file in the same tree is written, edited and deleted as before
+      - "the maintainer flow is exempt: the switch turns the fence off"
+  - path: tests/container-mount.test.js
+    cases:
+      - a git repository and an env file are shadowed read-only
+      - the workspace stays read-write and the shadow mounts are nested inside it
+      - git never takes its optional index lock inside the container
+      - a workspace with no .git or env file gets no shadow mount
+      - copy mode mounts nothing at all, so there is nothing to shadow
+      - sync_back never copies the agent state back to the host
+      - the --sync-delete path excludes agent/ too

@@ -51,8 +51,12 @@ function findSpecDirs() {
  * Names declared or exported at the top level of a module: `export function`,
  * `export class`, `export const/let/var`, plain declarations, and every name in
  * an `export { … }` block (including `x as y` aliases).
+ *
+ * A shipped shell script declares functions as `name() { … }`, which the JavaScript
+ * patterns cannot see. That shape is only collected for a `.sh` file, so a method
+ * shorthand in a JS object literal is never mistaken for a declaration.
  */
-function declaredSymbols(source) {
+function declaredSymbols(source, { shell = false } = {}) {
   const names = new Set();
   const collect = (regex) => {
     for (const match of source.matchAll(regex)) names.add(match[1]);
@@ -71,6 +75,10 @@ function declaredSymbols(source) {
       if (alias) names.add(alias[1]);
     }
   }
+
+  // A bash function: `name() {`, at the start of a line.
+  if (shell) collect(/^([A-Za-z_][A-Za-z0-9_]*)\s*\(\)\s*\{/gm);
+
   return names;
 }
 
@@ -119,7 +127,7 @@ test('every code reference names a real file and really declares its symbols', (
       assert.ok(fs.existsSync(target), `${id} references a missing file: ${reference.path}`);
       checkedFiles += 1;
 
-      const symbols = declaredSymbols(read(target));
+      const symbols = declaredSymbols(read(target), { shell: target.endsWith('.sh') });
       for (const symbol of reference.symbols || []) {
         assert.ok(
           symbols.has(symbol),

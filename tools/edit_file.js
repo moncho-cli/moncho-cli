@@ -7,6 +7,7 @@ import { forgetRead, staleWriteRefusal } from '../utils/read-tracker.js';
 import { resolveProjectPath, PathSafetyError } from '../utils/path-safety.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { isToolOwnedFile, trackingEditRefusal } from '../utils/tracking-fence.js';
+import { hostExecutableRefusal } from '../utils/host-fence.js';
 
 /**
  * The one editing tool: literal search/replace as the routine path, a pasted unified
@@ -166,6 +167,13 @@ const { definition, execute } = defineTool({
       // would be undone by the next tracking call.
       const fenced = trackingEditRefusal(path);
       if (fenced) return JSON.stringify(fenced);
+
+      // A path the host executes — a git hook, the repo config, the env file the runner
+      // sources — is refused before the search text is even matched: an edit into one is
+      // host code execution, and the sandbox's "inside the project" answer is not the
+      // question for these (`utils/host-fence.js`).
+      const hostExec = hostExecutableRefusal(path);
+      if (hostExec) return JSON.stringify(hostExec);
 
       // The search text — or the diff — was built from the bytes the model read: if those
       // bytes moved, matching against whatever is there now could land on the wrong region.

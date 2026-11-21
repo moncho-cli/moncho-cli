@@ -26,6 +26,19 @@ build_run_args() {
       # The workspace is the user's checkout, so an edit needs no rebuild — the same
       # deal start.sh offers with its repository.
       RUN_ARGS+=(-v "$WORKSPACE:/app" -w /app)
+      # The workspace is read-write, so the two paths the *host* executes are shadowed with
+      # read-only mounts of their own: a git hook (or a config that redirects the hook
+      # directory) and the env file the runner sources. A nested mount wins over the parent,
+      # so git stays readable and runnable inside the container, but nothing the agent does —
+      # through a file tool or through run_bash — can write a path the host later runs.
+      # Conditional on the path existing: docker creates a *directory* at a mount point that
+      # does not exist, and a directory where .env.moncho belongs is worse than no mount.
+      if [ -d "$WORKSPACE/.git" ]; then
+        RUN_ARGS+=(-v "$WORKSPACE/.git:/app/.git:ro")
+      fi
+      if [ -f "$WORKSPACE/.env.moncho" ]; then
+        RUN_ARGS+=(-v "$WORKSPACE/.env.moncho:/app/.env.moncho:ro")
+      fi
       # A project's node_modules is shadowed by an anonymous volume so the tree the
       # image built wins over the host's (start.sh's trick). Conditional on the
       # directory existing, so a non-Node project never has one created inside it and
@@ -46,6 +59,11 @@ build_run_args() {
   if [ "$STATE_MODE" = "volume" ]; then
     RUN_ARGS+=(-v "$STATE_VOLUME:/app/agent")
   fi
+
+  # A read-only .git makes git's optional index refresh fail noisily; this tells git to skip
+  # those writes entirely. Read commands (status, diff, log) still work, and the mount stays
+  # the boundary.
+  RUN_ARGS+=(-e "GIT_OPTIONAL_LOCKS=0")
 
   # Clock parity: the zone by name, and the host's own file when there is one.
   if [ -n "${TZ:-}" ]; then
@@ -181,6 +199,12 @@ show_status() {
 # `--sync-files`: copy /app back into the checkout. Deletions only propagate with
 # --sync-delete *and* rsync, and the script says so rather than silently keeping a
 # file the user deleted inside the container.
+#
+# The agent's own state is **never** copied back. `docker cp` carries a mounted
+# volume's contents, so `/app/agent` would otherwise travel from the state volume
+# into the host's checkout — the raw transcripts and the operator's notebook landing
+# on the host, which is exactly what the volume exists to prevent. The exclusion is a
+# removal from the staging copy, so both branches get it without a second code path.
 sync_back() {
   local name
   name="$(docker ps -aq --filter "label=moncho.workspace=$WORKSPACE" | head -n 1)"
@@ -194,6 +218,7 @@ sync_back() {
     local tmp
     tmp="$(mktemp -d)"
     docker cp "$name:/app/." "$tmp/"
+    rm -rf "$tmp/agent"
     rsync -a --delete "$tmp/" "$WORKSPACE/"
     rm -rf "$tmp"
     return 0
@@ -202,5 +227,13 @@ sync_back() {
   if [ "$SYNC_DELETE" = "1" ]; then
     warn "--sync-delete needs rsync on the host; copying back without deletions"
   fi
-  docker cp "$name:/app/." "$WORKSPACE/"
+  # The staging copy is a host path, so the second step is a host `cp`, not `docker cp`
+  # (which needs one side to be a container). `cp` is coreutils, so unlike rsync it is
+  # always there.
+  local staging
+  staging="$(mktemp -d)"
+  docker cp "$name:/app/." "$staging/"
+  rm -rf "$staging/agent"
+  cp -a "$staging/." "$WORKSPACE/"
+  rm -rf "$staging"
 }

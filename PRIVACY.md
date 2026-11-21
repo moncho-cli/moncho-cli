@@ -70,6 +70,26 @@ between projects, and it is not uploaded anywhere. `--state-in-repo` puts the sa
 in `./agent` instead, which is excluded through `.git/info/exclude` so they do not end up
 in a commit.
 
+### The volume is the boundary
+
+The container's workspace is bind-mounted, so what the agent writes lands in your checkout.
+The state directory is the exception: in the default `volume` mode `/app/agent` is a named
+Docker volume, so sessions, the tracking files and the log stay in Docker's storage and your
+checkout never sees a file. Two things move data out of that boundary, and both are choices
+you make explicitly:
+
+- **`--state-in-repo`** mounts `./agent` into the checkout on purpose, so the same files sit
+  in your directory instead of the volume.
+- **`--sync-files`** copies `/app` back into your checkout when the run ends. The copy
+  excludes `agent/`, so even then the state does not travel — but the flag is a copy of the
+  workspace, and the workspace is what the agent wrote.
+
+The maintainer's own loop (`./start.sh`) is the exception to the exception: it runs this
+repository's checkout, where the operator is the maintainer, and its `MONCHO_MAINTAINER=1`
+lifts the host fence so a hook in their own repository is their tool rather than an
+injection (`docs/agent/host-fence`). The read-only shadow mounts are unchanged — they belong
+to the user flow.
+
 ### What the log does not contain
 
 The operational log records what the *harness* did — a provider call that was retried, a

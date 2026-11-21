@@ -9,7 +9,8 @@ import { createTranscriptPane } from './tui-transcript.js';
 import { createStamper } from './transcript-stamp.js';
 import { createTuiSurface } from './tui-surface.js';
 import { createQueueBar } from './queue-bar.js';
-import { createPromptInput, normalizePrompt } from './prompt-input.js';
+import { createInputStack } from './tui-input-stack.js';
+import { normalizePrompt } from './prompt-input.js';
 import { createNoticeBar } from './notice-bar.js';
 import { createBrandBar } from './brand-bar.js';
 import { createFloatingOverlays } from './tui-overlays.js';
@@ -18,7 +19,6 @@ import { createCompactionNotifier } from './compaction-notice.js';
 import { createSelectionClipboard } from './tui-clipboard.js';
 import { createToastBar } from './tui-toast.js';
 import { bindKeys } from './tui-keys.js';
-import { bindFocusGuard } from './focus-guard.js';
 import { createResizeRepaint, createTeardown } from './tui-teardown.js';
 import {
   sanitize,
@@ -158,29 +158,30 @@ export function createTui(options = {}) {
   });
   const { brandBar, noticeBar, toastBar } = overlays;
 
-  // The input box has two states: an armed question between turns, and a
-  // capturing box while a request is in flight — where Enter queues the message
-  // instead of resolving a question nobody armed (app/prompt-input.js).
-  const promptInput = createPromptInput({
+  // The input box and its slash-command popup are one stack (app/tui-input-stack.js):
+  // they share the arrows and Enter, so they cannot be two independent regions. The box
+  // is two states — an armed question between turns, a capturing box while a request is
+  // in flight, where Enter queues the message (app/prompt-input.js) — and the popup
+  // follows the text from the key seam.
+  const stack = createInputStack({
+    screen,
     inputBox,
     pastes,
     queue,
     log: (...args) => pane.log(...args),
     refresh,
+    // The rows are fitted to the region's **interior** width — the screen less the box's
+    // border and padding on both sides (4 cells) — because a band has to reach the
+    // padding, not stop short of it. Both facts are asked on every paint: the queue bar
+    // between the box and the conversation changes height as messages are queued and
+    // drained (app/tui-layout.js#setQueueHeight).
+    columns: () => (Number(screen.width) > 4 ? Number(screen.width) - 4 : 0),
+    anchor: () => INPUT_HEIGHT + (Number(queue.height) || 0),
+    // Read live, never snapshotted: `main.js` builds the registry after the screen.
+    commands: () => (typeof options.commands === 'function' ? options.commands() : options.commands || []),
   });
-
-  // The input box keeps its focus and its read cycle on a click and on a timer: a
-  // click on another region can no longer take the caret away (both regions opt out
-  // of blessed's autofocus, app/tui-layout.js) and any other cause of a lost focus
-  // is repaired by the periodic check. The guard only acts while the box is
-  // *supposed* to be armed -- an armed question or an in-flight turn -- and never
-  // while a modal owns the keyboard (app/focus-guard.js).
-  const focusGuard = bindFocusGuard({
-    inputBox,
-    promptInput,
-    hold: () => promptInput.isArmed || promptInput.inFlight,
-  });
-  focusGuard.start();
+  const promptInput = stack.promptInput;
+  const { slashBar } = stack;
 
   // The two right-aligned rows above the model row, wired to their widgets here and
   // built as one pair (app/status-rows.js) so they can never drift a cell apart: the
@@ -211,12 +212,6 @@ export function createTui(options = {}) {
   // to be visible right away — once per event (app/compaction-notice.js).
   const compaction = createCompactionNotifier({ log });
 
-  inputBox.on('submit', (value) => {
-    promptInput.submit(value);
-  });
-
-  const question = (prompt, callback) => promptInput.question(prompt, callback);
-
   // A click on the queue bar deletes the message on that row and nothing else; the
   // transcript's own click is bound by the pane.
   queueRegion.on('click', (data) => {
@@ -234,6 +229,9 @@ export function createTui(options = {}) {
     scrollPage: (direction) => pane.scrollPage(direction),
     transcript,
     refresh,
+    // Tab is the popup's while it is open — it completes the highlighted command's name
+    // into the box — and only then does it walk the mode ring (app/tui-keys.js).
+    onComplete: () => stack.complete(),
   });
 
   // A resize re-fits every row measured at the old width and puts the newest line
@@ -247,13 +245,14 @@ export function createTui(options = {}) {
   // are closed, and the screen goes last (app/tui-teardown.js).
   const close = createTeardown({
     steps: [
-      () => promptInput.abandon(),
+      // The box and its popup first: both stop accepting keystrokes, and the popup is a
+      // widget that must be destroyed before the screen it was parented to.
+      () => stack.close(),
       () => queue.close(),
       () => modeRow.close(),
       () => overlays.close(),
       () => view.close(),
       () => keys.dispose(),
-      () => focusGuard.close(),
       () => statusRows.dispose(),
     ],
     screen,
@@ -265,7 +264,7 @@ export function createTui(options = {}) {
   overlays.paint();
 
   return createTuiSurface({
-    question,
+    question: stack.question,
     promptInput,
     view,
     selection: pane.selection,
@@ -283,10 +282,11 @@ export function createTui(options = {}) {
     modeRow,
     inputBox,
     setQueueHeight,
-    focusGuard,
+    focusGuard: stack.focusGuard,
     noticeBar,
     toastBar,
     brandBar,
+    slashBar,
     refresh,
     scrollBy: (amount) => pane.scrollBy(amount),
     scrollPage: (direction) => pane.scrollPage(direction),

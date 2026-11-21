@@ -24,6 +24,7 @@ specs:
   - agent/tool-refusal
   - agent/approach-gate
   - agent/file-safety
+  - agent/host-fence
   - agent/line-edits
   - agent/patch-application
   - agent/command-sandbox
@@ -57,6 +58,7 @@ specs:
   - interface/line-cli
   - interface/input-focus
   - interface/prompt-editor
+  - interface/slash-autocomplete
   - interface/tracking-notice
   - interface/tracking-block
   - runtime/provider-calls

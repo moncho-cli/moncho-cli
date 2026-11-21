@@ -126,6 +126,27 @@ export const PULSE_LIMIT_DEFAULT = 30;
 export const PULSE_LIMIT = toPositiveInt(process.env.PULSE_LIMIT, PULSE_LIMIT_DEFAULT);
 
 // ---------------------------------------------------------------------------
+// The host fence's maintainer switch
+// ---------------------------------------------------------------------------
+/**
+ * Whether the host fence (`utils/host-fence.js`) refuses the paths the host executes.
+ *
+ * Two flows, two audiences. A **user** runs the agent against a project they own and does
+ * not read its diffs, so the fence is on and a prompt-injected model cannot write a git
+ * hook or the env file the host sources. A **maintainer** develops this repository through
+ * `./start.sh`, reads every diff and owns the checkout, so the fence is the thing in their
+ * way: they set `MONCHO_MAINTAINER=1` and write their own hooks.
+ *
+ * The switch is an environment variable rather than a checkout check on purpose. The app
+ * runs *inside* the container against a bind mount, so "is this the agent's checkout" would
+ * mean reimplementing `bin/lib/template.sh#is_agent_checkout` in JavaScript against a path
+ * the container cannot see as the host does — and it would also fire for a user who happens
+ * to name their own project `moncho-cli`. An explicit variable is honest about being an
+ * override, and it cannot be guessed wrong.
+ */
+export const HOST_FENCE = process.env.MONCHO_MAINTAINER !== '1';
+
+// ---------------------------------------------------------------------------
 // run_npm allow-list
 // ---------------------------------------------------------------------------
 export const NPM_ALLOWED_SUBCOMMANDS = [
