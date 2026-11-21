@@ -1,7 +1,7 @@
-import blessed from 'neo-blessed';
+import { createScreen } from './tui-screen.js';
 import { describeModel } from '../config/constants.js';
 import { SPINNER_FRAMES, SPINNER_INTERVAL_MS } from './status-row.js';
-import { createStatusRows } from './status-rows.js';
+import { createWiredStatusRows } from './status-rows.js';
 import {
   createLayout, TRANSCRIPT_BOTTOM, MODEL_BOTTOM, WORK_BOTTOM, STATUS_BOTTOM, QUEUE_BOTTOM, INPUT_HEIGHT,
 } from './tui-layout.js';
@@ -12,8 +12,11 @@ import { createQueueBar } from './queue-bar.js';
 import { createPromptInput, normalizePrompt } from './prompt-input.js';
 import { createNoticeBar } from './notice-bar.js';
 import { createBrandBar } from './brand-bar.js';
+import { createFloatingOverlays } from './tui-overlays.js';
 import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
+import { createSelectionClipboard } from './tui-clipboard.js';
+import { createToastBar } from './tui-toast.js';
 import { bindKeys } from './tui-keys.js';
 import { bindFocusGuard } from './focus-guard.js';
 import { createResizeRepaint, createTeardown } from './tui-teardown.js';
@@ -29,17 +32,15 @@ import {
   PASTE_THRESHOLD,
 } from './tui-render.js';
 
-// The pure helpers live in ./tui-render.js, the transcript model in
-// ./transcript.js (bound to the widget by ./transcript-view.js, and to this screen
-// by ./tui-transcript.js), the region layout in ./tui-layout.js, the two
-// right-aligned rows in ./status-row.js and ./work-row.js (built as one pair by
-// ./status-rows.js), the per-entry timestamps in ./transcript-stamp.js, the paste
-// table in ./paste-registry.js, the compaction notice in ./compaction-notice.js,
-// the pending-message queue in ./message-queue.js (bound to its region by
-// ./queue-bar.js), the input-box state machine in ./prompt-input.js, the transient
-// notices in ./notice-overlay.js (bound to their overlay by ./notice-bar.js) and
-// the public surface in ./tui-surface.js. They are all re-exported here so
-// app/tui.js stays the single entry point every importer (and the specs) already use.
+// Every part of the screen lives in its own module and is re-exported here, so
+// app/tui.js stays the single entry point its importers and the specs already use:
+// the pure helpers in ./tui-render.js, the transcript in ./transcript.js (bound to a
+// widget by ./transcript-view.js and to this screen by ./tui-transcript.js), the layout
+// in ./tui-layout.js, the right-aligned rows in ./status-rows.js, the timestamps in
+// ./transcript-stamp.js, the queue in ./queue-bar.js, the input box in ./prompt-input.js,
+// the notices in ./notice-bar.js, the floating bars in ./tui-overlays.js, the copy toast
+// in ./tui-toast.js and the public surface in ./tui-surface.js. What stays *here* is the
+// wiring: which region exists, which key reaches it, and in what order it is torn down.
 export { sanitize, formatArg, formatTranscript, composeStatusRow, collapsePaste, expandPastes, PASTE_THRESHOLD };
 export { formatUserEcho, USER_ECHO_HEADER };
 export { SPINNER_FRAMES, SPINNER_INTERVAL_MS };
@@ -55,16 +56,18 @@ export { createInputHint, hintSurface, formatLastPromptHint, LAST_PROMPT_LABEL, 
 export { createNoticeOverlay, noticeSurface, formatNoticeRows, formatNoticeRow, formatNoticeText, formatRetryNotice, formatFailureNotice, NOTICE_TTL_MS, NOTICE_MAX_ROWS, NOTICE_MAX_KEPT, NOTICE_COLORS, NOTICE_MARKERS, NOTICE_KINDS, NOTICE_MAX_CHARS } from './notice-overlay.js';
 export { createNoticeBar } from './notice-bar.js';
 export { createBrandBar } from './brand-bar.js';
+export { createFloatingOverlays } from './tui-overlays.js';
+export { createToastBar } from './tui-toast.js';
 export { formatBrand, resolveBrandSize, BRAND_NAME, BRAND_VERSION, BRAND_COLOR, BRAND_TOP, BRAND_RIGHT } from './brand.js';
 
 /**
  * Build the TUI. Returns null when stdout is not a TTY (e.g. `./start.sh start`
  * runs detached, without a pty) so the caller can fall back to the line chat.
  *
- * The returned object mirrors createCLI() ({ rl, question, exit, close }) and
- * adds log()/logBlock()/setStatus()/setWork() for rendering the conversation and
- * the two right-aligned rows. Its shape is assembled by ./tui-surface.js, so this
- * module stays the screen wiring: the regions, the keys and the teardown.
+ * Its shape is assembled by ./tui-surface.js, so this module stays the wiring:
+ * which region exists, which key reaches it, and in what order it is torn down.
+ * A non-TTY stdout (`./start.sh start` runs detached) means no screen at all, and
+ * null, so the caller can fall back to the line chat.
  */
 export function createTui(options = {}) {
   const input = options.input || process.stdin;
@@ -78,40 +81,15 @@ export function createTui(options = {}) {
   // each block appeared. Injected so a test can freeze it and `null` marks nothing.
   const stamp = options.stamp === undefined ? createStamper() : options.stamp;
 
-  if (!output.isTTY) return null;
-
-  const screen = blessed.screen({
-    input,
-    output,
-    smartCSR: true,
-    fullUnicode: true,
-    // `fullUnicode` alone is not enough: neo-blessed derives it from the **terminfo**
-    // entry it managed to parse (`screen.js#Screen`: `this.fullUnicode =
-    // this.options.fullUnicode && this._unicode`), and a box whose entry it cannot read
-    // (no terminfo, an unknown $TERM) leaves `_unicode` false. The widget then replaces
-    // every double-width glyph with `??` (`element.js#Element.render`:
-    // `content.replace(unicode.chars.all, '??')`), which is what turned every emoji in
-    // the conversation into question marks (task-backlog: "conversation to show unicode
-    // emojis properly"). `forceUnicode` is the switch that makes the screen trust the
-    // terminal rather than the terminfo entry.
-    forceUnicode: true,
-    title: 'Moncho',
-    warnings: false,
-    autoPadding: true,
-  });
+  // No screen means no TTY: the caller falls back to the line chat.
+  const terminal = createScreen({ input, output });
+  if (!terminal) return null;
+  const { screen, refresh, isClosed: screenClosed, markClosed } = terminal;
 
   // Provider/model identity, resolved once at startup (env-driven).
   const modelLabel = typeof options.modelLabel === 'string' && options.modelLabel
     ? options.modelLabel
     : describeModel().label;
-
-  // The screen is repainted by whichever part of the wiring changes something on
-  // it, so the mode row built below can repaint itself when the mode moves.
-  let closed = false;
-
-  const refresh = () => {
-    if (!closed) screen.render();
-  };
 
   const {
     transcript, statusBar, workBar, modelBar, queueBar: queueRegion, inputBox, setQueueHeight,
@@ -127,10 +105,25 @@ export function createTui(options = {}) {
   });
 
   const pastes = createPasteRegistry();
+  // The clipboard a mouse selection is copied to, and what the reader is told about it
+  // (`docs/interface/clipboard-selection`, app/tui-clipboard.js): OSC 52 on the very
+  // stream the screen is painted on, and one notice near the top — never a row in the
+  // conversation, because a copy is about the reader's clipboard rather than the dialogue.
+  const clipboard = createSelectionClipboard({ screen, toast: () => toastBar });
   // The transcript is a model + view pair behind one pane (app/tui-transcript.js):
-  // the pane owns the click-to-toggle binding and the four operations the host
-  // asks of the conversation, so the wiring below never reaches into the view.
-  const pane = createTranscriptPane({ transcript, refresh, stamp });
+  // the pane owns the click-to-toggle binding, the mouse selection and the operations the
+  // host asks of the conversation, so the wiring below never reaches into the view.
+  const pane = createTranscriptPane({
+    transcript,
+    refresh,
+    stamp,
+    copy: clipboard.copy,
+    notify: clipboard.notify,
+    // The screen is what makes a release *outside* the pane finish the gesture: blessed
+    // re-emits every mouse report on the screen and only the ones that land on a region
+    // there, so the release edge is bound on the screen (app/transcript-mouse.js).
+    screen,
+  });
   const view = pane.view;
 
   // The queue bar is the pending-message region right above the input box: the
@@ -149,29 +142,20 @@ export function createTui(options = {}) {
     },
   });
 
-  // The brand line sits on the very first row of the screen, right-aligned:
-  // "MONCHO (v x.y.z)", the one mark a character-cell front end can render
-  // faithfully (see app/brand.js). It is built *before* the notice overlay so the
-  // notice anchors below it and never covers the mark.
-  const brandBar = createBrandBar({
+  // The three things that float over the top of the screen, built as one group because
+  // their order is a single decision: the brand line owns the first row and tells the
+  // layout how many rows it took, and the notice overlay and the copy toast both anchor
+  // *below* it so neither can cover the mark (app/tui-overlays.js).
+  const overlays = createFloatingOverlays({
     screen,
     refresh,
-    // The bar tells the layout how many rows it occupies, so the conversation is
-    // displaced down by that many while the mark is shown and returns when it hides.
     reserve: (rows) => setBrandRows(rows),
-    region: () => ({
-      // The room is the screen itself: the mark is its first line, so the
-      // transcript's geometry is irrelevant to whether the line fits.
-      width: Number(screen.width) || 0,
-      height: Number(screen.height) || 0,
-    }),
+    // The room is the screen itself: the mark is its first line, so the transcript's
+    // geometry is irrelevant to whether the line fits.
+    brandWidth: () => Number(screen.width) || 0,
+    brandHeight: () => Number(screen.height) || 0,
   });
-
-  // The transient notices float over the top of the transcript instead of taking a
-  // row from it, so the regions below never move; the box hides itself while there
-  // is nothing live and on a timer armed for the earliest expiry
-  // (app/notice-bar.js, app/notice-overlay.js).
-  const noticeBar = createNoticeBar({ screen, refresh, anchor: () => brandBar.band });
+  const { brandBar, noticeBar, toastBar } = overlays;
 
   // The input box has two states: an armed question between turns, and a
   // capturing box while a request is in flight — where Enter queues the message
@@ -197,28 +181,19 @@ export function createTui(options = {}) {
   });
   focusGuard.start();
 
-  // The two right-aligned rows above the model row, built as one pair
-  // (app/status-rows.js) so they can never drift a cell apart: the working-time
-  // counter on top (empty until the session has worked a second) and the status
-  // bar with the context-window meter under it, still visible while the spinner
-  // owns the left slot. Both boxes pad one column each side, so width() reports
-  // the usable interior.
-  const usableWidth = () => {
-    const width = Number(screen.width) || Number(output.columns) || 0;
-    return width > 2 ? width - 2 : 0;
-  };
-  const statusRows = createStatusRows({
-    width: usableWidth,
-    paintStatus: (line) => {
-      if (closed) return;
-      statusBar.setContent(line);
-      refresh();
-    },
-    paintWork: (line) => {
-      if (closed) return;
-      workBar.setContent(line);
-      refresh();
-    },
+  // The two right-aligned rows above the model row, wired to their widgets here and
+  // built as one pair (app/status-rows.js) so they can never drift a cell apart: the
+  // working-time counter on top and the status bar with the context-window meter under
+  // it, both visible while the spinner owns the left slot. The wiring — the two boxes,
+  // the screen's own width and the closed-screen gate — lives in that module, which
+  // exists to keep this file the *wiring* and nothing more.
+  const statusRows = createWiredStatusRows({
+    screen,
+    statusBar,
+    workBar,
+    refresh,
+    columns: output.columns,
+    isClosed: screenClosed,
   });
   const statusRow = statusRows.statusRow;
 
@@ -263,7 +238,7 @@ export function createTui(options = {}) {
   // A resize re-fits every row measured at the old width and puts the newest line
   // back in view (app/tui-teardown.js).
   createResizeRepaint({
-    screen, transcript, statusRow, workRow: statusRows.workRow, queue, brandBar, noticeBar,
+    screen, transcript, statusRow, workRow: statusRows.workRow, queue, overlays,
   });
 
   // The teardown is the reverse of construction, and happens once: the input box
@@ -274,25 +249,25 @@ export function createTui(options = {}) {
       () => promptInput.abandon(),
       () => queue.close(),
       () => modeRow.close(),
-      () => noticeBar.close(),
-      () => brandBar.close(),
+      () => overlays.close(),
       () => view.close(),
       () => keys.dispose(),
       () => focusGuard.close(),
       () => statusRows.dispose(),
     ],
     screen,
-    state: { isClosed: () => closed, markClosed: () => { closed = true; } },
+    state: { isClosed: screenClosed, markClosed },
   });
 
   statusRows.render();
   queue.paint();
-  brandBar.paint();
+  overlays.paint();
 
   return createTuiSurface({
     question,
     promptInput,
     view,
+    selection: pane.selection,
     queue,
     queueRegion,
     pastes,
@@ -309,6 +284,7 @@ export function createTui(options = {}) {
     setQueueHeight,
     focusGuard,
     noticeBar,
+    toastBar,
     brandBar,
     refresh,
     scrollBy: (amount) => pane.scrollBy(amount),
@@ -316,7 +292,7 @@ export function createTui(options = {}) {
     log,
     logBlock,
     close,
-    isClosed: () => closed,
+    isClosed: screenClosed,
     modelLabel,
   });
 }

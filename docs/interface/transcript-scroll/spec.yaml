@@ -12,6 +12,10 @@ summary: >
 code:
   - path: app/transcript-scroll.js
     symbols: [FOLLOW_BOTTOM_PERCENT, WHEEL_STEP_ROWS, pageStepRows, isFollowingScroll]
+  - path: app/transcript-geometry.js
+    symbols: [contentOrigin, scrollBase, scrollOffset, visibleHeight, scrollHeight, wrapWidthOf, contentPoint]
+  - path: app/transcript-viewport.js
+    symbols: [createViewport]
   - path: app/transcript-view.js
     symbols: [FOLLOW_BOTTOM_PERCENT, isFollowingScroll, createTranscriptView]
 tests:

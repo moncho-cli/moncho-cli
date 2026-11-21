@@ -20,9 +20,9 @@
  * the work that depends on the *width*: the status row (whose meter is
  * right-aligned), the working-time row above it (right-aligned against the very
  * same column), the queue previews (fitted to the bar's columns, which would
- * otherwise keep the width of the old terminal), the brand line (which may start or
- * stop fitting whole, moving the top of the conversation) and the notices that
- * follow it.
+ * otherwise keep the width of the old terminal), and the three floating bars as a
+ * group (the brand line, which may start or stop fitting whole and move the top of
+ * the conversation, and the notices and the copy toast that hang below it).
  *
  * @param {object} regions the row-based regions and the repaint of the screen
  * @returns {() => void} the listener, so a caller can detach it
@@ -33,8 +33,7 @@ export function createResizeRepaint({
   statusRow,
   workRow = null,
   queue,
-  brandBar,
-  noticeBar,
+  overlays = null,
 } = {}) {
   const repaint = () => {
     // Regions are laid out relatively, so the newest line has to be put back in
@@ -45,8 +44,11 @@ export function createResizeRepaint({
     // edge, so it is re-fitted with it rather than a cell behind it.
     workRow?.render?.();
     queue?.paint?.();
-    brandBar?.paint?.();
-    noticeBar?.paint?.();
+    // The three floating bars are a group (app/tui-overlays.js): the brand line owns the
+    // first row and the notices and the copy toast both hang below it, so re-fitting one
+    // of them without the others would stack them wrong. `overlays.paint()` does all
+    // three in that order, which also re-reads the brand row after a resize.
+    overlays?.paint?.();
   };
   screen?.on?.('resize', repaint);
   return repaint;

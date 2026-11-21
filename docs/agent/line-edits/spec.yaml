@@ -12,7 +12,12 @@ summary: >
   matching line. The search is matched against the file's own line endings, so a CRLF file
   can be edited with an LF search. It is the routine edit tool because the diff format was
   the measured failure: every recorded patch_file refusal was INVALID_PATCH_LINE or
-  HUNK_COUNT_MISMATCH, both of which a search/replace pair cannot express.
+  HUNK_COUNT_MISMATCH, both of which a search/replace pair cannot express. The shipped
+  prompt carries the same precondition as a rule (config/prompt.md §3.4): an edit is
+  composed only from bytes just read with read_file, because a hint_file sketch, a blob, a
+  grep match, a remembered line number and the model's own earlier replacement are all
+  paraphrases, and the NO_CHANGES refusal on an identical search/replace is the sign that a
+  search was composed from one.
 code:
   - path: utils/edit_lib.js
     symbols: [applyOne, applyEditsToText, occurrences, MAX_EDITS]
@@ -51,3 +56,7 @@ tests:
       - the tool returns a structured success/error JSON contract
       - a pasted diff is applied verbatim, and refused when it does not fit
       - the pasted-diff branch and a search/replace edit are never mixed
+  - path: tests/edit-prompt-contract.test.js
+    cases:
+      - the shipped prompt makes an exact read the precondition of an edit
+      - the rule is stated as something the model can act on and check

@@ -68,4 +68,5 @@ specs:
   - interface/conversation-timestamps
   - interface/prose-bands
   - interface/markdown-tables
+  - interface/clipboard-selection
   - maintainer/version-bump

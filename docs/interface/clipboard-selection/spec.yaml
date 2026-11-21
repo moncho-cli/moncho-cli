@@ -1,0 +1,111 @@
+id: interface/clipboard-selection
+domain: interface
+title: Selecting text in the conversation and copying it on release
+status: active
+summary: >
+  A terminal's own selection is invisible to the process, so the conversation makes its own:
+  app/transcript-select.js turns a mouse gesture into two points (a line and a cell), and reads
+  the lines from blessed's real table (widget._clines) rather than its wrapped rows, because a
+  mouse point names a line of content and indexing the wrapped rows copied the text one line
+  below the pointer on exactly the long lines a reader drags over. The shape of the gesture is
+  forced by one neo-blessed behaviour: a drag is reported as repeated mousedown, never
+  mousemove, because blessed recognises motion only from the no-button codes
+  (program.js#_bindMouse: b === 35 || 39 || 51 || 43) and a drag carries the button bit, so it
+  falls through to mousedown with the new coordinates. The first press anchors the gesture and
+  every later one extends it; a machine that re-anchored on each press restarted at every drag
+  step and copied nothing, which is why holding Shift (which adds 4 to the code, and 39 is in
+  blessed's motion list) appeared to work. mousemove is only ever a hover and extends nothing
+  while no button is held; mouseup finishes the gesture with the release point taken from the
+  event; and click finishes an already-live gesture, which blessed emits before mouseup, so the
+  second edge copies nothing. Whichever edge finishes, the selection is cleared and the band
+  painted away. A gesture that never moved is not a selection, and the pane falls through to
+  the block toggle (app/transcript-view.js#clickAt), so a plain click still expands a tool
+  result. app/clipboard.js writes the text to the terminal as OSC 52, bounded to
+  CLIPBOARD_MAX_BYTES of encoded payload and trimmed between clusters with the report saying
+  so, wrapped for tmux or screen when the environment names one, and reported rather than
+  thrown when there is no writer. app/transcript-highlight.js marks exactly the cells that will
+  be copied, inserted at a cell boundary through the line's own tags so a row's colours stay
+  readable under the reverse video, and a line with no selection comes back byte-for-byte. The
+  copy is confirmed by a four-second top-right toast reading "Copied text to clipboard"
+  (app/toast.js, app/tui-toast.js) — one plain sentence in a corner, not the provider notice
+  overlay and never a row in the conversation: a selection is presentation only, never a
+  context chunk and never a session file.
+code:
+  - path: app/transcript-select.js
+    symbols: [normalizePoint, isBefore, isSamePoint, sliceCells, selectionText, contentRows, pointAt, createTextSelection]
+  - path: app/transcript-highlight.js
+    symbols: [wrapWidthOf, SELECTION_TAG_OPEN, SELECTION_TAG_CLOSE, highlightCells, selectionRange, lineCellRange, highlightRows]
+  - path: app/transcript-mouse.js
+    symbols: [bindSelectionGestures]
+  - path: app/clipboard.js
+    symbols: [CLIPBOARD_MAX_BYTES, OSC_TERMINATOR, CLIPBOARD_SELECTION, multiplexerOf, fitToClipboard, osc52, createClipboard]
+  - path: app/clipboard-native.js
+    symbols: [nativeClipboardCandidates, createNativeClipboard]
+  - path: app/toast.js
+    symbols: [TOAST_TTL_MS, TOAST_MAX_CHARS, COPIED_TOAST_TEXT, formatToastText, createToast]
+  - path: app/tui-toast.js
+    symbols: [createToastBar]
+  - path: app/tui-clipboard.js
+    symbols: [createSelectionClipboard]
+  - path: app/tui-transcript.js
+    symbols: [createTranscriptPane]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: app/transcript-geometry.js
+    symbols: [contentOrigin, scrollBase, scrollOffset, visibleHeight, scrollHeight, drawnRows, drawnWidth, wrapWidthOf, contentPoint]
+  - path: app/cell-width.js
+    symbols: [graphemes, graphemeWidth]
+tests:
+  - path: tests/clipboard-selection.test.js
+    cases:
+      - "sliceCells() takes whole clusters and never cuts a wide glyph in half"
+      - "selectionText() normalises the drag, joins the rows and drops the band padding"
+      - "pointAt() maps a mouse event onto a content point through the widget geometry"
+      - "createTextSelection() copies on the release, so a drag with no motion still copies"
+      - "finish() clears the selection and repaints, copied or not"
+      - "a drag that moves copies on whichever edge finishes it first"
+      - "a second press extends the gesture instead of restarting it"
+      - "cancel() drops a gesture without copying, and clears the band"
+  - path: tests/clipboard-mouse-wire.test.js
+    cases:
+      - "a drag as a terminal sends it copies what was dragged over, exactly once"
+      - "the band follows a drag that arrives as repeated presses, and clears on release"
+      - "a pointer moving with no button held selects nothing"
+      - "a release outside the transcript still finishes the gesture, and a drag over the edge copies to the end"
+      - "a press outside the pane never starts a selection"
+  - path: tests/clipboard-selection-tui.test.js
+    cases:
+      - "a release copies the selection and a plain click still toggles a block"
+      - "a drag copies the line it started on, not the one below it"
+      - "the copy is confirmed in the top-right toast and never enters the conversation"
+  - path: tests/clipboard-copy.test.js
+    cases:
+      - "fitToClipboard() bounds the encoded payload and says it truncated"
+      - "osc52() encodes the text and wraps it for tmux and screen"
+      - "createClipboard() reports a missing or throwing writer instead of throwing"
+  - path: tests/clipboard-native.test.js
+    cases:
+      - "the clipboard tools are chosen from the platform and the session"
+      - "the first tool that accepts the text wins, and the rest are never spawned"
+      - "a tool that is not installed is skipped and remembered, so it is tried once"
+      - "a tool that fails is passed over for the next, and none working is reported not thrown"
+      - "createClipboard() prefers the native tool and falls back to the OSC 52 sequence"
+  - path: tests/clipboard-highlight.test.js
+    cases:
+      - "highlightCells() marks exactly the selected cells through the line's own tags"
+      - "lineCellRange() maps a wrapped-row range onto one display line"
+      - "highlightRows() reads blessed's own row table and leaves other lines untouched"
+  - path: tests/toast.test.js
+    cases:
+      - "the copy toast says the plain sentence and lives for four seconds"
+      - "a second copy replaces the first and restarts its four seconds"
+      - "a blank message is not a toast, and the text is fitted to the box"
+      - "subscribe() reports every change, and close() forgets the subscribers"
+  - path: tests/tui-toast.test.js
+    cases:
+      - "the toast box appears with its message and hides itself on a timer"
+      - "the four-second default is what a copy actually gets"
+      - "the toast box is top-right and only as wide as its sentence"
+      - "a copy raises the confirmation and the provider overlay is not used for it"

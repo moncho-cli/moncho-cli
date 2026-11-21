@@ -20,7 +20,7 @@ code:
   - path: app/work-row.js
     symbols: [createWorkRow]
   - path: app/status-rows.js
-    symbols: [createStatusRows]
+    symbols: [createStatusRows, createWiredStatusRows]
   - path: utils/usage-stats.js
     symbols: [applyTime, createUsageMeter, formatUsageRow]
   - path: app/conversation-manager.js

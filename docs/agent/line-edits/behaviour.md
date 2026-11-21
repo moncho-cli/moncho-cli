@@ -74,6 +74,27 @@ A refusal that only says "not found" costs a re-read and another model call. So
 `SEARCH_NOT_UNIQUE` answers with every matching line, so the caller can quote more
 context or set `all: true` deliberately.
 
+## The precondition, stated to the model
+
+A search is matched against the file's bytes, so it can only be composed from the file's
+bytes. That is a fact about the engine, and it is stated to the model as a rule
+(`config/prompt.md` §3.4): **an edit is legal only against bytes just read**, and the region
+about to change is read with `read_file` before the edit is composed.
+
+The rule names the paraphrases explicitly, because each of them *looks* like the bytes and
+is not one: a `hint_file` sketch (tabs expanded, blank runs collapsed, long lines cut), a
+`blob` page, a `grep` line, a remembered line number, another file's copy of the same text,
+and the model's own earlier `replace`. It also names the two refusals the mistake produces —
+`SEARCH_NOT_FOUND`, which carries the diagnosis to fix it, and `NO_CHANGES` on a search equal
+to its replacement, which is the signature of a search copied from somewhere other than the
+file — and `write_file`, which is the way out when the region is large or the file is being
+rewritten whole.
+
+The rule is prose in the shipped system prompt rather than code in this repository
+(`config/prompt.md` is not a document of the project, §6), so the contract is held by a test
+instead: `tests/edit-prompt-contract.test.js` reads the section and fails if it stops naming
+the tools the model can reach or the refusals it can receive.
+
 ## Why this exists
 
 Measured across the recorded sessions, every `patch_file` failure was
@@ -91,4 +112,4 @@ rename — so this is a change of *drivability*, not of safety.
 
 - Implementation: `utils/edit_lib.js`, `tools/edit_file.js`
 - The diff-shaped fallback: `docs/agent/patch-application`
-- Proof: `tests/edit.test.js`
+- Proof: `tests/edit.test.js`, `tests/edit-prompt-contract.test.js`

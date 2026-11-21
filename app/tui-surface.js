@@ -24,6 +24,7 @@ export function createTuiSurface({
   question,
   promptInput,
   view,
+  selection = null,
   queue,
   queueRegion,
   pastes,
@@ -40,6 +41,7 @@ export function createTuiSurface({
   setQueueHeight,
   focusGuard = null,
   noticeBar,
+  toastBar = null,
   brandBar = null,
   refresh,
   scrollBy,
@@ -144,6 +146,14 @@ export function createTuiSurface({
     collapseBlock: (id) => view.collapseBlock(id),
     clickTranscript: (data) => view.clickAt(data),
     /**
+     * The mouse selection in the conversation (`docs/interface/clipboard-selection`): the
+     * gesture itself, so the host and the tests can see a drag without a terminal.
+     */
+    selection,
+    get selectionRange() {
+      return selection ? selection.selection : null;
+    },
+    /**
      * Ask the user to pick one of `labels`, in a modal.
      *
      * Resolves with the index of the choice, or null when cancelled — the shape
@@ -216,6 +226,16 @@ export function createTuiSurface({
     },
     // The transient notices near the top of the screen (app/notice-overlay.js).
     noticeBar,
+    // The copy confirmation in the top-right corner (app/tui-toast.js): the bar itself,
+    // plus read-only views of the message it shows and whether it is up.
+    toastBar,
+    /** The confirmation on screen right now, or '' when there is none. */
+    get toastText() {
+      return toastBar ? toastBar.current : '';
+    },
+    get toastVisible() {
+      return toastBar ? toastBar.visible : false;
+    },
     get isClosed() {
       return isClosed();
     },

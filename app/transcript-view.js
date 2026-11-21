@@ -3,17 +3,18 @@ import { formatArg, formatTranscript } from './tui-render.js';
 import { bandWidthOf, composeBanded, takeBandOptions } from './prose-band.js';
 import { appendLines } from './transcript-append.js';
 import { STAMP_RE } from './transcript-stamp.js';
-import {
+import { createViewport } from './transcript-viewport.js';
+
+// The follow/hold rule, the gesture steps and the wheel live in
+// ./transcript-scroll.js (pure) and ./transcript-viewport.js (the widget binding), so
+// this module stays the model binding; the vocabulary is re-exported here because this
+// is the path every importer already uses.
+export {
   FOLLOW_BOTTOM_PERCENT,
   WHEEL_STEP_ROWS,
   pageStepRows,
   isFollowingScroll,
-} from './transcript-scroll.js';
-
-// The pure half (the follow/hold rule and the gesture steps) lives in
-// ./transcript-scroll.js so this module stays under the line budget; it is
-// re-exported here, because this is the path every importer already uses.
-export { FOLLOW_BOTTOM_PERCENT, WHEEL_STEP_ROWS, pageStepRows, isFollowingScroll };
+} from './transcript-viewport.js';
 
 /**
  * Bind a TranscriptModel to a blessed scrollable widget.
@@ -23,14 +24,29 @@ export { FOLLOW_BOTTOM_PERCENT, WHEEL_STEP_ROWS, pageStepRows, isFollowingScroll
  * never be lost. Rendering (sanitising, tag escaping, markdown colouring) happens
  * here, in `formatTranscript()`, so the model stays plain text.
  *
+ * Where the view *is* — the follow decision, the scroll steps, the wheel — is
+ * `createViewport()` (`app/transcript-viewport.js`): a different responsibility, and the
+ * only one that is about geometry rather than about what the conversation says.
+ *
  * `stamp` is the timestamp hook every appended entry is marked with
  * (app/transcript-stamp.js): the TUI passes `createStamper()`, a test a frozen
  * date, and the default `null` marks nothing, which is what the pure view tests
  * want. The mark is stored on the entry, so a repaint paints the same one.
+ *
+ * `decorate` is the one hook through which something outside the view can mark the
+ * composed lines — the mouse selection paints its reverse-video band with it
+ * (`app/transcript-highlight.js`). It is called with the *banded* lines and the widget,
+ * and must return lines of the same count: the row map the block click reads is built
+ * from the wrapping of what is handed to the widget, so a decorator that changed the
+ * number of lines would move every block under the cursor. The default `null` is no
+ * decorator at all.
  */
-export function createTranscriptView({ widget, refresh = () => {}, stamp = null } = {}) {
+export function createTranscriptView({
+  widget, refresh = () => {}, stamp = null, decorate = null,
+} = {}) {
   const model = new TranscriptModel();
   let closed = false;
+  const markLines = typeof decorate === 'function' ? decorate : null;
   // Depth of the bulk-append suspension (see `bulk()` below): while it is above zero
   // `paint()` returns without re-rendering, and the outermost `bulk()` paints once.
   let suspended = 0;
@@ -51,40 +67,7 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
   /** One display-ready line list from raw text (sanitised + markdown-coloured). */
   const formatLines = (text) => formatTranscript(text).split('\n');
 
-  const scrollOffset = () => (typeof widget?.getScroll === 'function' ? widget.getScroll() : 0);
-
-  /** Rows of content visible at once, as far as the widget can tell us. */
-  const visibleHeight = () => {
-    if (!widget) return 0;
-    const height = Number(widget.height) || 0;
-    const inner = Number(widget.iheight) || 0;
-    return height > 0 ? Math.max(0, height - inner) : 0;
-  };
-
-  /** Total scrollable height in rows (blessed's getScrollHeight()). */
-  const scrollHeight = () => {
-    if (!widget) return 0;
-    if (typeof widget.getScrollHeight === 'function') return Number(widget.getScrollHeight()) || 0;
-    return (Number(widget.childBase) || 0) + visibleHeight();
-  };
-
-  /**
-   * Is the transcript parked at the bottom right now? (see isFollowingScroll)
-   *
-   * The offset itself is the source of truth, not blessed's internal
-   * `_userScrolled` latch: the widget reaches the very end by several routes
-   * (End, mouse, resize) and the latch cannot be trusted to track them all.
-   * Before the first layout there is no geometry, and following is the safe
-   * answer: nothing has been scrolled away yet.
-   */
-  const following = () => {
-    if (!widget || !widget.lpos) return true;
-    return isFollowingScroll({
-      percent: typeof widget.getScrollPerc === 'function' ? widget.getScrollPerc() : 0,
-      scrollHeight: scrollHeight(),
-      visibleHeight: visibleHeight(),
-    });
-  };
+  const viewport = createViewport({ widget, repaint: () => refresh() });
 
   /**
    * Repaint the widget from the model.
@@ -95,7 +78,7 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
    * the same hold a block toggle takes, so both go through `keepScroll`.
    *
    * `keepScroll: true` forces the hold; `keepScroll: false` forces the follow.
-   * Left undefined, the rule above decides.
+   * Left undefined, the viewport's own rule decides.
    */
   const paint = ({ keepScroll } = {}) => {
     if (closed || !widget) return false;
@@ -103,82 +86,34 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
     // transcript as it grows, so N appends cost O(N^2) — which is where replaying a
     // large session spent its seconds (`bulk()` below paints once at the end).
     if (suspended > 0) return false;
-    const hold = keepScroll === undefined ? !following() : Boolean(keepScroll);
-    const offset = scrollOffset();
-
-    /** Put the view exactly where this repaint decided it belongs. */
-    const apply = () => {
-      if (hold) widget.setScroll(offset);
-      else widget.setScrollPerc(100);
-    };
 
     // The view owns the scroll position. blessed's log widget would jump to the
     // bottom on every 'set content' — precisely the behaviour this fixes — so its
-    // auto-jump stays suppressed (`_userScrolled` left raised) and apply() below
-    // is the only thing that moves the view.
+    // auto-jump stays suppressed (`_userScrolled` left raised) and the viewport is
+    // the only thing that moves the view.
     widget._userScrolled = true;
+    // The decision is taken *before* the content changes: the rule asks whether the
+    // reader is at the bottom, and a widget handed more lines is no longer at the same
+    // bottom — deciding afterwards would read every append as "the reader scrolled up"
+    // and freeze a view that was following.
+    const settle = viewport.decide({ keepScroll });
     // The band is a full-width background, so the width is resolved here, at paint
     // time, instead of being baked into a line (app/prose-band.js). A row whose role
     // has no band comes back byte-for-byte.
-    widget.setContent(composeBanded(model.lineRecords(), bandWidthOf(widget)));
-    apply();
+    const banded = composeBanded(model.lineRecords(), bandWidthOf(widget));
+    widget.setContent(markLines ? markLines(banded, widget) : banded);
+    settle();
 
     // blessed's handlers run on their own tick, so re-assert the decision there:
     // the last paint is the one that wins, whatever order they run in.
     setImmediate(() => {
       if (closed || !widget) return;
-      apply();
+      settle();
     });
 
     refresh();
     return true;
   };
-
-  /**
-   * Move the view by `delta` rows (positive = towards the bottom), clamped to
-   * the content. Returns true when the view actually moved.
-   *
-   * A scroll is **not** a repaint: the content is untouched, so blessed only
-   * has to move the viewport instead of re-parsing every line. Rebuilding the
-   * content on every step is what makes a wheel notch feel like a stutter, so
-   * the scroll path never calls `setContent()`.
-   */
-  const scrollRows = (delta) => {
-    if (closed || !widget || typeof widget.scroll !== 'function') return false;
-    const step = Math.trunc(Number(delta) || 0);
-    if (step === 0) return false;
-    const before = Number(widget.childBase) || 0;
-    // blessed clamps at both ends itself, so the view can never be scrolled
-    // past the first or the last row.
-    widget.scroll(step);
-    const moved = (Number(widget.childBase) || 0) !== before;
-    if (moved) refresh();
-    return moved;
-  };
-
-  /**
-   * Move a whole screenful: `direction > 0` pages towards the bottom.
-   *
-   * The step is `pageStepRows()`, one row short of the screenful, so the last
-   * row of the previous page is the first row of the next one and a reader
-   * paging through a long result never skips a line.
-   */
-  const scrollPage = (direction = 1) => {
-    const sign = Number(direction) < 0 ? -1 : 1;
-    return scrollRows(sign * pageStepRows(visibleHeight()));
-  };
-
-  // The mouse wheel nudges the view a few rows per notch. The handlers are
-  // ours rather than blessed's `mouse: true` ones: that option also installs
-  // a half-screen wheel step and scrollbar dragging, and this widget's click
-  // is already taken by the block toggle.
-  const wheelUp = () => { scrollRows(-WHEEL_STEP_ROWS); };
-  const wheelDown = () => { scrollRows(WHEEL_STEP_ROWS); };
-  const canListen = typeof widget?.on === 'function' && typeof widget?.removeListener === 'function';
-  if (canListen) {
-    widget.on('wheelup', wheelUp);
-    widget.on('wheeldown', wheelDown);
-  }
 
   /**
    * Append plain text (prose, notices, tool call headers).
@@ -313,21 +248,31 @@ export function createTranscriptView({ widget, refresh = () => {}, stamp = null 
     clear,
     bulk,
     paint,
-    scrollRows,
-    scrollPage,
+    /** Move the view by rows (positive = towards the bottom), clamped to the content. */
+    scrollRows: (delta) => viewport.scrollRows(delta),
+    /** Move a whole screenful (`direction < 0` pages up), one row short of the screenful. */
+    scrollPage: (direction) => viewport.scrollPage(direction),
+    /**
+     * A paint that re-reads the model and hands the widget the decorated lines, without
+     * moving the view.
+     *
+     * The pane calls it after a gesture changed the selection: the content is the same
+     * and the reader is mid-drag, so a scroll would fight the pointer and the offset the
+     * gesture was measured against.
+     */
+    repaintInPlace() {
+      return paint({ keepScroll: true });
+    },
     /** Turn the per-entry timestamps on or off (a session reload marks nothing). */
     setStamping(value) {
       stamping = value !== false;
       return stamping;
     },
     /** True while new output follows the bottom of the transcript. */
-    isFollowing: following,
+    isFollowing: () => viewport.following(),
     close() {
       closed = true;
-      if (canListen) {
-        widget.removeListener('wheelup', wheelUp);
-        widget.removeListener('wheeldown', wheelDown);
-      }
+      viewport.close();
     },
     get content() {
       return model.content;

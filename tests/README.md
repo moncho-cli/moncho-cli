@@ -36,6 +36,7 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `approach-gate.test.js` | The approach rule enforced: the seed is latched, a seedless message's calls are refused whole with one structured result per call, later batches of the seeded turn are ordinary, the seed rides the assistant chunk printed before the calls, and the bound lets the batch through without ever starving the turn. |
 | `patch.test.js` | Unified-diff application, its error codes and all-or-nothing behaviour. |
 | `edit.test.js` | Exact literal search/replace: literal matching, the two refusals with their evidence, order, all-or-nothing. |
+| `edit-prompt-contract.test.js` | The read-before-edit rule as the model reads it in `config/prompt.md` §3.4: the exact read as the precondition, which sources are paraphrases rather than bytes, and the refusals and way out it names. |
 | `edit-engine.test.js` | The pure edit engine and its miss diagnostics: literal matching, the candidate report, the bounds. |
 | `tui.test.js` | The blessed TUI layout, transcript rendering and pastes. |
 | `prose-bands.test.js` | The background band around each side of the dialogue: the two roles and their colours, the fill to the region's own width, the one-line margin (collapsed where two bands meet), and the fact that nothing else is banded. |
@@ -73,6 +74,14 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `version-bump.test.js` | The version a maintainer moves before a release: the semver arithmetic, the one-step-is-enough rule, the manifest and the lockfile moving together, the guide that states it, and the guard that keeps it out of the shipped agent prompt. |
 | `compact-command.test.js` | The `/compact [force]` slash command: the ordinary budget check, the forced compaction that restarts the pulse, and the refusals. |
 | `stale-read.test.js` | The stale-read guard: a read is fingerprinted, a write or patch into a file that changed since is refused with `STALE_READ`, and a never-read or brand-new file is written as before. |
+| `clipboard-selection.test.js` | Selecting text in the conversation: the release and cell points, the cluster-exact extraction, and the rule that a plain click still toggles a block. |
+| `clipboard-mouse-wire.test.js` | The gesture driven by the bytes a real terminal sends (SGR reports): a drag arrives as repeated `mousedown`, so it must extend rather than restart, and a release outside the pane must still finish it — the two bugs the synthetic-action suites could not see. |
+| `clipboard-copy.test.js` | The copy end: the bounded OSC 52 sequence, its tmux and screen envelopes, and a missing or throwing writer reported rather than thrown. |
+| `clipboard-native.test.js` | The clipboard tool that delivers first (`pbcopy` / `clip.exe` / `wl-copy` / `xclip` / `xsel`): the order per platform, the fall-through, a missing tool remembered, and the OSC 52 fallback when none works. |
+| `clipboard-highlight.test.js` | The reverse-video mark over exactly the copied cells, spliced at a cell boundary through the line's own tags. |
+| `clipboard-selection-tui.test.js` | The whole gesture through a real screen: a release copies and a plain click still toggles a block, a wrapped line is copied from the line it started on, and the copy is a top-right toast, never a row in the conversation. |
+| `toast.test.js` | The copy confirmation model: one plain sentence, four seconds, a second copy replacing the first, and a blank message not being a toast. |
+| `tui-toast.test.js` | The toast box itself: top-right, only as wide as its sentence, and hidden by its own timer. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the
 suites import; they are not test files themselves.

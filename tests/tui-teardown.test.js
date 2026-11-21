@@ -28,8 +28,10 @@ test('createResizeRepaint() re-fits every row measured at the old width', () => 
     transcript: region('transcript', ['setScrollPerc'], calls),
     statusRow: region('statusRow', ['render'], calls),
     queue: region('queue', ['paint'], calls),
-    brandBar: region('brandBar', ['paint'], calls),
-    noticeBar: region('noticeBar', ['paint'], calls),
+    // The three floating bars are re-fitted as one group (app/tui-overlays.js): the
+    // brand line owns the first row and the notices and the copy toast hang below it,
+    // so fitting one without the others would stack them wrong.
+    overlays: region('overlays', ['paint'], calls),
   };
 
   const repaint = createResizeRepaint(regions);
@@ -43,8 +45,7 @@ test('createResizeRepaint() re-fits every row measured at the old width', () => 
     'transcript.setScrollPerc',
     'statusRow.render',
     'queue.paint',
-    'brandBar.paint',
-    'noticeBar.paint',
+    'overlays.paint',
   ], 'the newest line is kept in view and every width-fitted row is re-fitted');
 });
 

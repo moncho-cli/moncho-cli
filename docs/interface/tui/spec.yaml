@@ -28,6 +28,10 @@ code:
     symbols: [bindKeys]
   - path: app/tui-teardown.js
     symbols: [createResizeRepaint, createTeardown]
+  - path: app/tui-screen.js
+    symbols: [createScreen]
+  - path: app/tui-overlays.js
+    symbols: [createFloatingOverlays]
   - path: app/paste-registry.js
     symbols: [createPasteRegistry]
   - path: app/compaction-notice.js
@@ -35,7 +39,7 @@ code:
   - path: app/status-row.js
     symbols: [createStatusRow, SPINNER_FRAMES, SPINNER_INTERVAL_MS]
   - path: app/status-rows.js
-    symbols: [createStatusRows]
+    symbols: [createStatusRows, createWiredStatusRows]
   - path: app/work-row.js
     symbols: [createWorkRow]
   - path: app/tui-layout.js
@@ -44,6 +48,8 @@ code:
     symbols: [createTranscriptPane]
   - path: app/tui-surface.js
     symbols: [createTuiSurface]
+  - path: app/tui-clipboard.js
+    symbols: [createSelectionClipboard]
   - path: app/transcript-view.js
     symbols: [createTranscriptView]
   - path: app/tui-modal.js
