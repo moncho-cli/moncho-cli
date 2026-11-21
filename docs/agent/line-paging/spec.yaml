@@ -1,0 +1,40 @@
+id: agent/line-paging
+domain: agent
+title: A page of a file, counted in lines
+status: active
+summary: >
+  read_file and hint_file page a file in LINES: offset is a 1-based line number (a
+  negative one counting back from the last line), limit is a number of lines, and the
+  page is always whole lines. The <file … from=… to=… lines=…> delimiter therefore names
+  the same range the page really returned — before this, offset/limit counted characters
+  while the delimiter counted lines, so a page was labelled with a range it did not cover
+  and the model could not page with it (task-backlog item 63). A page starting past the
+  end is empty and reports no range rather than clamping. Both tools share
+  utils/line-page.js#resolveLinePage, so the hint spec's "pages the way read_file does"
+  is one implementation instead of two copies of a formula, and lineNumbers numbering
+  starts at the file's own line, never the page's.
+code:
+  - path: utils/line-page.js
+    symbols: [totalLines, resolveLinePage]
+  - path: tools/read_file.js
+    symbols: [fileTag, wrapFileContent, numberLines, definition, execute]
+  - path: tools/hint_file.js
+    symbols: [hintTag, wrapHint, definition, execute]
+tests:
+  - path: tests/line-paging.test.js
+    cases:
+      - a text is counted in lines, a trailing newline opening the last one
+      - offset is a 1-based line number and limit a number of lines
+      - a page is whole lines, so the range it names is the range it returned
+      - a negative offset counts back from the last line
+      - an omitted limit reads to the end and a page that ends there keeps the last newline
+      - an offset past the end is an empty page, never a clamp
+      - a zero limit and an empty file are both empty pages
+  - path: tests/harness-tools.test.js
+    cases:
+      - read_file reports the paged line range and total
+      - read_file pages in lines, so the range it reports is the range it returned
+      - read_file supports a negative offset (lines from the end)
+  - path: tests/hint-file.test.js
+    cases:
+      - hint_file pages a file the way read_file does, negative offsets included

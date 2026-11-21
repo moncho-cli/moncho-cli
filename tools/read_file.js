@@ -2,6 +2,7 @@ import fs from 'fs';
 import { resolveProjectPath, projectRelativePath } from '../utils/path-safety.js';
 import { recordRead } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
+import { resolveLinePage } from '../utils/line-page.js';
 
 /**
  * Read a file and return it wrapped in the delimiters required by task.md item 7:
@@ -12,6 +13,11 @@ import { defineTool } from '../utils/tool-schema.js';
  *
  * The tag makes every read unambiguous for the model (path + page range + size),
  * and `lineNumbers:false` gives byte-exact content suitable for building patches.
+ *
+ * **The page and the tag are in the same metric.** Both count lines
+ * (`utils/line-page.js`): before that they did not — `offset`/`limit` were character
+ * counts while `from`/`to`/`lines` were line counts — so the delimiter described a range
+ * the model had not been given and could not page with (task-backlog item 63).
  */
 
 /** Build the opening tag for a read result. */
@@ -29,24 +35,20 @@ export function wrapFileContent({ relativePath, content, from, to, lines }) {
 }
 
 /**
- * Map a character offset to a 1-based line number in the full file.
- * @param {string} text
- * @param {number} offset
- * @returns {number} line number containing `offset` (1 when offset is 0)
+ * Prepend the file's own line numbers to a page, in the same 1-based metric the
+ * `from=` attribute reports — the one coordinate a reader can act on.
  */
-export function lineNumberAtOffset(text, offset) {
-  if (offset <= 0) return 1;
-  let line = 1;
-  for (let i = 0; i < offset && i < text.length; i++) {
-    if (text[i] === '\n') line++;
-  }
-  return line;
+export function numberLines(text, from = 1) {
+  return String(text ?? '')
+    .split('\n')
+    .map((line, i) => String(from + i).padStart(6) + '  ' + line)
+    .join('\n');
 }
 
 const { definition, execute } = defineTool({
   name: 'read_file',
   description:
-    'Read the contents of a file, with optional offset and limit for paging. Negative offset values count from the end of the file (e.g., -100 starts reading 100 characters from the end). Optionally prepend line numbers (default: true). The result is always delimited by <file relative_path="..."> ... </file> tags.',
+    'Read the contents of a file, with optional offset and limit for paging. Both count LINES, not characters: offset is a 1-based line number (a negative one counts back from the end, so -1 is the last line) and limit is how many lines to return. An offset past the end returns an empty page rather than clamping. Optionally prepend line numbers (default: true). The result is always delimited by <file relative_path="..."> ... </file> tags.',
   parameters: {
     properties: {
       path: {
@@ -55,11 +57,11 @@ const { definition, execute } = defineTool({
       },
       offset: {
         type: 'integer',
-        description: 'Character offset to start reading from. Positive values count from the beginning (default: 0). Negative values count from the end of the file (e.g., -100 starts reading 100 characters from the end).'
+        description: 'Line number to start reading from, 1-based. Negative values count back from the end (e.g., -100 starts 100 lines before the last). An offset past the end returns an empty page.'
       },
       limit: {
         type: 'integer',
-        description: 'Maximum number of characters to read (no default, reads entire file if omitted)'
+        description: 'Maximum number of lines to read (no default: reads to the end of the file)'
       },
       lineNumbers: {
         type: 'boolean',
@@ -76,42 +78,26 @@ const { definition, execute } = defineTool({
     // The model now holds these bytes: remember them, so a later write into a file
     // that changed in the meantime is refused (utils/read-tracker.js).
     recordRead(relativePath);
-    const fileSize = fullContent.length;
-    const fileLines = fullContent === '' ? 0 : fullContent.split('\n').length;
 
-    let offset = Number.isInteger(args.offset) ? args.offset : 0;
-    const limit = Number.isInteger(args.limit) && args.limit >= 0 ? args.limit : undefined;
-    const lineNumbers = args.lineNumbers !== false; // default true
+    const page = resolveLinePage(fullContent, {
+      ...(Number.isInteger(args.offset) ? { offset: args.offset } : {}),
+      ...(Number.isInteger(args.limit) ? { limit: args.limit } : {})
+    });
 
-    // Handle negative offset: count from the end of the file
-    if (offset < 0) offset = Math.max(0, fileSize + offset);
-    const start = Math.min(offset, fileSize);
-
-    const slice = limit !== undefined
-      ? fullContent.substring(start, start + limit)
-      : fullContent.substring(start);
-
-    if (slice === '') {
-      return wrapFileContent({ relativePath, content: '', lines: `0/${fileLines}` });
+    // Every page is in the file's own lines, so the tag's range and the numbered body
+    // cannot disagree — and `total` is the number the next offset is computed from.
+    if (page.empty) {
+      return wrapFileContent({ relativePath, content: '', lines: `0/${page.total}` });
     }
 
-    const from = lineNumberAtOffset(fullContent, start);
-    const returnedLines = slice.split('\n').length;
-    const to = from + returnedLines - 1;
-
-    const body = lineNumbers
-      ? slice
-          .split('\n')
-          .map((line, i) => String(from + i).padStart(6) + '  ' + line)
-          .join('\n')
-      : slice;
+    const body = args.lineNumbers === false ? page.text : numberLines(page.text, page.from);
 
     return wrapFileContent({
       relativePath,
       content: body,
-      from,
-      to,
-      lines: returnedLines === fileLines ? `${returnedLines}` : `${returnedLines}/${fileLines}`
+      from: page.from,
+      to: page.to,
+      lines: page.lines === page.total ? `${page.lines}` : `${page.lines}/${page.total}`
     });
   }
 });

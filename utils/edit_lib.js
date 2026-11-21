@@ -8,6 +8,7 @@ import {
   similarity,
   nearestCandidates,
   diagnoseMiss,
+  sourceExcerpt,
 } from './edit-miss.js';
 
 /**
@@ -53,6 +54,7 @@ export {
   similarity,
   nearestCandidates,
   diagnoseMiss,
+  sourceExcerpt,
 } from './edit-miss.js';
 
 /** How many edits one call may carry. A larger batch is a rewrite, not an edit. */
@@ -110,13 +112,18 @@ export function applyOne(content, edit = {}) {
   if (found.length === 0) {
     const candidates = nearestCandidates(source, search);
     const diagnosis = diagnoseMiss(source, search);
+    const excerpt = sourceExcerpt(source, search);
     throw new EditError(
       'SEARCH_NOT_FOUND',
       'The "search" text does not appear in the file.',
       {
         candidates,
         ...(diagnosis ? { hint: diagnosis } : {}),
-        guidance: 'Call read_file (lineNumbers:false) and copy the text to find verbatim, including its indentation.',
+        ...(excerpt ? { source: excerpt.lines, sourceNote: excerpt.note, sourceFrom: excerpt.from, sourceTo: excerpt.to } : {}),
+        // Handing the bytes back only pays off if the caller stops guessing: a retry of
+        // the same search spends a call to be told what this answer already said.
+        retry: 'do not retry this search text unchanged',
+        guidance: 'The source above is what is on disk now: build the next call from those bytes, not from the text this search came from. read_file is only needed for a region this excerpt does not show.',
       },
     );
   }

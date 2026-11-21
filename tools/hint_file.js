@@ -8,7 +8,8 @@ import {
   hintFileText,
   hintSavings,
 } from '../utils/file-hint.js';
-import { lineNumberAtOffset } from './read_file.js';
+import { resolveLinePage } from '../utils/line-page.js';
+import { numberLines } from './read_file.js';
 
 /**
  * `hint_file` — read a file's *sketch* instead of its bytes.
@@ -20,18 +21,18 @@ import { lineNumberAtOffset } from './read_file.js';
  * > truncated as well leaving a ...[N chars after] so the model can hint file contents
  * > without risking super long lines congesting the context
  *
- * So it is `read_file` with the same paging (a character `offset`, a `limit`, a
- * negative offset counting from the end) and the same delimited output, and one
- * difference: what comes back is **lossy by construction**
- * (`utils/file-hint.js#hintFileText`). It is the tool for "what is in here?" when the
- * exact bytes do not matter yet; `read_file` remains the tool for the bytes, and the
- * delimiter says `hint` so the two can never be confused in a transcript.
+ * So it is `read_file` with the same paging — a 1-based line `offset`, a `limit` in
+ * lines, a negative offset counting back from the end, all through the one shared
+ * `utils/line-page.js` — and the same delimited output, with one difference: what comes
+ * back is **lossy by construction** (`utils/file-hint.js#hintFileText`). It is the tool
+ * for "what is in here?" when the exact bytes do not matter yet; `read_file` remains the
+ * tool for the bytes, and the delimiter says `hint` so the two can never be confused in
+ * a transcript.
  *
- * Everything that must not be lossy stays exact: the path goes through the same
- * sandbox as every other file tool (`resolveProjectPath`), the page is cut on the
- * characters the caller asked for, and the delimiter reports the line range, the
- * characters returned and the characters the page really held — so the model knows
- * both what it got and what it is missing.
+ * Everything that must not be lossy stays exact: the path goes through the same sandbox
+ * as every other file tool (`resolveProjectPath`), the page is cut on whole lines, and the
+ * delimiter reports the line range, the characters returned and the characters the page
+ * really held — so the model knows both what it got and what it is missing.
  */
 
 /** Build the opening tag of a hint. */
@@ -70,7 +71,7 @@ function errorResponse(error, args) {
 const { definition, execute } = defineTool({
   name: 'hint_file',
   description:
-    'Read a *sketch* of one file, like read_file but lossy on purpose: tabs become spaces, runs of blank lines collapse to one, and long lines are cut with a "...[N chars after]" marker. Supports the same paging (offset/limit, negative offset counts from the end) and returns the page inside <hint path="..."> ... </hint> tags carrying the line range, the characters returned and the characters the page held. Use it to see what a file is about without spending the context a full read costs; use read_file when the exact bytes matter (a patch, a diff, a line to match).',
+    'Read a *sketch* of one file, like read_file but lossy on purpose: tabs become spaces, runs of blank lines collapse to one, and long lines are cut with a "...[N chars after]" marker. Same paging, counted in LINES (offset is a 1-based line number, a negative one counting back from the end; limit is how many lines), and the page comes back inside <hint path="..."> ... </hint> tags carrying the line range, the characters returned and the characters the page held. Use it to see what a file is about without spending the context a full read costs; use read_file when the exact bytes matter (a patch, a diff, a line to match).',
   parameters: {
     properties: {
       path: {
@@ -79,11 +80,11 @@ const { definition, execute } = defineTool({
       },
       offset: {
         type: 'integer',
-        description: 'Character offset to start from. Positive counts from the beginning (default: 0); negative counts from the end of the file.',
+        description: 'Line number to start from, 1-based. Negative values count back from the end of the file. An offset past the end returns an empty page.',
       },
       limit: {
         type: 'integer',
-        description: 'Maximum number of characters of the file to take as the page (no default, the rest of the file is used).',
+        description: 'Maximum number of lines to take as the page (no default: the rest of the file is used).',
       },
       lineNumbers: {
         type: 'boolean',
@@ -108,42 +109,31 @@ const { definition, execute } = defineTool({
       // A hint is a read too: the model has seen a sketch of these bytes, so a write
       // into a file that moved afterwards is refused (utils/read-tracker.js).
       recordRead(relativePath);
-      const fileSize = fullContent.length;
-      const fileLines = fullContent === '' ? 0 : fullContent.split('\n').length;
 
-      let offset = Number.isInteger(args.offset) ? args.offset : 0;
-      const limit = Number.isInteger(args.limit) && args.limit >= 0 ? args.limit : undefined;
+      // The same line band read_file offers, so a hint can be asked for one region and
+      // its coordinates mean the same thing in both tools.
+      const page = resolveLinePage(fullContent, {
+        ...(Number.isInteger(args.offset) ? { offset: args.offset } : {}),
+        ...(Number.isInteger(args.limit) ? { limit: args.limit } : {}),
+      });
 
-      // The same paging read_file offers, so a hint can be asked for one region.
-      if (offset < 0) offset = Math.max(0, fileSize + offset);
-      const start = Math.min(offset, fileSize);
-      const page = limit !== undefined
-        ? fullContent.substring(start, start + limit)
-        : fullContent.substring(start);
-
-      const from = lineNumberAtOffset(fullContent, start);
-      const hint = hintFileText(page, {
+      const hint = hintFileText(page.text, {
         ...(Number.isInteger(args.maxLineChars) && args.maxLineChars > 0 ? { maxLineChars: args.maxLineChars } : {}),
         ...(Number.isInteger(args.maxChars) && args.maxChars > 0 ? { maxChars: args.maxChars } : {}),
       });
-      const pageLines = page === '' ? 0 : page.split('\n').length;
-      const to = from + Math.max(0, pageLines - 1);
-      const savings = hintSavings(page, hint.text);
+      const savings = hintSavings(page.text, hint.text);
 
       const body = args.lineNumbers === true
-        ? hint.text
-          .split('\n')
-          .map((line, i) => String(from + i).padStart(6) + '  ' + line)
-          .join('\n')
+        ? numberLines(hint.text, page.from ?? 1)
         : hint.text;
 
       const truncated = hint.truncated || savings.savedChars > 0;
       return wrapHint({
         path: relativePath,
         text: body,
-        from,
-        to,
-        lines: pageLines === fileLines ? `${hint.lines}` : `${hint.lines}/${fileLines}`,
+        from: page.from,
+        to: page.to,
+        lines: page.lines === page.total ? `${hint.lines}` : `${hint.lines}/${page.total}`,
         chars: savings.after,
         of: savings.before,
         truncated,

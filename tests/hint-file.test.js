@@ -14,6 +14,7 @@ import {
   truncateLine,
 } from '../utils/file-hint.js';
 import { execute as hintExecute } from '../tools/hint_file.js';
+import { execute as readFileExecute } from '../tools/read_file.js';
 import { READ_ONLY_TOOLS, refusalForMode } from '../app/mode-policy.js';
 import { toolFamily, toolColorFor } from '../app/tool-palette.js';
 import { formatTranscript } from '../app/tui-render.js';
@@ -122,13 +123,17 @@ test('hint_file wraps a sketch in <hint> tags with the page coordinates', async 
 test('hint_file pages a file the way read_file does, negative offsets included', async () => {
   writeFile('paged.txt', Array.from({ length: 10 }, (_, i) => `l${i + 1}`).join('\n') + '\n');
 
-  const paged = await hintExecute({ path: 'paged.txt', offset: 3, limit: 6, intent: 'hint the middle' });
-  assert.match(paged, /^<hint path="paged\.txt" from=2 to=4 /);
-  assert.ok(paged.includes('\nl2\nl3\n'), 'the same page read_file would return');
+  const paged = await hintExecute({ path: 'paged.txt', offset: 4, limit: 3, intent: 'hint the middle' });
+  assert.match(paged, /^<hint path="paged\.txt" from=4 to=6 /);
+  assert.ok(paged.includes('\nl4\nl5\nl6\n'), 'the same page read_file would return');
 
   const tail = await hintExecute({ path: 'paged.txt', offset: -4, intent: 'hint the end' });
   assert.match(tail, /^<hint path="paged\.txt" from=\d+ to=\d+ /);
   assert.ok(tail.includes('l10'), 'a negative offset counts from the end');
+
+  // Both read tools count lines, so a hint's coordinates are a read's coordinates.
+  const readBack = await readFileExecute({ path: 'paged.txt', offset: 4, limit: 3, lineNumbers: false });
+  assert.match(readBack, /from=4 to=6 /, 'the two tools report the same page');
 
   // Line numbers are opt-in, because a hint is meant to be compact.
   const unnumbered = await hintExecute({ path: 'paged.txt', limit: 6, intent: 'hint it' });

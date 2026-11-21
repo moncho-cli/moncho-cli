@@ -23,6 +23,9 @@ export const CANDIDATE_FLOOR = 12;
 /** How many lines a miss reports when too few clear the floor above. */
 export const MIN_CANDIDATES = 3;
 
+/** How many lines of the file a miss quotes around the region it was looking for. */
+export const SOURCE_WINDOW = 8;
+
 /** The lines of `text`, exactly as `split('\n')` sees them. */
 export function splitLines(text) {
   return String(text ?? '').split('\n');
@@ -120,4 +123,51 @@ export function diagnoseMiss(content, search) {
     return `the first match is at line ${best.line}, so the difference is in the following lines of the search`;
   }
   return null;
+}
+
+/**
+ * The file's own text around the region a search failed on, with line numbers.
+ *
+ * A candidate line says *which* line was meant; it does not say what the surrounding
+ * declarations, the indentation of the block or the rest of the statement look like — and
+ * those are what the next attempt has to be built from. Without the source the model has
+ * to call `read_file` before it can even try again, which is exactly the extra round the
+ * refusal is meant to save (backlog item 65).
+ *
+ * The window is anchored on the best candidate when there is one (the strongest guess at
+ * where the caller meant) and on the top of the file when the miss matches nothing at all,
+ * so the excerpt is always the text the caller was about to change rather than a random
+ * page. It is bounded to `window` lines and numbered in the file's own 1-based lines, the
+ * metric `read_file` pages in (`docs/agent/line-paging`), so the numbers can be used as
+ * the `offset` of a follow-up read.
+ *
+ * Pure: `content` in, a small object out.
+ *
+ * @param {string} content the file as it is on disk
+ * @param {string} search the text the edit failed to find
+ * @param {{window?: number}} [options]
+ * @returns {{from: number, to: number, lines: string, note: string}|null} `null` for an
+ *   empty file, where there is no source to hand back
+ */
+export function sourceExcerpt(content, search, { window = SOURCE_WINDOW } = {}) {
+  const lines = splitLines(content);
+  if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) return null;
+
+  const size = Number.isInteger(window) && window > 0 ? window : SOURCE_WINDOW;
+  const [best] = nearestCandidates(content, search, { limit: 1 });
+  // Anchor where the caller most likely meant; a search with no resemblance at all gets
+  // the head of the file, which is at least real bytes to build an edit from.
+  const anchor = best ? best.line : 1;
+  const from = Math.max(1, Math.min(anchor - Math.ceil(size / 2) + 1, lines.length - size + 1));
+  const to = Math.min(lines.length, from + size - 1);
+  const numbered = lines
+    .slice(from - 1, to)
+    .map((line, i) => String(from + i).padStart(6) + '  ' + line)
+    .join('\n');
+  return {
+    from,
+    to,
+    lines: numbered,
+    note: `the file's own bytes at lines ${from}-${to}, as they are now`,
+  };
 }

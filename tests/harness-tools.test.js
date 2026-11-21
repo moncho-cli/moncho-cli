@@ -120,11 +120,30 @@ test('read_file wraps output in <file relative_path=...> tags', async () => {
 test('read_file reports the paged line range and total', async () => {
   writeFile('paged.txt', Array.from({ length: 10 }, (_, i) => `l${i + 1}`).join('\n') + '\n');
 
-  // offset 3 is the start of line 2; limit 6 returns "l2\nl3\n" (lines 2..4 by the
-  // split-on-newline convention, since the trailing newline opens an empty line 4).
-  const result = await readFileExecute({ path: 'paged.txt', offset: 3, limit: 6, lineNumbers: false });
-  assert.match(result, /^<file relative_path="paged\.txt" from=2 to=4 lines=3\/11>\n/);
-  assert.ok(result.includes('\nl2\nl3\n'));
+  // offset 4 is line 4 and limit 3 returns lines 4..6 — the page and the tag are in the
+  // same metric, so `from=4 to=6` really names the bytes below.
+  const result = await readFileExecute({ path: 'paged.txt', offset: 4, limit: 3, lineNumbers: false });
+  assert.match(result, /^<file relative_path="paged\.txt" from=4 to=6 lines=3\/11>\n/);
+  assert.ok(result.includes('\nl4\nl5\nl6\n'));
+});
+
+test('read_file pages in lines, so the range it reports is the range it returned', async () => {
+  // The item-63 bug: offset/limit were character counts while from/to were line numbers,
+  // so a page of a long file was labelled with a line range it did not cover. Every line
+  // here is the same length, so a character page and a line page cannot coincide.
+  const lines = Array.from({ length: 40 }, (_, i) => `line ${String(i + 1).padStart(2, '0')} ${'x'.repeat(60)}`);
+  writeFile('long.txt', `${lines.join('\n')}\n`);
+
+  const page = await readFileExecute({ path: 'long.txt', offset: 9, limit: 2, lineNumbers: false });
+  assert.match(page, /^<file relative_path="long\.txt" from=9 to=10 lines=2\/41>\n/);
+  assert.ok(page.includes(lines[8]), 'line 9 is the first line of the page');
+  assert.ok(page.includes(lines[9]), 'line 10 is the last line of the page');
+  assert.ok(!page.includes(lines[7]), 'line 8 is not in it');
+  assert.ok(!page.includes(lines[10]), 'line 11 is not in it');
+
+  // A page of a whole line is a whole line: nothing is cut mid-line any more.
+  const whole = await readFileExecute({ path: 'long.txt', offset: 40, limit: 1, lineNumbers: false });
+  assert.ok(whole.includes(`${lines[39]}\n`), 'line 40 arrives complete, not truncated');
 });
 
 test('read_file keeps line numbers on by default', async () => {
@@ -134,10 +153,20 @@ test('read_file keeps line numbers on by default', async () => {
   assert.ok(result.includes('     2  b'));
 });
 
-test('read_file supports a negative offset (from the end)', async () => {
+test('read_file supports a negative offset (lines from the end)', async () => {
   writeFile('tail.txt', 'abcdefghij');
   const result = await readFileExecute({ path: 'tail.txt', offset: -4, lineNumbers: false });
-  assert.match(result, /^<file relative_path="tail\.txt" from=1 to=1 lines=1>\nghij\n<\/file>$/);
+  assert.match(result, /^<file relative_path="tail\.txt" from=1 to=1 lines=1>\nabcdefghij\n<\/file>$/);
+
+  // The metric is lines, so -2 names the last two lines — the first line of a one-line
+  // file is never a character slice of it.
+  writeFile('many.txt', 'l1\nl2\nl3\nl4\nl5');
+  const fromBack = await readFileExecute({ path: 'many.txt', offset: -2, lineNumbers: false });
+  assert.match(fromBack, /^<file relative_path="many\.txt" from=4 to=5 lines=2\/5>\nl4\nl5\n<\/file>$/);
+
+  // Past the end is an empty page, never a clamp onto some other region.
+  const past = await readFileExecute({ path: 'many.txt', offset: 99, lineNumbers: false });
+  assert.match(past, /^<file relative_path="many\.txt" lines=0\/5>\n\n<\/file>$/);
 });
 
 test('wrapFileContent is a pure, testable formatter', () => {

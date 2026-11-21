@@ -28,7 +28,7 @@ code:
   - path: tools/write_file.js
     symbols: [definition, execute]
   - path: tools/read_file.js
-    symbols: [fileTag, wrapFileContent, lineNumberAtOffset]
+    symbols: [fileTag, wrapFileContent, numberLines]
   - path: tools/delete_file.js
     symbols: [definition, execute]
   - path: utils/tracking-fence.js
@@ -40,7 +40,7 @@ tests:
       - read_file wraps output in <file relative_path=...> tags
       - read_file reports the paged line range and total
       - read_file keeps line numbers on by default
-      - read_file supports a negative offset (from the end)
+      - read_file supports a negative offset (lines from the end)
       - wrapFileContent is a pure, testable formatter
   - path: tests/delete-file.test.js
     cases:

@@ -50,7 +50,7 @@ const GUIDANCE = {
   EMPTY_SEARCH: 'Pass the exact text to find in "search" — the bytes as they appear in the file.',
   NO_CHANGES: 'Change "replace" so it differs from "search".',
   SEARCH_NOT_FOUND:
-    'Call read_file (lineNumbers:false) and copy the text verbatim, including indentation, then retry.',
+    'The refusal carries the file\'s own bytes around the region you meant: build the next call from that source instead of retrying this search text. Read the file only for a region the excerpt does not show.',
   SEARCH_NOT_UNIQUE:
     'Quote more surrounding text so the search is unique, or pass "all": true to replace every occurrence.',
   TOO_MANY_EDITS: 'Split the change into several edit_file calls.',

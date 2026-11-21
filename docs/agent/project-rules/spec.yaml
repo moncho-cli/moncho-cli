@@ -1,0 +1,38 @@
+id: agent/project-rules
+domain: agent
+title: The project's own rule book in every request
+status: active
+summary: >
+  A project's AGENTS.md is read again on every model call and handed over as one system
+  message in the request prelude, so a session in a foreign repository is governed by that
+  repository's rules and not only by the agent's own. The block settles two questions —
+  the project wins where it disagrees with the agent's habits, and the conversation may
+  follow the user's language while the code and artefacts stay in the project's (backlog
+  item 62) — and it rides the prelude rather than the window, so it is never a chunk, never
+  in context.json, survives a compaction, and an edit lands on the next request. It is
+  bounded three ways: the user flow only (hostFenceEnabled, because the maintainer's
+  checkout already has its rules in prompt.md), MAX_RULES_CHARS with the cut announced
+  rather than silent, and the path sandbox. No file, an empty file or an unreadable one
+  sends no block at all.
+code:
+  - path: utils/project-rules.js
+    symbols: [RULES_FILE, MAX_RULES_CHARS, RULES_MARKER, formatRulesBlock, projectRulesMessage, forgetRulesCache]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: config/constants.js
+    symbols: [hostFenceEnabled]
+  - path: utils/path-safety.js
+    symbols: [resolveProjectPath]
+  - path: config/prompt.md
+    symbols: []
+tests:
+  - path: tests/project-rules.test.js
+    cases:
+      - the block carries the file as written and settles who wins
+      - a file with nothing in it renders no block at all
+      - an over-long rule book is cut and says so instead of truncating silently
+      - the project rules ride a request as one system message in the user flow
+      - the maintainer checkout sends no project block, because its prompt is the rule book
+      - "a project with no rule book is unchanged: no message, no error"
+      - an edit to the rule book lands on the very next request
+      - an unchanged rule book is read once, and a change is not missed

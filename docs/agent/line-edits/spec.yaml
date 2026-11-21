@@ -9,7 +9,11 @@ summary: >
   unless every one matched. A miss is refused with SEARCH_NOT_FOUND carrying the nearest
   candidate lines and, when it can tell, why the bytes differed (indentation, trailing
   whitespace, line endings); an ambiguity is refused with SEARCH_NOT_UNIQUE carrying every
-  matching line. The search is matched against the file's own line endings, so a CRLF file
+  matching line. A miss also hands back `source`: the file's own numbered lines around the
+    region the caller meant (bounded, anchored on the best candidate), beside
+    `retry: do not retry this search text unchanged` — so the next call can be built from
+    those bytes instead of spending a round on a re-read (backlog item 65). The search is
+    matched against the file's own line endings, so a CRLF file
   can be edited with an LF search. It is the routine edit tool because the diff format was
   the measured failure: every recorded patch_file refusal was INVALID_PATCH_LINE or
   HUNK_COUNT_MISMATCH, both of which a search/replace pair cannot express. The shipped
@@ -22,7 +26,7 @@ code:
   - path: utils/edit_lib.js
     symbols: [applyOne, applyEditsToText, occurrences, MAX_EDITS]
   - path: utils/edit-miss.js
-    symbols: [nearestCandidates, diagnoseMiss, similarity, splitLines, lineOfIndex, MAX_CANDIDATES, CANDIDATE_FLOOR, MIN_CANDIDATES]
+    symbols: [nearestCandidates, diagnoseMiss, sourceExcerpt, similarity, splitLines, lineOfIndex, MAX_CANDIDATES, CANDIDATE_FLOOR, MIN_CANDIDATES, SOURCE_WINDOW]
   - path: utils/edit-error.js
     symbols: [EditError]
   - path: tools/edit_file.js
@@ -35,6 +39,9 @@ tests:
       - the search is literal, so regex metacharacters match themselves
       - a miss caused by indentation is diagnosed
       - an unrelated search still reports the strongest candidate lines
+      - a miss hands back the real bytes around the region, numbered
+      - the excerpt is bounded, and anchored on the best candidate rather than the top
+      - a file with nothing to quote yields no excerpt at all
       - an empty search is refused
       - a search equal to its replacement is refused
       - the edit engine is bounded and reports occurrences in order
@@ -42,7 +49,7 @@ tests:
   - path: tests/edit.test.js
     cases:
       - an edit replaces exactly the searched text and leaves the rest alone
-      - a search that does not appear is refused with the nearest candidates
+      - a search that does not appear is refused with the nearest candidates and the source
       - a search matching several times is refused with every line
       - "all: true replaces every occurrence"
       - several edits are applied in order

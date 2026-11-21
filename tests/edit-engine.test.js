@@ -12,6 +12,7 @@ import {
   MAX_CANDIDATES,
   MIN_CANDIDATES,
   EditError,
+  sourceExcerpt,
 } from '../utils/edit_lib.js';
 
 /**
@@ -60,6 +61,32 @@ test('an unrelated search still reports the strongest candidate lines', () => {
   assert.ok(candidates.length <= MIN_CANDIDATES);
   assert.equal(similarity('alpha = 1;', 'alpha = 1;'), 50);
   assert.equal(similarity('', 'alpha'), 0);
+});
+
+test('a miss hands back the real bytes around the region, numbered', () => {
+  const content = ['function f() {', '    const a = 1;', '    return a;', '}', ''].join('\n');
+  const excerpt = sourceExcerpt(content, '    const a = 2;', { window: 4 });
+
+  assert.equal(excerpt.from, 1);
+  assert.equal(excerpt.to, 4);
+  assert.ok(excerpt.lines.includes('     2      const a = 1;'), 'the real bytes, with line numbers');
+  assert.ok(excerpt.lines.includes('     3      return a;'), 'the neighbouring declarations too');
+  assert.ok(!excerpt.lines.includes('const a = 2'), 'never the text the caller invented');
+  assert.match(excerpt.note, /the file's own bytes at lines 1-4/);
+});
+
+test('the excerpt is bounded, and anchored on the best candidate rather than the top', () => {
+  const lines = Array.from({ length: 40 }, (_, i) => `const v${i + 1} = ${i + 1};`);
+  lines[29] = 'const target = 30;';
+  const excerpt = sourceExcerpt(lines.join('\n'), 'const target = 31;', { window: 4 });
+
+  assert.equal(excerpt.to - excerpt.from + 1, 4, 'the window is exactly what was asked for');
+  assert.ok(excerpt.from <= 30 && excerpt.to >= 30, 'it is centred where the model meant');
+  assert.ok(excerpt.lines.includes('const target = 30;'), 'the line it was aiming at is in it');
+});
+
+test('a file with nothing to quote yields no excerpt at all', () => {
+  assert.equal(sourceExcerpt('', 'anything'), null);
 });
 
 test('an empty search is refused', () => {

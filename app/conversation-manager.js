@@ -7,6 +7,7 @@ import { createUsageMeter } from '../utils/usage-stats.js';
 import { createWorkingClock } from '../utils/working-time.js';
 import { createCompactionRunner, createSummaryCallModel } from './compaction-runner.js';
 import { sessionBlockMessage } from '../utils/session-context.js';
+import { projectRulesMessage } from '../utils/project-rules.js';
 import { formatFailureNotice } from './notice-overlay.js';
 import { runTurn } from './turn-runner.js';
 import { runToolBatch, storeFinalResponse } from './manager-turn.js';
@@ -247,7 +248,7 @@ export class ConversationManager {
     if (state.crossed) {
       this.notifyNotice('warn', formatPulseLimitNotice(state), { code: 'pulse-limit' });
     }
-    return [sessionBlockMessage(), this.pulse.message()];
+    return [sessionBlockMessage(), projectRulesMessage(), this.pulse.message()];
   }
 
   /**

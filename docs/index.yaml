@@ -33,6 +33,8 @@ specs:
   - agent/session-context
   - agent/project-discovery
   - agent/file-hint
+  - agent/line-paging
+  - agent/project-rules
   - agent/web-fetch
   - context/token-accounting
   - context/compaction

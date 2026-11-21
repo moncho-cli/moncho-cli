@@ -21,7 +21,9 @@ code:
   - path: tools/hint_file.js
     symbols: [hintTag, wrapHint, definition, execute]
   - path: tools/read_file.js
-    symbols: [lineNumberAtOffset]
+    symbols: [numberLines]
+  - path: utils/line-page.js
+    symbols: [resolveLinePage]
   - path: app/tui-render.js
     symbols: [formatTranscript, escapeTags]
   - path: app/mode-policy.js

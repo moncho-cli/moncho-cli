@@ -52,7 +52,7 @@ test('an edit replaces exactly the searched text and leaves the rest alone', asy
   assert.equal(readFile('simple.js'), 'const a = 1;\nconst b = 20;\nconst c = 3;\n');
 });
 
-test('a search that does not appear is refused with the nearest candidates', async () => {
+test('a search that does not appear is refused with the nearest candidates and the source', async () => {
   writeFile('miss.js', 'const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n');
 
   const result = body(await editFile({
@@ -65,7 +65,17 @@ test('a search that does not appear is refused with the nearest candidates', asy
   assert.equal(result.status, 'error');
   assert.equal(result.code, 'SEARCH_NOT_FOUND');
   assert.ok(Array.isArray(result.candidates) && result.candidates.length > 0);
-  assert.equal(result.guidance.includes('read_file'), true);
+
+  // The evidence that saves the extra round (backlog item 65): the file's own numbered
+  // bytes, so the next call can be built without a re-read.
+  assert.equal(typeof result.source, 'string');
+  assert.ok(result.source.includes('const beta = 2;'), 'the source is what is on disk');
+  assert.ok(!result.source.includes('const delta'), 'and never the text that failed');
+  assert.equal(result.sourceFrom, 1);
+  assert.ok(Number.isInteger(result.sourceTo));
+  assert.match(result.retry, /do not retry/);
+  assert.equal(/read_file is only needed/.test(result.guidance), true, 'reading back is the fallback, not the default');
+
   assert.equal(readFile('miss.js'), 'const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n');
 });
 

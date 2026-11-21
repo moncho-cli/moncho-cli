@@ -46,7 +46,7 @@ input. Never reach for it to express your own change.
 
 | Code | Meaning |
 | ---------------------- | -------------------------------------------------------------- |
-| `SEARCH_NOT_FOUND` | The search text is not in the file. Carries `candidates` and, when it can tell, a `hint`. |
+| `SEARCH_NOT_FOUND` | The search text is not in the file. Carries `candidates`, `source` (the file's own numbered bytes around the region) and, when it can tell, a `hint`. |
 | `SEARCH_NOT_UNIQUE` | The search matched more than once and `all` was not set. Carries every `occurrences[].line`. |
 | `EMPTY_SEARCH` | `search` is missing or empty. |
 | `NO_CHANGES` | `search` equals `replace`, or the edits produced identical bytes. |
@@ -70,6 +70,18 @@ A refusal that only says "not found" costs a re-read and another model call. So
   different bytes: indentation (`line N holds the same text but with 4 leading space(s),
   not 2`), trailing whitespace, or a line-ending difference. This is the diagnosis
   `HUNK_MISMATCH` never gave.
+- **`source`** — the file's own numbered lines around the region
+  (`utils/edit-miss.js#sourceExcerpt`), bounded to `SOURCE_WINDOW` lines and anchored on the
+  best candidate (or the head of the file when nothing resembles the search). Candidates say
+  *which* line was meant; the source says what that line and its neighbours really hold,
+  which is what the next attempt has to be built from.
+- `retry: do not retry this search text unchanged` — the refusal is only worth carrying the
+  bytes if the caller stops guessing, because a retry of the same search spends a call to be
+  told what the answer already said (backlog item 65).
+
+The excerpt makes `read_file` a **fallback rather than a step**: the guidance names it for
+the one case it is still needed — a region this excerpt does not show — so the round trip is
+spent only when the evidence is genuinely outside the window.
 
 `SEARCH_NOT_UNIQUE` answers with every matching line, so the caller can quote more
 context or set `all: true` deliberately.
