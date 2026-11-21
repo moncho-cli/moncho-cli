@@ -129,29 +129,6 @@ container can always be inspected and removed.
 `--do-not-mount` and `--copy-files` are mutually exclusive. `--sync-files` requires one
 of them, because a bind mount already writes straight through.
 
-### Copying a selection to your clipboard
-
-Selecting text in the conversation and releasing the mouse saves it to a file in the
-workspace **and** puts it on your clipboard. The file is named `.moncho.clipboard.HHMMSS`
-after the local time of the copy, and a four-second toast in the top-right corner names it:
-**Saved data to .moncho.clipboard.091507**.
-
-A container has no clipboard to reach — a Unix clipboard tool is a client of a display
-server it does not have, and an OSC 52 sequence is only a hope that your terminal honours
-it. So the agent writes the file, and **the runner reads it on your host** and feeds it to
-the tool you actually paste from: `pbcopy` on macOS, `clip.exe` on WSL, `wl-copy` on
-Wayland, `xclip` or `xsel` on X11. Nothing is mounted for this and no privilege is needed:
-the workspace is a bind mount, so the file the agent writes is a file the host can read.
-
-The watcher starts and stops with the container. Running in the foreground it ends when the
-agent does; detached (`start`) it keeps working until `moncho-cli stop`. On a host with no
-display server — a bare SSH session — no watcher starts, the file is still written, and you
-can open it whenever you like.
-
-A copy never overwrites an earlier one: a second selection in the same second gets its own
-name, so nothing you saved is lost. The files are gitignored — in this repository and in a
-project's `.git/info/exclude` — so they never appear in a diff.
-
 ## Configuration
 
 Moncho reads **one** env file: `./.env.moncho`, or whatever `--env` points at. A generic
@@ -222,6 +199,49 @@ The bottom rows show the current mode and model, the context meter and the worki
 The context meter is repainted right before each provider call, so it reflects what the
 next request will actually carry. A compaction is announced in the transcript before it
 runs.
+
+### Copying a selection
+
+Drag over text in the conversation and release. That writes the text to a file in the
+workspace and puts it on your clipboard:
+
+```
+.moncho.clipboard.HHMMSS      # local time of the copy, e.g. .moncho.clipboard.091507
+```
+
+A four-second toast in the top-right corner names the file. It says **saved**, not
+**copied**, because the agent cannot see your clipboard — the name is what you need either
+way.
+
+**How it reaches your clipboard.** The container cannot: a Unix clipboard tool is a client of a display
+server it does not have, and an OSC 52 sequence only works if your terminal honours it. So
+the agent writes the file and **the runner reads it on your host**, where the clipboard
+lives — the workspace is bind-mounted, so it is the same file on both sides. No display
+socket is forwarded and no privilege is granted. The runner feeds each file to the first
+tool it finds:
+
+| Host | Tool |
+| ---- | ---- |
+| macOS | `pbcopy` |
+| WSL | `clip.exe` |
+| Wayland (`WAYLAND_DISPLAY` set) | `wl-copy` |
+| X11 (`DISPLAY` set) | `xclip -selection clipboard`, else `xsel --clipboard --input` |
+
+The watcher lives exactly as long as the container: a foreground `run` ends it on exit, a
+detached `start` leaves it until `moncho-cli stop`.
+
+**When only the file is written** — it is still there to open in each case:
+
+- **no display server** — SSH without X forwarding. No tool is found, so no watcher starts.
+- **no bind mount** — `--do-not-mount` or `--copy-files`; the agent writes into the
+  container's `/app`, which the host cannot see.
+- **`--sync-files`** — the file arrives in your directory only when the run ends, by which
+  time the watcher has stopped.
+
+**Two guarantees.** A copy never overwrites an earlier one — a second selection in the same
+second gets `.moncho.clipboard.091507-2` — and starting the agent never clobbers your
+clipboard, because files already in the workspace when the watcher starts are left alone.
+The files are gitignored (a project's `.git/info/exclude`), so they never appear in a diff.
 
 ## Sessions
 
