@@ -30,6 +30,8 @@ code:
     symbols: [callOllama, normalizeUsage]
   - path: app/conversation-manager.js
     symbols: [ConversationManager]
+  - path: app/notice-sink.js
+    symbols: [createNoticeSink]
   - path: main.js
     symbols: [main]
 tests:
@@ -54,3 +56,7 @@ tests:
       - "the abort signal is honoured"
       - "a retried attempt is reported through onRetry, not the console"
       - "a throwing onRetry hook never costs the retry"
+  - path: tests/notice-sink.test.js
+    cases:
+      - "a notice goes to the floating overlay when there is a screen, and to a plain line when there is not"
+      - "the retry handle is remembered so a landed turn can dismiss it, and dismissing twice is harmless"

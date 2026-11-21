@@ -1,5 +1,7 @@
 import blessed from 'neo-blessed';
 import { createPicker, DEFAULT_PAGE_SIZE } from './picker.js';
+import { activeTokens } from './theme.js';
+import { fgTag } from './paint-tags.js';
 
 /**
  * A modal picker for the TUI: a bordered box listing the items, a highlighted row,
@@ -34,15 +36,17 @@ export function createPickerModal({
       border: { type: 'line' },
       tags: true,
       padding: { left: 1, right: 1 },
-      style: { border: { fg: 'cyan' } },
+      // The border is a live token (`docs/interface/skins`), so a skin repaints it.
+      style: { border: { fg: activeTokens().border } },
     });
 
     const previousLock = screen.lockKeys;
     let done = false;
 
     const paint = () => {
+      const cursor = activeTokens().border;
       box.setContent(
-        picker.lines().map((line) => line.replace(/^>/, '{cyan-fg}>{/cyan-fg}')).join('\n'),
+        picker.lines().map((line) => line.replace(/^>/, fgTag(cursor, '>'))).join('\n'),
       );
       repaint();
     };

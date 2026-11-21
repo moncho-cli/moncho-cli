@@ -37,3 +37,4 @@ tests:
       - the announcer shows the rows and the content together, from one call
       - the content is read back from disk, so a canonical rewrite is what is shown
       - the block really reaches the screen, expanded, in the tracking colour
+      - the block reads the live tracking colour, so a skin repaints its payload

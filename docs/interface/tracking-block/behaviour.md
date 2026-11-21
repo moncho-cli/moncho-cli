@@ -64,10 +64,14 @@ gets an honest `(empty)` body and a `0 lines` title rather than nothing.
 - The **title** is `[Tracking] <file> (<path>) · full content — N lines`. It leads with the
   `[Tracking]` label, which is what `app/theme.js#classifyLine` recognises, so the header
   itself paints as a tracking row.
-- The **colour** is `TRACKING_BLOCK_COLOR` (`app/theme.js#TRACKING_COLOR`, bright green),
-  handed to the block as `bodyColor` so `logBlock` wraps the whole payload in it. The
-  tracking content therefore reads as the milestone it is, never as an ordinary tool result
-  (`docs/interface/conversation-colors`).
+- The **colour** is read **live** from the palette (`CONVERSATION_COLORS.tracking`, shipped
+  as bright green) when a block is built, and handed to the block as `bodyColor` so
+  `logBlock` wraps the whole payload in it. Reading it at build time rather than taking
+  `TRACKING_COLOR` at import is what lets a skin move the block: an import-time snapshot
+  repainted the `[Tracking]` rows and left the payload below them in the shipped green
+  (`docs/interface/skins`). `TRACKING_BLOCK_COLOR` stays exported as the shipped default.
+  The tracking content therefore reads as the milestone it is, never as an ordinary tool
+  result (`docs/interface/conversation-colors`).
 - The block is **expanded**, not collapsed: the point is that the content is visible, and
   the header's size label is the reassurance that it is complete.
 

@@ -1,8 +1,9 @@
-import { listSessions, loadSession, describeSession, sessionChunks, sessionStamps, sessionUsage, sessionModeState, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
+import { listSessions, loadSession, describeSession, sessionChunks, sessionStamps, sessionUsage, sessionModeState, sessionSkin, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
 import { readConversationLog } from '../utils/conversation-log-store.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
 import { compactCommand } from './compact-command.js';
+import { skinsCommand } from './skins-command.js';
 
 /**
  * Slash commands: the iterable registry behind `/sessions` (task.md item 4).
@@ -72,6 +73,7 @@ export function createDefaultCommands() {
   registry.register(sessionsCommand());
   registry.register(usageCommand());
   registry.register(compactCommand());
+  registry.register(skinsCommand());
   registry.register(helpCommand(registry));
   return registry;
 }
@@ -174,6 +176,9 @@ export function sessionsCommand() {
         // (docs/interface/modes).
         resumed: { id: session.id, createdAt: session.createdAt, model: session.model, chunks, stamps },
         resumedMode: sessionModeState(session),
+        // The look the conversation was held in (`docs/interface/skins`): the loop
+        // restores it so a resumed session opens in the colours it was written in.
+        resumedSkin: sessionSkin(session),
         taskContent: sessionTaskContent(session),
         planContent: sessionPlanContent(session),
         message: `Resumed ${session.id} (${chunks.length} chunk(s)).`,

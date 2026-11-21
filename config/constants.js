@@ -143,8 +143,17 @@ export const PULSE_LIMIT = toPositiveInt(process.env.PULSE_LIMIT, PULSE_LIMIT_DE
  * the container cannot see as the host does — and it would also fire for a user who happens
  * to name their own project `moncho-cli`. An explicit variable is honest about being an
  * override, and it cannot be guessed wrong.
+ *
+ * It is read **when the fence is asked**, not once at import, for one concrete reason: the
+ * suite runs *inside* the maintainer's container, where the variable is set, and a switch
+ * frozen at module load would leave the fence off before any test ran — the refusal cases
+ * could not pass, and a check that silently stops checking depending on where it runs is
+ * worse than the bug it guards. A production process never changes its environment mid-run,
+ * so reading late costs nothing and changes nothing there.
  */
-export const HOST_FENCE = process.env.MONCHO_MAINTAINER !== '1';
+export function hostFenceEnabled() {
+  return process.env.MONCHO_MAINTAINER !== '1';
+}
 
 // ---------------------------------------------------------------------------
 // run_npm allow-list

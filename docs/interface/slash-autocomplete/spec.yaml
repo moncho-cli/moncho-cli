@@ -27,7 +27,7 @@ code:
   - path: app/prompt-menu-keys.js
     symbols: [claimMenuKey, completeMenuKey]
   - path: app/slash-bar.js
-    symbols: [createSlashBar, SELECTED_OPEN]
+    symbols: [createSlashBar, selectedOpen, selectedClose]
   - path: app/theme.js
     symbols: [SLASH_COLORS]
   - path: app/tui-input-stack.js

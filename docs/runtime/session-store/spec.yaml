@@ -33,6 +33,8 @@ code:
     symbols: [createSessionRecorder, listStoredSessions, loadStoredSession, loadLatestSession]
   - path: app/session-autosave.js
     symbols: [AUTOSAVE_INTERVAL_MS, createSessionAutosave]
+  - path: app/session-save.js
+    symbols: [createSessionSave]
   - path: utils/file-io.js
     symbols: [writeFileVerified]
   - path: main.js
@@ -61,6 +63,11 @@ tests:
       - "migrateSession() moves a flat record into its folder, byte for byte"
       - "the next save retires the flat record, so one session keeps one record"
       - "a folder without context.json is not a session, and a broken record is reported"
+  - path: tests/session-save.test.js
+    cases:
+      - "a save carries the live mode, the live skin and the accounting table"
+      - "a save that throws is reported and returns null instead of taking the turn down"
+      - "the throttle is inert until started, and writes once started"
   - path: tests/session-autosave.test.js
     cases:
       - "the first change is written at once, so the record exists as soon as a message lands"

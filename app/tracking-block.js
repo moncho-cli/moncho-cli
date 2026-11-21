@@ -1,8 +1,7 @@
 import { TASK_FILE, PLAN_FILE } from '../config/constants.js';
 import { readTaskContent, readPlanContent, trackingPaths } from '../utils/tracking-store.js';
 import { createTrackingNotifier } from './tracking-notice.js';
-import { TRACKING_COLOR, TRACKING_BOLD } from './theme.js';
-
+import { TRACKING_COLOR, TRACKING_BOLD, CONVERSATION_COLORS } from './theme.js';
 /**
  * The **block** that shows what a tracking write actually wrote (`docs/interface/tracking-block`).
  *
@@ -28,9 +27,20 @@ import { TRACKING_COLOR, TRACKING_BOLD } from './theme.js';
  *    a session file, exactly like the rows beside it.
  */
 
-/** The colour the block's payload is painted in: the tracking milestones' own colour. */
-export const TRACKING_BLOCK_COLOR = TRACKING_COLOR;
+/**
+ * The colour the block's payload is painted in: the tracking milestones' own colour.
+ *
+ * Read **live** (`CONVERSATION_COLORS.tracking`) when a block is built, not snapshotted
+ * at import: the old `export const TRACKING_BLOCK_COLOR = TRACKING_COLOR` froze the
+ * shipped green, so a skin that moved `tracking` repainted the `[Tracking]` rows and left
+ * the block below them green (`docs/interface/skins`).
+ */
+function trackingBlockColor() {
+  return CONVERSATION_COLORS.tracking;
+}
 
+/** The shipped colour of the block's payload — what a skin-less project paints. */
+export const TRACKING_BLOCK_COLOR = TRACKING_COLOR;
 /** Tracking content is a milestone, so the block inherits the bold of its rows. */
 export const TRACKING_BLOCK_BOLD = TRACKING_BOLD;
 
@@ -81,7 +91,7 @@ export function formatTrackingBlock({ kind, content = '', path = null } = {}) {
     header: `[Tracking] ${name}${where} · full content — ${lines} line${lines === 1 ? '' : 's'}`,
     body: body === '' ? '(empty)' : body,
     // `bodyColor` is the hook app/transcript-view.js#logBlock wraps the payload lines in.
-    bodyColor: TRACKING_BLOCK_COLOR,
+    bodyColor: trackingBlockColor(),
     // Shown, not folded: the point of the block is that the content is visible.
     collapsed: false,
   };

@@ -167,6 +167,22 @@ export function createTuiSurface({
       return pastes.all;
     },
     refresh,
+    /**
+     * Repaint every region that paints a colour read live from the theme
+     * (`docs/interface/skins`): after `/skins` moved the palette, the border, the brand
+     * mark, the notice rows, the copy toast and the slash popup all re-read it here, and
+     * the transcript is repainted in place so the chrome and the next rows wear the new
+     * skin. The rows already on screen keep the colours they were painted with — the
+     * transcript stores rendered lines, not raw ones — which is what the spec states.
+     */
+    repaintTheme: () => {
+      brandBar?.paint?.();
+      noticeBar?.paint?.();
+      toastBar?.paint?.();
+      slashBar?.paint?.();
+      view.repaintInPlace?.();
+      refresh?.();
+    },
     scrollBy,
     scrollPage,
     get transcriptView() {

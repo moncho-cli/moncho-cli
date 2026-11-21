@@ -71,4 +71,5 @@ specs:
   - interface/prose-bands
   - interface/markdown-tables
   - interface/clipboard-selection
+  - interface/skins
   - maintainer/version-bump

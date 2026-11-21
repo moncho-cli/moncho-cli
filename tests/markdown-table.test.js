@@ -122,8 +122,10 @@ test('renderTable() and columnWidths() pad a short row and a short body', () => 
 
   const lines = renderTable(table);
   assertAligned(lines);
-  // a row missing a trailing cell still gets its separator, so the grid stays square
-  assert.equal(lines.at(-1), '{cyan-fg}│{/cyan-fg} e    {cyan-fg}│{/cyan-fg}    {cyan-fg}│{/cyan-fg}');
+  // a row missing a trailing cell still gets its separator, so the grid stays square.
+  // The frame is a **symbolic** tag (`{@table-fg}`): the renderer names a palette key and
+  // `app/paint-tags.js` resolves it at paint time, so a skin moves a table frame too.
+  assert.equal(lines.at(-1), '{@table-fg}│{/@table-fg} e    {@table-fg}│{/@table-fg}    {@table-fg}│{/@table-fg}');
   assert.deepEqual(renderTable({}), [], 'no header means no table');
 });
 

@@ -12,7 +12,7 @@ import {
   createTrackingBlockSink,
   createTrackingAnnouncer,
 } from '../app/tracking-block.js';
-import { TRACKING_COLOR, classifyLine } from '../app/theme.js';
+import { TRACKING_COLOR, classifyLine, setPalette, resetTheme } from '../app/theme.js';
 import { registerSession, clearSession } from '../utils/host.js';
 import { withTui, visible } from './support/tui-harness.js';
 
@@ -200,4 +200,21 @@ test('the block really reaches the screen, expanded, in the tracking colour', as
     assert.ok(at >= 0, 'a content line is on screen');
     assert.match(frame.slice(Math.max(0, at - 20), at), /\x1b\[(?:1;92|92|1;32|32)m/, 'the content is bright green');
   });
+});
+
+test('the block reads the live tracking colour, so a skin repaints its payload', () => {
+  // The regression this pins: `export const TRACKING_BLOCK_COLOR = TRACKING_COLOR` took the
+  // colour at import, so a skin that moved `tracking` repainted the `[Tracking]` rows and
+  // left the block below them in the shipped green.
+  try {
+    setPalette({ tracking: 'red' });
+    const block = formatTrackingBlock({ kind: 'task', content: TASK, path: `${FOLDER}/task.md` });
+    assert.equal(block.bodyColor, 'red', 'the block body follows the live palette');
+
+    resetTheme();
+    const shipped = formatTrackingBlock({ kind: 'task', content: TASK, path: `${FOLDER}/task.md` });
+    assert.equal(shipped.bodyColor, TRACKING_COLOR, 'and returns to the shipped colour');
+  } finally {
+    resetTheme();
+  }
 });

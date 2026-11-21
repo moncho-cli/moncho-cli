@@ -1,0 +1,139 @@
+id: interface/skins
+domain: interface
+title: Per-project colour skins, applied live, and the /skins prompt and customize modal subchats
+status: active
+summary: >
+  A skin is a saved look — the conversation palette (app/theme.js) plus the presentation
+  tokens (border, brand line, input hint, the two bolds) — kept as one JSON file per name
+  under agent/skins/<name>.json (utils/skins-store.js), so the look of a project travels
+  with the project and never with the session. Every colour is a blessed colour *name*,
+  never a hex code, because a character-cell terminal addresses named colours; the
+  built-in default is the palette the project already ships, so a project with no skin file
+  looks exactly as it always did, and normalizeSkin() degrades an unknown key or a bad
+  colour to the shipped one instead of breaking the session. The palette and the tokens are
+  live. Nothing but app/paint-tags.js turns a colour into a blessed tag: a paint site names a
+  palette key ({@frame-fg}) and resolveTags() substitutes the live value at paint time, so an
+  unknown key or an unpaintable name degrades to the default rather than reaching the screen as
+  a literal tag. A model proposal is validated strictly (validateProposal()) and refused with
+  the reason, where normalizeSkin() would have silently degraded it.
+  CONVERSATION_COLORS, SLASH_COLORS and THEME_TOKENS keep their names and defaults
+  but are no longer frozen, and setPalette()/setTokens()/applySkin()/resetTheme() mutate
+  them in place, so a skin repaints a running transcript without re-importing anything;
+  every consumer (colorizeIntent/colorizeTracking/colorizeStamp/colorizeLine,
+  NOTICE_COLORS as getters, selectedOpen/selectedClose and the slash-bar border, the input
+  hint, the brand mark, the modal border) reads the live value at paint time. The
+  transcript colours at paint time: renderTranscriptLines() (app/tui-render.js) renders the
+  markdown and the tool delimiters without the palette, and the transcript view
+  (app/transcript-view.js) applies colorizeLine() to each stored row on every paint, so a
+  skin repaints the conversation that is already on screen instead of only the chrome and
+  the rows written afterwards; a block body carries its one colour (bodyColor) beside the
+  payload rather than inside it and is re-wrapped on every paint. The
+  /skins command (app/skins-command.js) lists, applies, saves, resets and builds a look
+  from key=value tokens; /skins prompt <request> reaches a modal subchat
+  (app/skin-prompt.js + app/skin-modal.js) where one injected model call proposes a skin
+  that the user confirms (apply / apply-and-save / cancel) before the command moves any
+  state, and whose waiting state is live while the call is in flight (a spinner frame and
+  climbing elapsed seconds, driven by an unref'd timer). /skins customize <request> opens
+  the same box in update mode: the model adjusts the skin already in force rather than
+  proposing a new one, the name is settled so there is no name field, and the change is
+  written over the active skin's own file — it never creates a skin and never moves the
+  project default. main.js applies the project's active skin before the screen is built,
+  so the first frame already wears it.
+code:
+  - path: utils/skins-store.js
+    symbols: [SKINS_DIR, ACTIVE_FILE, PALETTE_KEYS, PRESENTATION_KEYS, SKIN_KEYS, SKIN_NAME_RE, isColorName, DEFAULT_PALETTE, DEFAULT_PRESENTATION, DEFAULT_SKIN_NAME, DEFAULT_SKIN, normalizeSkin, slugName, skinPath, listSkinPaths, listSkins, readSkin, saveSkin, deleteSkin, readActiveName, writeActiveName]
+  - path: utils/color-names.js
+    symbols: [BLESSED_COLORS, isColorName]
+  - path: app/paint-tags.js
+    symbols: [FALLBACK_COLOR, fgTag, fgOpen, fgClose, hasSymbolicTags, resolveTags, stripSymbolicTags, symbolicTag]
+  - path: app/theme-palette.js
+    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS, INTENT_COLOR, INTENT_BOLD, TRACKING_COLOR, TRACKING_BOLD, STAMP_COLOR, REFUSAL_COLOR, REFUSAL_BOLD, DEFAULT_CONVERSATION_COLORS, isColorName, activePalette, activeTokens, setPalette, setTokens, applySkin, resetTheme, colorizeIntent, colorizeTracking, colorizeRefusal, colorizeStamp]
+  - path: app/theme.js
+    symbols: [CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS, DEFAULT_CONVERSATION_COLORS, activePalette, activeTokens, setPalette, setTokens, applySkin, resetTheme, colorizeIntent, colorizeTracking, colorizeStamp, colorizeLine]
+  - path: app/skins-command.js
+    symbols: [parseSkinsArgs, formatSkinLines, skinsCommand, removeSkin]
+  - path: app/skins-prompt-action.js
+    symbols: [runSkinPrompt, runSkinCustomize]
+  - path: app/skin-host.js
+    symbols: [applyProjectSkin, currentSkin, rememberAppliedSkin, restoreSessionSkin]
+  - path: app/skin-prompt.js
+    symbols: [SKIN_COLOR_KEYS, skinSystemPrompt, skinCustomizeSystemPrompt, skinUserPrompt, buildSkinMessages, parseSkinProposal, mergeProposal, validateProposal, createSkinProposer, isDefaultSkin]
+  - path: app/skin-preview.js
+    symbols: [formatSkinPreview, formatSkinWaiting, formatSkinBody, formatSkinHint]
+  - path: app/skin-actions.js
+    symbols: [SKIN_ACTIONS, CUSTOMIZE_ACTIONS, availableActions, actionAt, moveIndex, decideKey]
+  - path: app/skin-name-field.js
+    symbols: [SKIN_NAME_CARET, SKIN_NAME_RESERVED, validateSkinName, createSkinNameField]
+  - path: app/skin-modal.js
+    symbols: [SKIN_SPINNER_INTERVAL_MS, SKIN_ACTIONS, formatSkinPreview, formatSkinBody, openSkinModal]
+  - path: app/skin-subchat.js
+    symbols: [createSkinSubchat]
+  - path: app/tui-render.js
+    symbols: [renderTranscriptLines, formatTranscript, formatUserEcho]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: app/transcript.js
+    symbols: [TranscriptModel]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: app/session-loop.js
+    symbols: [handleCommand, runSessionLoop]
+  - path: app/notice-overlay.js
+    symbols: [NOTICE_COLORS, formatNoticeRow]
+  - path: app/slash-bar.js
+    symbols: [createSlashBar, selectedOpen, selectedClose]
+  - path: app/brand-bar.js
+    symbols: [createBrandBar]
+  - path: app/input-hint.js
+    symbols: [HINT_COLOR, createInputHint]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/skins.test.js
+    cases:
+      - "the store names the skin shape and keeps the shipped palette as the default"
+      - "normalizeSkin() fills defaults, drops invented keys and rejects a hex colour"
+      - "isColorName() accepts only the names a blessed tag really paints"
+      - "saveSkin() writes one JSON file per name and listSkins() reports it"
+      - "the active skin is remembered in agent/skins/active.json, and a corrupt record falls back"
+      - "the palette and the tokens are live: setPalette/applySkin/resetTheme move them in place"
+      - "applying a skin repaints the conversation already on screen"
+      - "a skin moves the tool rows: the kind colour is live, the families are not"
+      - "the slash bar, the notice rows and the input hint read the live palette"
+      - "the tag layer resolves a palette key to the live colour, and never leaks a symbol"
+      - "the renderer emits symbolic tags, so a skin moves a fence, a table frame and a quote"
+  - path: tests/skins-command.test.js
+    cases:
+      - "parseSkinsArgs() splits list, reset, save, prompt, apply and build-and-save"
+      - "/skins lists the skins and flags the active one"
+      - "/skins <name> applies a skin and remembers it, and refuses an unknown one"
+      - "/skins builds a new look from tokens and writes it down with save"
+      - "/skins builds a look under a new name without writing it down"
+      - "/skins reset restores the shipped default"
+      - "/skins names the value it refused, and the colours it will take"
+      - "/skins save puts the skin on and makes it the project default, so the UI changes at once"
+      - "/skins prompt refuses without a subchat and applies the confirmed proposal"
+      - "/skins customize updates the active skin in place and never creates a new one"
+      - "/skins customize refuses without a request or without a subchat"
+      - "/skins prompt always writes the applied skin, and only \"apply and save\" makes it the default"
+  - path: tests/skin-host.test.js
+    cases:
+      - "applyProjectSkin() applies the stored active skin and returns it"
+      - "applyProjectSkin() with no stored skin opens in the built-in default and still bootstraps"
+      - "rememberAppliedSkin() writes the applied skin as the project default and repaints"
+      - "restoreSessionSkin() is refused before the bootstrap and applies the file after it"
+  - path: tests/skins-prompt.test.js
+    cases:
+      - "parseSkinProposal() finds the JSON in a chatty answer and rejects a non-object"
+      - "mergeProposal() keeps the base for what the proposal did not name"
+      - "validateProposal() refuses an invalid colour, an unknown key and a bad boolean"
+      - "createSkinProposer() refuses an invalid proposal instead of applying the default"
+      - "createSkinProposer() answers a skin from an injected model call, and null from junk"
+      - "openSkinModal() offers only Cancel while the skin is being prepared"
+      - "openSkinModal() shows the proposal with an editable name and resolves the edited choice"
+      - "the name in the field is the name the skin is saved under"
+      - "the apply actions are unavailable while the name is unusable"
+      - "openSkinModal() in customize mode offers only the update action and no name field"
+      - "createSkinProposer() in customize mode asks for the change and keeps the base name"
+      - "formatSkinPreview() wraps a long palette on the colour boundaries"
+      - "the waiting state is live: the frame moves and the seconds climb while the call runs"

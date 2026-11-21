@@ -76,7 +76,7 @@ Two flows, two audiences, and they want opposite things from this fence.
 
 A maintainer is developing *this* program, so a hook in their own repository is their tool,
 not an injection. `start.sh` passes `MONCHO_MAINTAINER=1` into its `docker run`, and
-`config/constants.js#HOST_FENCE` reads it: the switch is off and all three writers let a hook
+`config/constants.js#hostFenceEnabled` reads it: the switch is off and all three writers let a hook
 or the env file through.
 
 The switch is an **environment variable**, not a checkout check. The app runs *inside* the
@@ -89,6 +89,16 @@ wrong.
 `hostExecutableKind()` still classifies the paths when the fence is off: only the *refusal*
 is lifted. The kinds stay true, which is what lets a caller ask "is this a host-executable
 path?" independently of whether the fence is enforcing right now.
+
+The switch is read **when the fence is asked** (`hostFenceEnabled()`), not once at import,
+and that is a property worth stating rather than an implementation detail: the suite runs
+*inside* the maintainer's container, where the variable is ambient, so a switch frozen at
+module load would leave the fence off before any case ran — the refusal tests could not pass,
+and a check that silently stops checking depending on where it runs is worse than the bug it
+guards. `tests/host-fence.test.js` therefore proves the **user's** flow by deleting the
+variable, and one case proves the switch reads live by setting it and clearing it without a
+reload. A production process never changes its environment mid-run, so reading late costs
+nothing and changes nothing there.
 
 ## The container layer
 

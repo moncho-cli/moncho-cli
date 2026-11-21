@@ -1,6 +1,7 @@
 import { CONVERSATION_COLORS } from './theme.js';
 import { sanitize } from './tui-render.js';
 import { cutCodePoints } from './cell-width.js';
+import { fgTag } from './paint-tags.js';
 
 /**
  * Transient notices and the overlay that shows them (task-backlog: "clean up failed
@@ -48,12 +49,16 @@ export const NOTICE_KINDS = Object.freeze(['info', 'warn', 'error']);
  * One colour per kind. `info` and `error` come from the conversation palette, so a
  * notice and the row it belongs with are painted the same; `warn` is the yellow the
  * palette already uses for a tool block — a retried attempt is not an error yet.
+ *
+ * The reads are **getters**, not snapshots: the palette is live
+ * (`docs/interface/skins`), so a skin that repaints `notice`/`error` repaints the
+ * notice rows with it instead of leaving them at the colours of import time.
  */
-export const NOTICE_COLORS = Object.freeze({
-  info: CONVERSATION_COLORS.notice,
-  warn: 'yellow',
-  error: CONVERSATION_COLORS.error,
-});
+export const NOTICE_COLORS = Object.freeze(Object.defineProperties({}, {
+  info: { get: () => CONVERSATION_COLORS.notice, enumerable: true },
+  warn: { get: () => 'yellow', enumerable: true },
+  error: { get: () => CONVERSATION_COLORS.error, enumerable: true },
+}));
 
 /** The glyph that introduces each kind, so severity survives a monochrome screen. */
 export const NOTICE_MARKERS = Object.freeze({ info: 'ℹ', warn: '⚠', error: '✖' });
@@ -76,11 +81,16 @@ export function formatNoticeText(text, maxChars = NOTICE_MAX_CHARS) {
   return cutCodePoints(flat, cap);
 }
 
-/** One painted row: `{colour}⚠ text{/colour}`, the marker carrying the severity. */
+/**
+ * One painted row: the marker and the text in the kind's colour, the marker carrying the
+ * severity. The colour goes through the tag layer (`app/paint-tags.js`) like every other
+ * paint site, so a colour the terminal cannot paint never reaches the widget as a literal
+ * tag (`docs/interface/skins`).
+ */
 export function formatNoticeRow(notice = {}) {
   const kind = NOTICE_KINDS.includes(notice.kind) ? notice.kind : 'info';
   const body = formatNoticeText(notice.text);
-  return `{${NOTICE_COLORS[kind]}-fg}${NOTICE_MARKERS[kind]} ${body}{/${NOTICE_COLORS[kind]}-fg}`;
+  return fgTag(NOTICE_COLORS[kind], `${NOTICE_MARKERS[kind]} ${body}`);
 }
 
 /**

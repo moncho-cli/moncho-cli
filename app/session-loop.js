@@ -4,6 +4,7 @@ import { formatCommandResult } from './json-display.js';
 import { reloadConversation } from './session-replay.js';
 import { registerSession } from '../utils/host.js';
 import { ensureTrackingFiles } from '../utils/tracking-store.js';
+import { rememberAppliedSkin, restoreSessionSkin } from './skin-host.js';
 
 /**
  * The host turn loop, kept out of `main.js` so startup stays wiring.
@@ -77,6 +78,9 @@ export async function handleCommand(input, {
   manager = null,
   sessions = null,
   mode = null,
+  // The `/skins prompt` modal subchat (`docs/interface/skins`): the host supplies the
+  // function, so a front end without one (the line CLI) refuses with its own code.
+  skinSubchat = null,
 } = {}) {
   const parsed = parseCommand(input);
   if (!parsed) return false;
@@ -90,6 +94,18 @@ export async function handleCommand(input, {
     // The live mode (`app/session-mode.js`), so `/work on|off` moves the very state
     // the gate and the label read. Absent in a front end without modes.
     mode,
+    // `/skins` reads the project's skins from its own store and, for `prompt`, opens
+    // the modal subchat the host built (`app/skin-modal.js`).
+    skinSubchat,
+    // After `/skins` moved the palette the chrome has to be re-read: the TUI repaints
+    // the border, the brand mark and the live rows in place; the line CLI has no
+    // colours to repaint, so it has nothing to do. The applied skin is also remembered
+    // as the *project's*, so the next launch opens in it — that is the link between the
+    // look and the session, and `applySkin()` has already recorded the name the session
+    // save reads (`docs/interface/skins`).
+    onApply: (skin) => rememberAppliedSkin(skin, {
+      repaint: typeof tui?.repaintTheme === 'function' ? () => tui.repaintTheme() : null,
+    }),
   });
 
   if (result === null) {
@@ -98,6 +114,15 @@ export async function handleCommand(input, {
   }
 
   if (result.ok && result.code === 'RESUMED') {
+    // The skin the conversation was held in comes back with it (`docs/interface/skins`).
+    // Restoring, not applying: the look the session recorded is what it *was*, exactly like
+    // the stored mode. A record written before the field existed carries no skin and leaves
+    // the current look alone.
+    if (result.resumedSkin) {
+      restoreSessionSkin(result.resumedSkin, {
+        repaint: typeof tui?.repaintTheme === 'function' ? () => tui.repaintTheme() : null,
+      });
+    }
     // The stored append times travel with the chunks they belong to
     // (docs/interface/session-stamps): a reloaded row shows when it was written, and a
     // record written before they existed carries one `null` per chunk.
@@ -162,6 +187,7 @@ export async function runSessionLoop({
   sessions = null,
   mode = null,
   drive = null,
+  skinSubchat = null,
   abortManager = null,
   saveSession = () => null,
   autosave = null,
@@ -199,7 +225,7 @@ export async function runSessionLoop({
     if (!String(userInput ?? '').trim()) continue;
 
     // A slash command is answered here and never sent to the model.
-    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions, mode });
+    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions, mode, skinSubchat });
     if (consumed) continue;
 
     abortManager?.startTask();

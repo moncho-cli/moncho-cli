@@ -7,6 +7,7 @@ import {
   formatBrand,
   resolveBrandSize,
 } from './brand.js';
+import { activeTokens } from './theme.js';
 
 /**
  * Bind the brand line (`app/brand.js`) to the **very first row of the screen**,
@@ -49,6 +50,11 @@ export function createBrandBar({
   let painted = 0;
   let band = 0;
   const text = String(line ?? '');
+  // The colour is read **live** (`docs/interface/skins`): a skin that moves the `brand`
+  // token repaints the mark without rebuilding the bar. A `color` other than the shipped
+  // default is the caller's explicit override and wins over the token.
+  const explicitColor = color !== BRAND_COLOR;
+  const liveColor = () => (explicitColor ? color : activeTokens().brand);
 
   const widget = screen
     ? blessed.box({
@@ -59,7 +65,7 @@ export function createBrandBar({
       height: 1,
       tags: false,
       hidden: true,
-      style: { fg: color },
+      style: { fg: explicitColor ? color : activeTokens().brand },
       padding: { left: 0, right: 0 },
     })
     : null;
@@ -107,6 +113,7 @@ export function createBrandBar({
         widget.width = size.cols;
         widget.height = size.rows;
         widget.hidden = false;
+        if (widget.style) widget.style.fg = liveColor();
       }
     }
     refresh();
@@ -120,8 +127,10 @@ export function createBrandBar({
     paint,
     /** The line as it is painted, so callers never re-derive it. */
     line: text,
-    /** The colour it is painted in. */
-    color,
+    /** The colour it is painted in, read from the live token. */
+    get color() {
+      return liveColor();
+    },
     /** The fit rule's answer for the last paint, or null when it was hidden. */
     get size() {
       return size;

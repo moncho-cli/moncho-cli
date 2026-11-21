@@ -32,6 +32,9 @@ export function createSessionRecorder({
   dir = SESSION_DIR,
   model = null,
   stateOf = null,
+  // The look in force, read live on every save like `stateOf`: a skin applied halfway
+  // through a conversation is the one the record carries (`docs/interface/skins`).
+  skinOf = null,
   cwd = process.cwd(),
   now = () => new Date(),
   id = null,
@@ -97,11 +100,15 @@ export function createSessionRecorder({
     save(chunks = [], extra = {}) {
       const at = now();
       const state = typeof stateOf === 'function' ? (stateOf() || NO_STATE) : NO_STATE;
-      
-      // Get task/plan content from session
+      // The look is read *live*, exactly like the mode: the user may apply a skin halfway
+      // through a conversation, and the file must record the one that was on when it was
+      // last saved (`docs/interface/skins`). Presentation only — it never reaches a chunk.
+      const skin = typeof skinOf === 'function' ? (skinOf() || null) : null;
+
+      // The tracking files the session owns, read through the host registry.
       const taskContent = getSessionTaskContent();
       const planContent = getSessionPlanContent();
-      
+
       const record = writeSession(
         serializeSession({
           id: sessionId_,
@@ -110,6 +117,7 @@ export function createSessionRecorder({
           model,
           mode: state.mode ?? null,
           work: Boolean(state.work),
+          skin,
           cwd,
           chunks,
           // The append time of each chunk, index-aligned with them and never on a

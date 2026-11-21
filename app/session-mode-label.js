@@ -1,5 +1,6 @@
 import { sanitize, escapeTags } from './tui-render.js';
 import { modeStateKey, formatModeLabel, modeColor, DEFAULT_MODE, MODES } from './session-mode.js';
+import { fgTag } from './paint-tags.js';
 
 /**
  * The mode label at the leftmost cell of the model row.
@@ -54,7 +55,7 @@ export function formatModeTag(state = {}) {
   const rawColor = sanitize(source.color ?? '');
   const color = /^[a-z][a-z-]*$/.test(rawColor) ? rawColor : modeColor(DEFAULT_MODE, false);
   const label = escapeTags(sanitize(source.label ?? formatModeLabel(DEFAULT_MODE, false)));
-  return `{${color}-fg}${label}{/${color}-fg}`;
+  return fgTag(color, label);
 }
 
 /**

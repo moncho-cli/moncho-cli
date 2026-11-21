@@ -78,8 +78,13 @@ test('toolColorFor resolves a tool name, a family name and junk', () => {
   assert.equal(toolColorFor('update_task'), 'yellow');
   assert.equal(toolColorFor('not a tool'), 'yellow');
   assert.equal(toolColorFor(undefined), 'yellow');
-});
 
+  // The `other` family is the **live** kind colour a skin may move: the caller passes it
+  // in, so an unclassified tool row follows the skin while the named families do not.
+  assert.equal(toolColorFor('update_task', { fallback: 'red' }), 'red');
+  assert.equal(toolColorFor('other', { fallback: 'red' }), 'red');
+  assert.equal(toolColorFor('read_file', { fallback: 'red' }), 'bright-cyan', 'a named family keeps its own colour');
+});
 test('toolNameOf recovers the tool from a call line and from an output header', () => {
   assert.equal(toolNameOf('  -> Calling read_file(path: app/tui.js)'), 'read_file');
   assert.equal(toolNameOf('-> Calling run_bash(command: ls)'), 'run_bash');

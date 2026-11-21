@@ -11,9 +11,15 @@ summary: >
 code:
   - path: app/json-display.js
     symbols: [looksLikeJson, prettyPrintJson, payloadOf, formatCommandResult]
+  - path: app/tool-echo.js
+    symbols: [createToolEcho]
   - path: main.js
     symbols: [main]
 tests:
+  - path: tests/tool-echo.test.js
+    cases:
+      - "createToolEcho() paints a tool result in the pane, or as plain lines without a screen"
+      - "a result that is not JSON is passed through the same way"
   - path: tests/json-display.test.js
     cases:
       - "prettyPrintJson() re-indents a JSON object and leaves prose alone"

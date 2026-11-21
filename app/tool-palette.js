@@ -52,25 +52,42 @@ export const TOOL_FAMILIES = Object.freeze({
   run_npm: 'bash',
 });
 
-/** One blessed colour per family. `other` is the kind colour of `app/theme.js`. */
+/**
+ * One blessed colour per family. `other` is the fallback for a row that names no tool
+ * this table knows: `app/theme.js` passes the **live** kind colour (`CONVERSATION_COLORS.tool`)
+ * in, so a skin can move it (`docs/interface/skins`) while the three named families keep
+ * their own fixed colours.
+ */
 export const TOOL_COLORS = Object.freeze({
   read: 'bright-cyan',
   write: 'green',
   bash: 'yellow',
   other: 'yellow',
-});
-
-/** The family a tool name belongs to (`'other'` for anything unlisted). */
+});/** The family a tool name belongs to (`'other'` for anything unlisted). */
 export function toolFamily(name) {
   const key = String(name ?? '').trim();
   return TOOL_FAMILIES[key] || 'other';
 }
 
-/** The colour for a tool name (or a family name, which passes straight through). */
-export function toolColorFor(name) {
+/**
+ * The colour for a tool name (or a family name, which passes straight through).
+ *
+ * A family's colour is now a **palette key** (`toolRead`/`toolWrite`/`toolBash`), not a
+ * constant in this module: the three colours used to be frozen here, so a skin could move
+ * every other row while a tool row stayed as shipped — exactly the "it saved but nothing
+ * changed" report. `livePalette` is the palette in force, passed in rather than imported so
+ * this module stays terminal-free and pure.
+ *
+ * `TOOL_COLORS` remains the shipped default, which is what a caller with no palette gets.
+ */
+export function toolColorFor(name, { palette = TOOL_COLORS, fallback = null } = {}) {
   const key = String(name ?? '').trim();
-  if (Object.prototype.hasOwnProperty.call(TOOL_COLORS, key)) return TOOL_COLORS[key];
-  return TOOL_COLORS[toolFamily(key)];
+  const family = Object.prototype.hasOwnProperty.call(TOOL_COLORS, key) ? key : toolFamily(key);
+  // The palette names each family `toolRead`/`toolWrite`/`toolBash`; `other` is the kind's
+  // own colour, which the caller passes as `fallback`.
+  if (family === 'other') return fallback ?? palette.tool ?? TOOL_COLORS.other;
+  const slot = `tool${family[0].toUpperCase()}${family.slice(1)}`;
+  return palette[slot] ?? TOOL_COLORS[family];
 }
 
 /** The `-> Calling <name>` line the conversation loop prints. */

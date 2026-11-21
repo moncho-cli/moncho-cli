@@ -1,5 +1,6 @@
 import { sanitize } from './tui-render.js';
 import { cutCodePoints } from './cell-width.js';
+import { activeTokens } from './theme.js';
 
 /**
  * The "Last prompt: …" hint shown over an empty input box (task-backlog: "if the
@@ -37,7 +38,9 @@ export const HINT_MAX_CHARS = 120;
  * real text — neo-blessed has no italic attribute (its tag vocabulary is
  * bold/underline/blink/inverse/invisible, see program.js#_attr), so the "grayed
  * italic" the backlog asked for ships as the greyed part. The deviation is stated
- * in `docs/interface/tui`, not hidden.
+ * in `docs/interface/tui`, not hidden. It is the **default**; the colour actually
+ * painted is read live from the active skin (`docs/interface/skins`), so a skin that
+ * moves the `hint` token re-greys the box on the next repaint.
  */
 export const HINT_COLOR = 'grey';
 
@@ -114,7 +117,7 @@ export function createInputHint({ inputBox = null, refresh = () => {}, maxChars 
       painting = true;
       try {
         setContent(hint);
-        setColor(HINT_COLOR);
+        setColor(activeTokens().hint);
       } finally {
         painting = false;
       }

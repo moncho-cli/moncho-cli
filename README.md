@@ -18,6 +18,9 @@ of your repository, and talks to any OpenAI-compatible provider or to Ollama.
   before it runs, and the tail of the conversation stays verbatim.
 - **Three intent modes.** `chat` reads only, `design` also writes the tracking files,
   `work` is unrestricted. `Tab` walks the ring.
+- **Skins, per project.** `/skins` saves a palette and a few presentation details as
+  JSON under `agent/skins/`; `/skins prompt <words>` describes a new one in a modal
+  sub-chat and applies it on your say-so. Colour never reaches the model.
 - **Nothing leaves the machine but the model calls.** No telemetry, no analytics.
 
 ## Install
@@ -40,8 +43,21 @@ moncho-cli
 The first run prepares the directory: it adopts an existing `Dockerfile` when there is
 one, otherwise it asks for the project kind and writes a `Monchofile` from a starter.
 It bakes the agent base image once, builds the project image, and starts the agent with
-your workspace mounted at `/app`. State — sessions, `task.md`, the plan, the log —
-lives in a named volume, so nothing is written into your repository.
+your workspace mounted at `/app`. State — sessions, `task.md`, the plan, the log, your
+skins — lives in a named volume, so nothing is written into your repository.
+
+The directory must be a **git repository**: Moncho refuses to start otherwise and tells
+you to run `git init`, because a checkout is what keeps its own files (`.moncho/`, and
+`agent/` under `--state-in-repo`) out of your history. It excludes them through
+`.git/info/exclude`, never your `.gitignore`, so your working tree is untouched. Pass
+`--skip-git` for a deliberate exception.
+
+Provider settings go in `./.env.moncho` — copy [.env.moncho.example](.env.moncho.example)
+and fill it in. Set the **endpoint** (`OPENAI_BASE_URL`), the **key**
+(`OPENAI_API_KEY`, omitted for Ollama) and the **model** (`OPENAI_MODEL`); a few optional
+knobs (`CONTEXT_MAX_LENGTH`, `PULSE_LIMIT`, `LOG_LEVEL`) sit beside them. A generic `.env`
+is deliberately ignored, so a project's own credentials never become the agent's provider.
+The full table is in [USAGE.md](USAGE.md#configuration).
 
 ## The two rules of a Monchofile
 

@@ -52,7 +52,11 @@ subdivides the kind into families:
   `app/tool-call-format.js` produces: the `-> Calling <name>(…)` line and the
   `[<name> Output]` header (a collapsed block carries that header mid-row). A row that
   names no tool gets the kind's own colour, and `CONVERSATION_COLORS.tool` (yellow) is
-  exactly that fallback.
+  exactly that fallback. That fallback is **live** (`docs/interface/skins`): `colorizeLine()`
+  passes the current `CONVERSATION_COLORS.tool` into `toolColorFor(name, { fallback })`, so a
+  skin that moves `tool` repaints an unclassified tool row — while the three named families
+  keep their own fixed colours, which are what makes a read, a write and a shell tellable
+  apart at a glance.
 - Three decisions the table encodes on purpose:
   - `read` is **bright cyan**, never plain cyan: plain cyan is the user's own echo, and
     "what I asked" must not read as "what the agent looked at". The bright variant is
@@ -116,7 +120,13 @@ Two consequences the tests pin down:
 ## Composing with the markdown renderer
 
 `colorizeLine(line)` wraps a line in its tag; `colorizeLines(lines)` maps a whole
-transcript. Both are applied at the end of `formatTranscript()`, which means:
+transcript. They are applied **separately** from the markdown renderer:
+`renderTranscriptLines()` produces the tagged-but-uncoloured lines and the palette is
+applied on top, at *paint* time in the TUI. Keeping the two steps apart is what lets a
+skin recolour a conversation that is already on screen
+(`docs/interface/skins`) — fold them together and applying a skin moves only the
+chrome. `formatTranscript()` is the two steps composed, for callers that want the
+finished string. Either way:
 
 - a line the markdown renderer **already tagged** (a fence, a tool delimiter, a
   quote, a heading, a list bullet, inline code) is returned **untouched** — the

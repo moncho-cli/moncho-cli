@@ -1,5 +1,5 @@
 import blessed from 'neo-blessed';
-import { SLASH_COLORS } from './theme.js';
+import { SLASH_COLORS, activeTokens } from './theme.js';
 
 /**
  * The slash-command popup as a blessed region: a bordered box that sits **directly on
@@ -32,11 +32,22 @@ import { SLASH_COLORS } from './theme.js';
  * Pure in the model sense, like the rest of these bars: with no screen the whole thing
  * still works (it just paints nothing), which is how the line CLI and the unit tests
  * drive it.
+ *
+ * The band and the box border are read **live** (`docs/interface/skins`): a skin that
+ * moves `SLASH_COLORS`/the border token repaints the open popup instead of leaving it
+ * at the colours of import time, which is why the two markers are functions and never
+ * snapshot constants.
  */
 
-/** The open and close of the selected row's band, so a caller can test the paint. */
-export const SELECTED_OPEN = `{${SLASH_COLORS.selected}-bg}{${SLASH_COLORS.selectedFg}-fg}`;
-export const SELECTED_CLOSE = `{/${SLASH_COLORS.selectedFg}-fg}{/${SLASH_COLORS.selected}-bg}`;
+/** The open of the selected row's band, from the palette in force right now. */
+export function selectedOpen() {
+  return `{${SLASH_COLORS.selected}-bg}{${SLASH_COLORS.selectedFg}-fg}`;
+}
+
+/** The close of the selected row's band, from the palette in force right now. */
+export function selectedClose() {
+  return `{/${SLASH_COLORS.selectedFg}-fg}{/${SLASH_COLORS.selected}-bg}`;
+}
 
 /** Cells a row uses before its text: the region's border and padding on both sides. */
 function chromeOf(widget) {
@@ -104,7 +115,7 @@ export function createSlashBar({
   const paintRow = (row, room) => {
     if (!row.selected) return row.text;
     const fill = Math.max(0, room - row.text.length);
-    return `${SELECTED_OPEN}${row.text}${' '.repeat(fill)}${SELECTED_CLOSE}`;
+    return `${selectedOpen()}${row.text}${' '.repeat(fill)}${selectedClose()}`;
   };
 
   /**
@@ -121,6 +132,8 @@ export function createSlashBar({
       widget.height = boxHeight(painted.length);
       widget.bottom = anchorBottom();
       widget.hidden = painted.length === 0;
+      // The border is a live token too: a skin that moved it repaints here.
+      if (widget.style?.border) widget.style.border.fg = activeTokens().border;
     }
     refresh();
     return painted;

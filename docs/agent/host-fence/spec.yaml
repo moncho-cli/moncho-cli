@@ -24,7 +24,7 @@ code:
   - path: bin/lib/container.sh
     symbols: [build_run_args, sync_back]
   - path: config/constants.js
-    symbols: [HOST_FENCE]
+    symbols: [hostFenceEnabled]
 tests:
   - path: tests/host-fence.test.js
     cases:
@@ -36,6 +36,7 @@ tests:
       - delete_file refuses to remove a hook or the env file
       - an ordinary file in the same tree is written, edited and deleted as before
       - "the maintainer flow is exempt: the switch turns the fence off"
+      - "the switch is read at call time, so the ambient variable cannot decide a test"
   - path: tests/container-mount.test.js
     cases:
       - a git repository and an env file are shadowed read-only

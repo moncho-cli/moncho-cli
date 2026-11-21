@@ -1,5 +1,7 @@
 import { TranscriptModel, blockAtClick } from './transcript.js';
-import { formatArg, formatTranscript } from './tui-render.js';
+import { formatArg, renderTranscriptLines } from './tui-render.js';
+import { colorizeLine, CONVERSATION_COLORS } from './theme.js';
+import { fgTag, resolveTags } from './paint-tags.js';
 import { bandWidthOf, composeBanded, takeBandOptions } from './prose-band.js';
 import { appendLines } from './transcript-append.js';
 import { STAMP_RE } from './transcript-stamp.js';
@@ -64,8 +66,25 @@ export function createTranscriptView({
     return explicit ?? mark();
   };
 
-  /** One display-ready line list from raw text (sanitised + markdown-coloured). */
-  const formatLines = (text) => formatTranscript(text).split('\n');
+  // One display-ready line list: sanitised and markdown-tagged, but **not**
+  // palette-coloured — the palette is applied at *paint* time (`paintRecord`), so a skin
+  // repaints a conversation already on screen (`docs/interface/skins`).
+  const formatLines = (text) => renderTranscriptLines(text);
+
+  // Paint one record with the palette in force **now**: a block body keeps the one colour
+  // its caller asked for (`record.color`, e.g. the tracking colour); everything else goes
+  // through colorizeLine(), which colours the kind of row and leaves a line the markdown
+  // renderer already tagged exactly as it is.
+  const paintRecord = (record) => {
+    const text = String(record?.text ?? '');
+    if (record?.color && text.trim() !== '') {
+      // The body colour goes through the tag layer, never straight into a tag: a colour
+      // the terminal cannot paint is refused there instead of appearing on screen as
+      // literal `{orange-fg}` text (`app/paint-tags.js`).
+      return { ...record, text: fgTag(record.color, resolveTags(text, CONVERSATION_COLORS)) };
+    }
+    return { ...record, text: colorizeLine(text) };
+  };
 
   const viewport = createViewport({ widget, repaint: () => refresh() });
 
@@ -100,7 +119,7 @@ export function createTranscriptView({
     // The band is a full-width background, so the width is resolved here, at paint
     // time, instead of being baked into a line (app/prose-band.js). A row whose role
     // has no band comes back byte-for-byte.
-    const banded = composeBanded(model.lineRecords(), bandWidthOf(widget));
+    const banded = composeBanded(model.lineRecords().map(paintRecord), bandWidthOf(widget));
     widget.setContent(markLines ? markLines(banded, widget) : banded);
     settle();
 
@@ -138,25 +157,28 @@ export function createTranscriptView({
   const logProse = (role, text, { stamp = null } = {}) => log(text, { role, stamp });
 
   /**
-   * Append a collapsible block. `header` is the one-line label the block keeps
-   * when collapsed (the "X char response" size is appended by the model) and
-   * `body` is the payload, stored verbatim so expanding is lossless.
+   * Append a collapsible block. `header` is the one-line label the block keeps when
+   * collapsed (the "X char response" size is appended by the model) and `body` is the
+   * payload, stored verbatim so expanding is lossless.
    *
    * `bodyColor` paints the whole payload in one blessed colour — a tool result keeps the
-   * markdown colours it was rendered with (the default, `null`), while the tracking content
-   * block asks for the tracking colour so the file it quotes reads as a milestone
-   * rather than as an ordinary tool result (`docs/interface/tracking-block`).
+   * markdown colours it was rendered with (the default, `null`), while a tracking block
+   * asks for the tracking colour so the file it quotes reads as a milestone
+   * (`docs/interface/tracking-block`). It is stored beside the payload, not inside it, so
+   * a skin repaints it too (`docs/interface/skins`).
    */
   const logBlock = ({ header = '', body = '', collapsed = null, bodyColor = null, stamp = null } = {}) => {
     const source = String(body ?? '');
     const colour = typeof bodyColor === 'string' && bodyColor ? bodyColor : null;
-    const bodyLines = formatLines(source).map((line) => (
-      colour && String(line).trim() !== '' ? `{${colour}-fg}${line}{/${colour}-fg}` : line
-    ));
+    // The body is stored **uncoloured** and the colour rides beside it: the payload keeps
+    // the colour its caller asked for, and `paintRecord()` re-applies it on every paint, so
+    // a skin repaints a tracking block with the rest of the transcript.
+    const bodyLines = formatLines(source);
     const block = model.addBlock({
       header: formatLines(header).join(' '),
       body: source,
       bodyLines,
+      bodyColor: colour,
       collapsed,
       stamp: markFor(stamp),
     });

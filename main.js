@@ -3,13 +3,17 @@ import { ConversationManager } from './app/conversation-manager.js';
 import { createCLI } from './app/cli.js';
 import { createTui } from './app/tui.js';
 import { AbortManager } from './app/abort-manager.js';
-import { createSessionRecorder } from './app/session-recorder.js';
-import { createSessionAutosave } from './app/session-autosave.js';
+import { createSessionSave } from './app/session-save.js';
 import { createDefaultCommands } from './app/commands.js';
+import { createSkinSubchat } from './app/skin-subchat.js';
+import { createSkinProposer } from './app/skin-prompt.js';
+import { applyProjectSkin, currentSkin } from './app/skin-host.js';
+import { callOllama } from './api/ollama.js';
 import { createSessionMode } from './app/session-mode.js';
 import { toolsForMode, gateForMode } from './app/mode-policy.js';
 import { createModeController } from './app/mode-controller.js';
-import { prettyPrintJson } from './app/json-display.js';
+import { createNoticeSink } from './app/notice-sink.js';
+import { createToolEcho } from './app/tool-echo.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
@@ -76,6 +80,11 @@ async function main() {
   // (app/slash-menu.js), and handed over as a function rather than a list so the popup
   // can never hold commands that were registered later.
   const commands = createDefaultCommands();
+
+  // The project's skin (`docs/interface/skins`), applied before the screen is built so
+  // the first frame already wears it, plus the bootstrap mark that lets a resumed session
+  // restore its own look afterwards (app/skin-host.js).
+  const activeSkin = applyProjectSkin();
   const tui = createTui({
     modelLabel: label,
     mode: sessionMode,
@@ -93,23 +102,11 @@ async function main() {
     maxFiles: logger.maxFiles,
   });
 
-  // Transient notices (app/notice-overlay.js): a retried provider failure is *news*,
-  // not history, so it floats over the top of the transcript and hides itself after
-  // a few minutes instead of leaving a stale error line behind. The line CLI has no
-  // floating box, so it prints the notice as a plain line — the information is the
-  // same, only the place differs (docs/interface/line-cli).
-  // The handle of the current retry notice is kept so a turn that finally succeeds
-  // can take it down at once instead of waiting out its TTL.
-  let retryNotice = null;
-  const notify = (kind, text, options = {}) => {
-    if (tui) {
-      const handle = tui.notice(kind, text, options);
-      if (options.code === 'retry') retryNotice = handle;
-      return handle;
-    }
-    log(`[${kind}] ${text}`);
-    return null;
-  };
+  // Transient notices (`app/notice-sink.js`): a retried provider failure is *news*, not
+  // history, so it floats over the transcript and hides itself after a few minutes
+  // instead of leaving a stale error line in the record. The same object keeps the retry
+  // handle so a turn that finally succeeds can take it down at once.
+  const { notify, dismissRetry } = createNoticeSink({ tui, log });
 
   // The refusal route for `Tab` (app/mode-controller.js): the sink above is the only
   // thing left to plug in, so the cycle hook the TUI was built with can be armed now.
@@ -121,24 +118,9 @@ async function main() {
   });
   log("Initializing tools...");
 
-  // Tool results are echoed to the screen (with the call's intent) and also
-  // returned to the model.
-  const onToolResult = (toolName, result, intent) => {
-    // In the TUI a tool result is a collapsible block: one header line carrying
-    // the "X char response" size, expanded with a click. The line CLI has no
-    // widget, so it prints the header and the payload plainly.
-    // A JSON result is re-indented for display only: the model still receives the
-    // raw bytes, and the session file keeps them verbatim.
-    const body = prettyPrintJson(result);
-    const header = `\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''}`;
-    if (tui) {
-      tui.logBlock({ header, body });
-      return;
-    }
-    log(header);
-    log(body);
-    log();
-  };
+  // Tool results are echoed to the screen (with the call's intent) and also returned to
+  // the model (`app/tool-echo.js`): a collapsible block in the TUI, plain lines in the CLI.
+  const onToolResult = createToolEcho({ tui, log });
 
   const { tools, toolFunctions } = await loadTools(onToolResult);
   log(`Loaded ${tools.length} tools:`, tools.map(t => t.function.name).join(', '));
@@ -209,10 +191,20 @@ async function main() {
   // The conversation is recorded in agent/sessions/<id>/context.json — the record
   // inside the conversation's own folder: every chunk of the live window, verbatim,
   // so it can be picked up later (`/sessions`, docs/runtime/session-store).
-  // `stateOf` is read on every save, so the intent mode and the `work:on` lock travel
-  // with the conversation and a resumed session opens in the state it was left in
-  // (docs/interface/modes).
-  const sessions = createSessionRecorder({ model: label, stateOf: () => sessionMode.toJSON() });
+  // `stateOf` and `skinOf` are read on every save, so the intent mode, the `work:on`
+  // lock and the look travel with the conversation and a resumed session opens in the
+  // state and colours it was left in (docs/interface/modes, docs/interface/skins).
+  const record = createSessionSave({
+    manager,
+    model: label,
+    stateOf: () => sessionMode.toJSON(),
+    skinOf: () => currentSkin(),
+    logger,
+    log,
+  });
+  const sessions = record.sessions;
+  const saveSession = record.saveSession;
+  autosave = record.autosave;
 
   // Register the session, then give its folder the two tracking files it owns
   // (agent/sessions/<id>/task.md and implementation_plan.md, docs/agent/task-tracking).
@@ -231,36 +223,12 @@ async function main() {
     logBlock: tui ? (block) => tui.logBlock(block) : null,
   }));
 
-  const saveSession = (reason) => {
-    try {
-      return sessions.save(manager.chunks, {
-        reason,
-        // The *uncompacted* history (app/context-window.js#ContextWindow.journal): the
-        // window is what the model is sent and shrinks on a compaction, while the journal
-        // keeps every chunk all the way back for conversation.json
-        // (docs/runtime/conversation-log).
-        journal: manager.contextWindow.journal,
-        // The append time of each chunk, so a resumed transcript can show when each
-        // block was written instead of the time the file was reopened
-        // (utils/chunk-stamps.js, docs/interface/session-stamps).
-        stamps: manager.contextWindow.stamps,
-        stats: manager.contextWindow.stats(),
-        // What each model consumed so far, so the session file is the accounting
-        // record and `/usage` survives a restart.
-        usage: manager.usageTable(),
-      });
-    } catch (error) {
-      logger.error('session', `could not save ${sessions.path}`, error);
-      log(`\n[Session] Could not save ${sessions.path}: ${error.message}`);
-      return null;
-    }
-  };
-
-  // The mid-turn throttle (app/session-autosave.js): the conversation is written as it
-  // happens — the first chunk of a turn at once, a burst of chunks coalesced — instead
-  // of only when a turn ends. The loop still saves after every turn and on exit, and it
-  // settles this throttle then, because that save already holds the whole window.
-  autosave = createSessionAutosave({ save: () => saveSession('chunk') });
+  // The mid-turn throttle (app/session-autosave.js) starts now, once `saveSession`
+  // exists: the conversation is written as it happens — the first chunk of a turn at
+  // once, a burst of chunks coalesced — instead of only when a turn ends. The loop still
+  // saves after every turn and on exit, and it settles this throttle then, because that
+  // save already holds the whole window.
+  record.autosave.start();
 
   // The `work:on` self-drive (app/work-drive.js): while the lock is on, the next prompt
   // comes from `task.md` instead of the keyboard. It reads the mode live, so a `/work on`
@@ -276,6 +244,7 @@ async function main() {
   log("\nChat initialized. Type 'exit' to quit.");
   log("ESC or Ctrl+C cancels a running task (press twice to confirm) and quits when idle.");
   log(`Commands: ${commands.list().map((command) => `/${command.name}`).join(', ')} (try /help)`);
+  if (activeSkin && activeSkin.name !== 'default') log(`Skin: ${activeSkin.name} (change it with /skins)`);
 
   await runSessionLoop({
     cli,
@@ -286,17 +255,26 @@ async function main() {
     sessions,
     mode: sessionMode,
     drive,
+    // `/skins prompt` reaches the modal subchat through this one function: the model
+    // call is a proposer over the live provider (`app/skin-prompt.js`), and the TUI
+    // puts the proposal in a modal (`app/skin-modal.js`). With no TUI the subchat is
+    // absent and `/skins prompt` refuses with its own code, leaving the look alone.
+    skinSubchat: tui
+      ? createSkinSubchat({
+        screen: tui.screen,
+        inputBox: tui.inputBox,
+        refresh: tui.refresh,
+        proposer: createSkinProposer({
+          callModel: (messages, ctx) => callOllama(messages, [], false, ctx?.signal, { systemPrompt: false }),
+        }),
+      })
+      : null,
     abortManager,
     saveSession,
     autosave,
     // The turn landed, so whatever the provider recovered from on the way is no
     // longer worth showing: drop the retry notice now rather than at its TTL.
-    onTurnLanded: () => {
-      if (retryNotice !== null) {
-        tui?.dismissNotice(retryNotice);
-        retryNotice = null;
-      }
-    },
+    onTurnLanded: () => dismissRetry(),
   });
 
   abortManager.dispose();

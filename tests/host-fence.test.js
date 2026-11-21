@@ -28,6 +28,14 @@ import { execute as deleteFileExecute } from '../tools/delete_file.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-host-fence-'));
 process.chdir(root);
 
+/**
+ * This suite proves the **user's** flow, where the fence is on. The container this suite
+ * runs in is the maintainer's, so `MONCHO_MAINTAINER=1` is ambient here: the switch is read
+ * at call time (`config/constants.js#hostFenceEnabled`), so removing it is enough to put the
+ * suite in the user's flow. Leaving it set would silently skip every refusal case below.
+ */
+delete process.env.MONCHO_MAINTAINER;
+
 const read = (name) => fs.readFileSync(name, 'utf-8');
 
 function writeFile(name, content) {
@@ -170,8 +178,9 @@ test('an ordinary file in the same tree is written, edited and deleted as before
 });
 
 test('the maintainer flow is exempt: the switch turns the fence off', () => {
-  // The default is the user's flow: the fence applies. `hostExecutableRefusal` takes the
-  // switch as a parameter so both sides are provable without reloading the module.
+  // The default is the user's flow, which is what this suite deleted the ambient variable
+  // for. `hostExecutableRefusal` also takes the switch as a parameter, so both sides are
+  // provable without reloading the module.
   assert.equal(hostExecutableRefusal('.git/hooks/pre-commit', true).code, HOST_EXEC_REFUSAL);
   // With the maintainer's switch on, the classifier still knows the path — only the
   // *refusal* is lifted — so a maintainer writes their own hooks and the kinds stay true.
@@ -179,6 +188,25 @@ test('the maintainer flow is exempt: the switch turns the fence off', () => {
   assert.equal(hostExecutableRefusal('.git/hooks/pre-commit', false), null);
   assert.equal(hostExecutableRefusal('.env.moncho', false), null);
   assert.equal(hostExecutableRefusal('.git/config', false), null);
+});
+
+test('the switch is read at call time, so the ambient variable cannot decide a test', () => {
+  // The defect this pins: the switch was computed once at import, so in the maintainer's
+  // container — where MONCHO_MAINTAINER=1 is ambient — the fence was off before any case
+  // ran and the refusals above could not pass. Reading it per call keeps the answer honest
+  // wherever the suite runs, and a production process never changes its env mid-run.
+  try {
+    process.env.MONCHO_MAINTAINER = '1';
+    assert.equal(hostExecutableRefusal('.git/hooks/pre-commit'), null, 'the switch is on: the fence lifts');
+    delete process.env.MONCHO_MAINTAINER;
+    assert.equal(
+      hostExecutableRefusal('.git/hooks/pre-commit').code,
+      HOST_EXEC_REFUSAL,
+      'the switch is off again: the fence is back without a reload',
+    );
+  } finally {
+    delete process.env.MONCHO_MAINTAINER;
+  }
 });
 
 test.after(() => {

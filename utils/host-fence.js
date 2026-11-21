@@ -1,4 +1,4 @@
-import { HOST_FENCE } from '../config/constants.js';
+import { hostFenceEnabled } from '../config/constants.js';
 
 /**
  * The fence around the paths a **host** executes, not just reads.
@@ -108,15 +108,17 @@ export function isHostExecutable(path) {
  *
  * **The maintainer flow is exempt.** A maintainer develops this repository through
  * `./start.sh`, reads every diff and owns the checkout, so the fence is the thing in their
- * way: `MONCHO_MAINTAINER=1` turns it off (`config/constants.js#HOST_FENCE`) and they write
- * their own hooks. The switch is a parameter rather than a module-level early return so a
- * test can prove both sides without reloading the module.
+ * way: `MONCHO_MAINTAINER=1` turns it off (`config/constants.js#hostFenceEnabled`) and they
+ * write their own hooks. The switch is a parameter rather than a module-level early return
+ * so a test can prove both sides without reloading the module, and the default reads the
+ * environment **at call time** so the ambient container variable cannot decide the answer
+ * before a test has a say.
  *
  * @param {string} path the path argument of the call
  * @param {boolean} [enabled] whether the fence applies; defaults to the configured switch
  * @returns {{status: string, code: string, message: string, guidance: string, path: string}|null}
  */
-export function hostExecutableRefusal(path, enabled = HOST_FENCE) {
+export function hostExecutableRefusal(path, enabled = hostFenceEnabled()) {
   if (!enabled) return null;
   const kind = hostExecutableKind(path);
   if (!kind) return null;

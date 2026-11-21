@@ -182,11 +182,81 @@ writer, no shell), `design` also writes the two tracking files, `work` is unrest
 | ------- | ------------ |
 | `/help` | List the commands |
 | `/sessions` | List stored conversations, or resume one |
+| `/skins` | Change this project's colours and presentation |
 | `/usage` | Print the token breakdown for the session |
 | `exit` | Quit |
 
 **ESC** or **Ctrl+C** cancels a running task; press twice to confirm. When idle, the same
 key quits.
+
+### Skins
+
+A **skin** is a saved look for the project: the conversation palette and a few
+presentation details (the border, the brand mark, the input hint). Skins are per project
+and live as JSON under `agent/skins/`, so each project keeps the colours you gave it and
+reopens in them.
+
+| Command | What it does |
+| ------- | ------------ |
+| `/skins` | List this project's skins and mark the active one |
+| `/skins <name>` | Apply a saved skin, and remember it for the project |
+| `/skins save <name>` | Save the look on screen now under a name |
+| `/skins <name> intent=bright-yellow user=cyan save warm` | Build a look from individual colours, and save it |
+| `/skins reset` | Go back to the shipped default |
+| `/skins prompt a warm sunset` | Describe a new skin in words (below) |
+| `/skins customize make the intent warmer` | Adjust the active skin in words (below) |
+
+Every colour is a terminal colour **name** — `cyan`, `bright-blue`, `bright-green` — not a
+hex code, because the screen paints named colours. The palette keys are `user`, `tool`,
+`intent`, `context`, `error`, `notice`, `tracking` and `refusal`.
+
+#### Asking for a skin in words
+
+`/skins prompt <description>` opens a **modal sub-chat**: the agent makes one model call
+to turn your description into a proposed skin, then shows the palette inside the box with
+three choices — **Apply for this session**, **Apply and save to `agent/skins/`**, or
+**Cancel** (Escape closes it too). Nothing changes until you pick one.
+
+While the model is still working there is nothing to apply, so the box offers **only**
+Cancel and Enter cancels; the two apply choices appear with the proposal. The proposal's
+name sits in an **editable field** prefilled with what the model chose — type to change it,
+and the name the skin is saved under is the slug of what you typed (`Warm Sunset` →
+`warm-sunset`). Enter in the field moves to the choices, Tab moves back, Escape cancels. An
+empty name, or one that folds to the built-in `default`, takes the apply choices away and
+says why, so a bad name is fixed before anything is written.
+
+The proposal is a starting point, not a verdict: it is filled in from the skin already in
+force, so a colour the model did not name is left alone, and a colour it invented that
+the terminal does not know is ignored.
+
+#### Adjusting the skin you are using
+
+`/skins customize <description>` opens the same modal, but asks the model to **change the
+skin already in force** instead of inventing a new one. The box has no name field — the
+name is settled — and offers **Update the active skin** or **Cancel**. The change is
+written over the active skin's own file, so the project keeps opening in it and nothing
+new is created. With no active skin there is nothing to adjust, so the command refuses
+and suggests `/skins prompt` instead.
+
+#### Editing a skin by hand
+
+A skin is an ordinary JSON file, so you can open `agent/skins/<name>.json` and edit it;
+the next run that applies it uses what is in the file. Delete the file and the name is
+gone. With the default state volume the directory lives in that volume; under
+`--state-in-repo` it is `./agent/skins/`, and `agent/` is excluded from git either way.
+
+Colour is presentation only: it never reaches the model and it is never written into a
+session, so a skin cannot change what the agent knows or does.
+
+If a skin seems to change nothing, turn the log up and read what `/skins` did:
+`LOG_LEVEL=info` (see [Configuration](#configuration)). Every command writes an info line
+under the `skins` scope — which action ran, which skin was applied, and `no skin proposed;
+the look is unchanged` when the modal was cancelled or the model answered nothing usable.
+The same message is printed on screen, so a no-op is never silent.
+
+Applying a skin repaints the conversation that is already on screen as well as the chrome:
+the transcript stores the *uncoloured* rendered rows and the palette is applied when the
+region paints, which is what lets one command recolour a session already in progress.
 
 ### The tracking files
 

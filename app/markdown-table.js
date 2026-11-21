@@ -22,13 +22,18 @@ import { padVisible, visibleWidth } from './tagged-text.js';
  * cell *before* the widths are measured, which is how inline markup is applied
  * without its `**` markers counting as visible columns.
  *
- * A rendered row opens with the cyan `│` of the transcript's own frame, so the palette
- * leaves it untouched (`app/theme.js#isTagged`) exactly like a fence or a delimiter.
+ * A rendered row opens with the `│` of the transcript's own frame, in the palette's
+ * `table` colour, so a skin moves it with everything else.
  */
 
-/** Cyan, the colour the transcript's frame and delimiters already use. */
-const FRAME_COLOR = 'cyan';
-const PIPE = `{${FRAME_COLOR}-fg}│{/${FRAME_COLOR}-fg}`;
+/**
+ * The `│` of a table frame, in the palette's `table` colour.
+ *
+ * The tag is **symbolic** (`{@table-fg}`): the same literal `cyan` here was frozen at
+ * render time, so a skin could move every other row while a table stayed cyan. It is
+ * resolved by `app/paint-tags.js` at paint time, exactly like a fence or a delimiter.
+ */
+const PIPE = '{@table-fg}│{/@table-fg}';
 
 /** One delimiter cell: at least one dash, an optional colon on either side. */
 const DELIMITER_CELL_RE = /^:?-{1,}:?$/;
@@ -119,7 +124,7 @@ function formatRow(cells, widths, align, wrap = (cell) => cell) {
 /** The `│───┼───│` rule under the header, one segment per column, all in cyan. */
 function formatSeparator(widths) {
   const segments = widths.map((width) => '─'.repeat(width + 2));
-  return `{${FRAME_COLOR}-fg}│${segments.join('┼')}│{/${FRAME_COLOR}-fg}`;
+  return `{@table-fg}│${segments.join('┼')}│{/@table-fg}`;
 }
 
 /**

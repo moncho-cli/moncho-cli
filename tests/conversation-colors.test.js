@@ -39,15 +39,23 @@ const flush = async (rounds = 3) => {
 };
 
 test('the palette names one colour per kind of conversation row', () => {
+  // The eight *kinds* of row, each with its own colour. The palette also carries the
+  // chrome the renderer paints (frame, table, code, quote, bullet, heading) and the three
+  // tool families, because those are colours a skin must be able to move too
+  // (`app/paint-tags.js`, `docs/interface/skins`) — they are asserted separately below.
   assert.deepEqual(Object.keys(CONVERSATION_COLORS).sort(), [
-    'context', 'error', 'intent', 'notice', 'refusal', 'tool', 'tracking', 'user',
+    'bullet', 'code', 'context', 'error', 'frame', 'heading', 'intent', 'notice',
+    'quote', 'refusal', 'table', 'tool', 'toolBash', 'toolRead', 'toolWrite',
+    'tracking', 'user',
   ]);
   for (const [kind, color] of Object.entries(CONVERSATION_COLORS)) {
     // blessed tag colours are hyphenated names ('bright-blue'), never hex
     assert.match(color, /^[a-z-]+$/, `${kind} names a plain blessed colour`);
   }
-  // the parts of a turn must not share a colour
-  const used = Object.values(CONVERSATION_COLORS);
+  // The parts of a *turn* must not share a colour: a reader tells a user echo from a tool
+  // row from an error by colour alone.
+  const kinds = ['user', 'tool', 'intent', 'context', 'error', 'notice', 'tracking', 'refusal'];
+  const used = kinds.map((kind) => CONVERSATION_COLORS[kind]);
   assert.equal(new Set(used).size, used.length, 'each kind gets its own colour');
 });
 

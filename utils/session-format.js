@@ -44,6 +44,7 @@ export function serializeSession({
   model = null,
   mode = null,
   work = false,
+  skin = null,
   cwd = null,
   chunks = [],
   stamps = null,
@@ -71,6 +72,11 @@ export function serializeSession({
     // opens in the state it was left in (docs/interface/modes).
     mode: mode == null ? null : String(mode),
     work: Boolean(work),
+    // The look the conversation was held in (`docs/interface/skins`). Presentation only:
+    // it never reaches the model, but it does belong to the record — reopening a session
+    // should reopen it in the colours it was written in. `null` means "not recorded",
+    // which a resume leaves alone, while a name asks for that skin.
+    skin: typeof skin === 'string' && skin.trim() ? skin.trim() : null,
     cwd,
     counts: {
       chunks: chunks.length,
@@ -193,4 +199,17 @@ export function sessionModeState(session) {
   const parsed = parseSession(formatSession(session));
   if (parsed.mode == null) return null;
   return { mode: String(parsed.mode), work: Boolean(parsed.work) };
+}
+
+/**
+ * The skin a session was held in, or `null` when the record carries none.
+ *
+ * `null` and a name are deliberately different: a file written before the field existed
+ * restores **nothing**, so a resumed conversation keeps the look the process already has,
+ * while a recorded name asks the front end to put that skin back on
+ * (`docs/interface/skins`). Colour is presentation only — the value never reaches a chunk.
+ */
+export function sessionSkin(session) {
+  const parsed = parseSession(formatSession(session));
+  return typeof parsed.skin === 'string' && parsed.skin.trim() ? parsed.skin.trim() : null;
 }

@@ -115,7 +115,10 @@ export class TranscriptModel {
    *
    * `stamp` marks the entry the way `addLine()` does, on the header line.
    */
-  addBlock({ header = '', body = '', bodyLines = null, collapsed = null, stamp = null, role = null } = {}) {
+  addBlock({
+    header = '', body = '', bodyLines = null, collapsed = null, stamp = null, role = null,
+    bodyColor = null,
+  } = {}) {
     const source = String(body ?? '');
     const lines = Array.isArray(bodyLines) ? [...bodyLines] : source.split('\n');
     const block = {
@@ -123,7 +126,11 @@ export class TranscriptModel {
       id: `block-${this.#nextId++}`,
       header: String(header ?? ''),
       body: source,
+      // Stored **uncoloured**: the palette is applied at paint time, so a skin repaints a
+      // block with the rest of the transcript (docs/interface/skins). The one colour a
+      // caller asks for rides beside the payload, never inside it.
       bodyLines: lines,
+      bodyColor: typeof bodyColor === 'string' && bodyColor ? bodyColor : null,
       chars: source.length,
       stamp: stamp || null,
       role: role || null,
@@ -177,6 +184,9 @@ export class TranscriptModel {
         text,
         role: entry.role || null,
         stamp: stamp ?? entry.stamp ?? null,
+        // The one colour a block's caller asked for (a tracking payload), or null. The
+        // view re-applies it on every paint, so a skin can never leave a block behind.
+        color: entry.type === 'block' ? (entry.bodyColor || null) : null,
       });
     };
 
@@ -188,8 +198,14 @@ export class TranscriptModel {
       const rendered = blockLines(entry);
       // A block carries its marker on the header line only; the mark is part of the
       // header string (formatBlockHeader), so the records mirror `lines`
-      // byte-for-byte.
-      rendered.forEach((text, index) => emit(text, entry, index === 0 ? entry.stamp : null));
+      // byte-for-byte. The body colour belongs to the *payload* rows, never the header:
+      // the header is a `[Tracking]` row the palette paints on its own, and wrapping it
+      // in the payload colour would cover the very label that identifies it.
+      rendered.forEach((text, index) => {
+        const record = emit(text, entry, index === 0 ? entry.stamp : null);
+        if (index === 0) out[out.length - 1].color = null;
+        return record;
+      });
     }
     return out;
   }

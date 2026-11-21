@@ -10,6 +10,7 @@ import {
   serializeSession,
   sessionId,
   sessionModeState,
+  sessionSkin,
   sessionChunks,
   sessionPlanContent,
   sessionStamps,
@@ -58,7 +59,7 @@ export const SESSION_RECORD_FILE = 'context.json';
 export const CONVERSATION_LOG_FILE = 'conversation.json';
 
 export { SESSION_FORMAT_VERSION, SessionStoreError, sessionId, formatSession, parseSession };
-export { countRoles, serializeSession, sessionChunks, sessionStamps, sessionModeState, sessionPlanContent, sessionTaskContent, sessionUsage };
+export { countRoles, serializeSession, sessionChunks, sessionStamps, sessionModeState, sessionSkin, sessionPlanContent, sessionTaskContent, sessionUsage };
 
 /** A session id, or `INVALID_ID`: the single rule both path helpers below obey. */
 function safeSessionName(id) {

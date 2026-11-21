@@ -1,6 +1,8 @@
 import { colorizeLines, USER_ECHO_HEADER } from './theme.js';
 import { displayWidth, clustersWithin } from './cell-width.js';
-import { tableAt } from './markdown-table.js';
+import { tableAt } from './markdown-table.js';// The paste round trip lives in its own module (`app/paste-tags.js`); re-exported here
+// because this is where every caller and test already reaches for it.
+export { PASTE_THRESHOLD, collapsePaste, expandPastes } from './paste-tags.js';
 
 /**
  * Pure text helpers for the TUI: sanitising, the markdown-ish transcript
@@ -48,9 +50,13 @@ const LIST_RE = /^(\s*)[-*+]\s+(.*)$/;
  * neo-blessed renders as the ordinary 16-colour white and reads as light grey. It was
  * green, which did not read as a quotation; on the user's blue band it also sat close to
  * the tool palette's write green.
+ *
+ * The value is a **palette key** now (`quote` in `app/theme-palette.js`): the renderer
+ * emits `{@quote-fg}` and `app/paint-tags.js` resolves it at paint time, so a skin moves
+ * a quote with everything else. This constant is the shipped default, which is what a
+ * skin-less project paints.
  */
 export const QUOTE_COLOR = 'bright-white';
-
 /** A quoted line: what formatUserEcho() produces, and a markdown blockquote. */
 const QUOTE_RE = /^\s*>\s?(.*)$/;
 
@@ -75,7 +81,7 @@ export function escapeTags(text) {
 function inlineMarkup(text) {
   return text
     .replace(/\*\*([^*]+)\*\*/g, '{bold}$1{/bold}')
-    .replace(/`([^`]+)`/g, '{cyan-fg}$1{/cyan-fg}');
+    .replace(/`([^`]+)`/g, '{@code-fg}$1{/@code-fg}');
 }
 
 /** A `truncated=true` attribute on a tool tag becomes a short suffix. */
@@ -93,9 +99,9 @@ function renderDelimiter(raw) {
   if (file) {
     const [, filePath, from, to, lines] = file;
     const range = from && to ? ` from=${from} to=${to}` : '';
-    return `{cyan-fg}┌─ ${escapeTags(filePath)}${range} · lines=${escapeTags(lines)}{/cyan-fg}`;
+    return `{@frame-fg}┌─ ${escapeTags(filePath)}${range} · lines=${escapeTags(lines)}{/@frame-fg}`;
   }
-  if (FILE_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+  if (FILE_END_RE.test(raw)) return '{@frame-fg}└─────{/@frame-fg}';
 
   // A hint is a read too (same family, same cyan), but the header says "hint" and
   // reports the characters saved, so a sketch can never read as exact bytes.
@@ -103,26 +109,26 @@ function renderDelimiter(raw) {
   if (hint) {
     const [, hintPath, from, to, lines, chars, of] = hint;
     const range = from && to ? ` from=${from} to=${to}` : '';
-    return `{cyan-fg}┌─ hint ${escapeTags(hintPath)}${range}`
-      + ` · lines=${escapeTags(lines)} · ${chars}/${of} chars${truncationSuffix(raw)}{/cyan-fg}`;
+    return `{@frame-fg}┌─ hint ${escapeTags(hintPath)}${range}`
+      + ` · lines=${escapeTags(lines)} · ${chars}/${of} chars${truncationSuffix(raw)}{/@frame-fg}`;
   }
-  if (HINT_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+  if (HINT_END_RE.test(raw)) return '{@frame-fg}└─────{/@frame-fg}';
 
   const grep = raw.match(GREP_TAG_RE);
   if (grep) {
     const [, pattern, grepPath, matches, files] = grep;
-    return `{cyan-fg}┌─ grep /${escapeTags(pattern)}/ in ${escapeTags(grepPath)}`
-      + ` · ${matches} matches in ${files} files${truncationSuffix(raw)}{/cyan-fg}`;
+    return `{@frame-fg}┌─ grep /${escapeTags(pattern)}/ in ${escapeTags(grepPath)}`
+      + ` · ${matches} matches in ${files} files${truncationSuffix(raw)}{/@frame-fg}`;
   }
-  if (GREP_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+  if (GREP_END_RE.test(raw)) return '{@frame-fg}└─────{/@frame-fg}';
 
   const blobs = raw.match(BLOBS_TAG_RE);
   if (blobs) {
     const [, blobsPath, count, bytes] = blobs;
-    return `{cyan-fg}┌─ blobs ${escapeTags(blobsPath)} · ${count} files · ${bytes} bytes`
-      + `${truncationSuffix(raw)}{/cyan-fg}`;
+    return `{@frame-fg}┌─ blobs ${escapeTags(blobsPath)} · ${count} files · ${bytes} bytes`
+      + `${truncationSuffix(raw)}{/@frame-fg}`;
   }
-  if (BLOBS_END_RE.test(raw)) return '{cyan-fg}└─────{/cyan-fg}';
+  if (BLOBS_END_RE.test(raw)) return '{@frame-fg}└─────{/@frame-fg}';
 
   const blob = raw.match(BLOB_TAG_RE);
   if (blob) {
@@ -130,7 +136,7 @@ function renderDelimiter(raw) {
     const label = skipped
       ? `skipped (${escapeTags(skipped)})`
       : `${lines} lines · ${bytes} bytes${truncationSuffix(raw)}`;
-    return `{cyan-fg}├─ ${escapeTags(blobPath)} · ${label}{/cyan-fg}`;
+    return `{@frame-fg}├─ ${escapeTags(blobPath)} · ${label}{/@frame-fg}`;
   }
   if (BLOB_END_RE.test(raw)) return null;
 
@@ -144,8 +150,14 @@ function renderDelimiter(raw) {
  * Pure (no screen needed) so it can be unit tested without a terminal. It
  * sanitizes first, so raw model output can neither break rendering nor inject
  * tags; braces are escaped for the same reason.
+ *
+ * The palette is applied **separately**, by `formatTranscript()` below, and that split
+ * is what lets a skin repaint a conversation that is already on screen: the view keeps
+ * these uncoloured lines as each entry's `source` and re-colours them at paint time
+ * (`docs/interface/skins`). Fold the two back together and applying a skin would move
+ * only the chrome, leaving every row on screen in the colour it was written with.
  */
-export function formatTranscript(text) {
+export function renderTranscriptLines(text) {
   const out = [];
   let inFence = false;
   const lines = sanitize(text).split('\n');
@@ -155,18 +167,18 @@ export function formatTranscript(text) {
     const fence = raw.match(FENCE_RE);
     if (fence) {
       if (inFence) {
-        out.push('{cyan-fg}└─────{/cyan-fg}');
+        out.push('{@frame-fg}└─────{/@frame-fg}');
         inFence = false;
       } else {
         inFence = true;
         const lang = fence[1];
-        out.push(lang ? `{cyan-fg}┌─ ${escapeTags(lang)} ─{/cyan-fg}` : '{cyan-fg}┌─────{/cyan-fg}');
+        out.push(lang ? `{@frame-fg}┌─ ${escapeTags(lang)} ─{/@frame-fg}` : '{@frame-fg}┌─────{/@frame-fg}');
       }
       continue;
     }
 
     if (inFence) {
-      out.push(`{cyan-fg}│ ${escapeTags(raw)}{/cyan-fg}`);
+      out.push(`{@frame-fg}│ ${escapeTags(raw)}{/@frame-fg}`);
       continue;
     }
 
@@ -189,30 +201,38 @@ export function formatTranscript(text) {
     const line = escapeTags(raw);
     const quote = line.match(QUOTE_RE);
     if (quote) {
-      out.push(`{${QUOTE_COLOR}-fg}│ ${inlineMarkup(quote[1])}{/${QUOTE_COLOR}-fg}`);
+      out.push(`{@quote-fg}│ ${inlineMarkup(quote[1])}{/@quote-fg}`);
       continue;
     }
 
     const heading = line.match(HEADING_RE);
     if (heading) {
-      out.push(`{bold}{underline}${inlineMarkup(heading[2])}{/underline}{/bold}`);
+      out.push(`{@heading-fg}{bold}{underline}${inlineMarkup(heading[2])}{/underline}{/bold}{/@heading-fg}`);
       continue;
     }
 
     const list = line.match(LIST_RE);
     if (list) {
-      out.push(`${list[1]}{green-fg}•{/green-fg} ${inlineMarkup(list[2])}`);
+      out.push(`${list[1]}{@bullet-fg}•{/@bullet-fg} ${inlineMarkup(list[2])}`);
       continue;
     }
 
     out.push(inlineMarkup(line));
   }
 
-  if (inFence) out.push('{cyan-fg}└─────{/cyan-fg}');
-  // The conversation palette (app/theme.js) paints the *kind* of each row — the
-  // user's echo, tool calls and results, context notices, errors — while leaving
-  // every line this renderer already coloured exactly as it is.
-  return colorizeLines(out).join('\n');
+  if (inFence) out.push('{@frame-fg}└─────{/@frame-fg}');
+  return out;
+}
+
+/**
+ * The rendered transcript, painted with the palette in force **right now**.
+ *
+ * The conversation palette (app/theme.js) paints the *kind* of each row — the user's
+ * echo, tool calls and results, context notices, errors — while leaving every line the
+ * renderer above already coloured exactly as it is.
+ */
+export function formatTranscript(text) {
+  return colorizeLines(renderTranscriptLines(text)).join('\n');
 }
 
 export { USER_ECHO_HEADER };
@@ -262,27 +282,3 @@ export function composeStatusRow(left = '', right = '', width = 0) {
   return `${clustersWithin(leftText, keep).join('')} ${rightText}`;
 }
 
-/** Paste tag written into the input when a large block is collapsed. */
-export const PASTE_THRESHOLD = 4;
-
-const PASTE_TAG_RE = /\[\[paste:(\d+)\]\]/g;
-
-/**
- * Collapse a pasted block longer than `threshold` lines into one `[[paste:<id>]]`
- * tag. The original bytes are kept verbatim in `pastes`, so expandPastes() can
- * restore them exactly (round-trip safe).
- */
-export function collapsePaste(text, threshold = PASTE_THRESHOLD, pastes = []) {
-  const source = String(text ?? '');
-  if (source.split('\n').length <= threshold) return { text: source, pastes };
-  const id = pastes.length;
-  return { text: `[[paste:${id}]]`, pastes: [...pastes, source] };
-}
-
-/** Expand `[[paste:<id>]]` tags back to the exact bytes they were collapsed from. */
-export function expandPastes(text, pastes = []) {
-  return String(text ?? '').replace(PASTE_TAG_RE, (match, id) => {
-    const original = pastes[Number(id)];
-    return typeof original === 'string' ? original : match;
-  });
-}
