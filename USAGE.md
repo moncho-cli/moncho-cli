@@ -148,12 +148,14 @@ cp .env.moncho.example .env.moncho
 | `OPENAI_BASE_URL` | `http://host.containers.internal:11434/api/chat` | Provider endpoint |
 | `OPENAI_API_KEY` | — | Bearer token; omit for Ollama |
 | `OPENAI_MODEL` | `qwen3.6:35b` | Model name |
+| `MODEL_TEMPERATURE` | unset | Sampling temperature (`0`–`2`); unset leaves the key out of the request |
 | `CONTEXT_MAX_LENGTH` | the provider's real total | Context budget override |
 | `COMPACTION_OLD_RATIO` | `0.7` | Share of the window summarised on compaction (`0.7`, `70` or `70%`) |
 | `PULSE_LIMIT` | `30` | Model calls before the pulse notice |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `off` |
 | `LOG_MAX_BYTES` | `524288` | Rotation threshold |
 | `LOG_MAX_FILES` | `3` | Rotation chain length |
+| `CLIPBOARD_FILE_KEEP` | `single` | What a saved selection leaves behind: `single` keeps only the last copy, `all` keeps a timestamped history |
 | `TZ` | the host's zone | Passed into the container |
 
 ### Reaching a host Ollama from the container

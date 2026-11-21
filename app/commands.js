@@ -4,6 +4,7 @@ import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
 import { compactCommand } from './compact-command.js';
 import { skinsCommand } from './skins-command.js';
+import { newCommand } from './new-command.js';
 
 /**
  * Slash commands: the iterable registry behind `/sessions` (task.md item 4).
@@ -70,6 +71,7 @@ export function parseCommand(input) {
 export function createDefaultCommands() {
   const registry = createCommandRegistry();
   registry.register(workCommand());
+  registry.register(newCommand());
   registry.register(sessionsCommand());
   registry.register(usageCommand());
   registry.register(compactCommand());

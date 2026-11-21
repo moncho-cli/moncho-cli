@@ -2,7 +2,7 @@ import { nextPrompt } from './message-queue.js';
 import { parseCommand, runCommand } from './commands.js';
 import { formatCommandResult } from './json-display.js';
 import { reloadConversation } from './session-replay.js';
-import { registerSession } from '../utils/host.js';
+import { registerSession, clearSession } from '../utils/host.js';
 import { ensureTrackingFiles } from '../utils/tracking-store.js';
 import { rememberAppliedSkin, restoreSessionSkin } from './skin-host.js';
 
@@ -110,6 +110,35 @@ export async function handleCommand(input, {
 
   if (result === null) {
     log(`Unknown command /${parsed.name}. Try /help.`);
+    return true;
+  }
+
+  if (result.ok && result.code === 'NEW_SESSION') {
+    // `/new` starts a second conversation beside the first (the command has already
+    // emptied the window and the accounting table). The host owns the rest of the
+    // identity: a fresh id on the recorder, so the next turn is saved into a new file;
+    // a new pair of tracking files for that id; and an emptied view, so the screen no
+    // longer shows a dialogue that is no longer live. The previous conversation is left
+    // untouched on disk and `/sessions` still lists it.
+    let newId = null;
+    if (typeof sessions?.rotate === 'function') {
+      newId = sessions.rotate();
+      // The registry still points at the *previous* session object, so it is cleared
+      // before the fresh one is registered: otherwise `ensureTrackingFiles()` would
+      // re-seed the old folder and the new session would have no checklist of its own.
+      clearSession();
+      registerSession(sessions);
+      ensureTrackingFiles();
+    }
+    // An emptied window is replayed like any other: the transcript is replaced and the
+    // meter is repainted below, so a new session looks like a new session at once.
+    if (typeof tui?.reload === 'function') tui.reload([], {});
+    else reloadConversation([], { log });
+    for (const line of formatCommandResult(result)) log(line);
+    if (newId) log(`[Session] Started ${newId}; new turns are saved there.`);
+    // The meter belongs to the window that was just emptied, so it is repainted from the
+    // (now empty) window rather than left showing the old conversation's fill.
+    if (typeof tui?.setTokens === 'function') tui.setTokens(manager?.contextWindow?.usage());
     return true;
   }
 

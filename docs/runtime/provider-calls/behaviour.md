@@ -17,6 +17,13 @@ implementation is linked below.
 - Streaming is opt-in via the flag; the Ollama-only `think` flag is sent only when
   the base URL looks like Ollama, so an OpenAI-compatible endpoint never receives
   an unknown field.
+- The **sampling temperature is opt-in**: `MODEL_TEMPERATURE`
+  (`config/constants.js#MODEL_TEMPERATURE`) is sent as `temperature` only when the user
+  configured a usable value, in the conventional `0`–`2` range. With the variable unset
+  the key is **absent** from the body, so the provider's own default applies exactly as
+  it did before the knob existed. A value outside the range, or one that does not parse,
+  reads as **unset** rather than being sent: a typo must never silently change how the
+  model answers.
 
 ## Responses
 
@@ -67,4 +74,4 @@ implementation is linked below.
 ## See also
 
 - Implementation: `api/ollama.js`, `config/constants.js`
-- Proof: `tests/ollama-provider.test.js`
+- Proof: `tests/ollama-provider.test.js`, `tests/model-temperature.test.js`

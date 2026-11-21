@@ -91,6 +91,26 @@ export function createSessionRecorder({
       return sessionId_;
     },
     /**
+     * Start a fresh conversation: a new id, a new start date, no saved state.
+     *
+     * This is the counterpart of `adopt()` and it is deliberately the *identity* half
+     * alone — it does not touch the context window, the usage table or the view, because
+     * those belong to the host that drives them (`/new` clears the window and the
+     * accounting table itself, then rotates the recorder through here).
+     *
+     * The session already on disk is left exactly where it is: `/new` opens a *second*
+     * conversation beside the first, and `/sessions` still lists the first.
+     *
+     * @returns {string} the new session id
+     */
+    rotate() {
+      const at = now();
+      created = at;
+      savedAt = null;
+      sessionId_ = sessionId(at);
+      return sessionId_;
+    },
+    /**
      * Snapshot `chunks` into the session file.
      *
      * @param {any[]} chunks the live context window contents

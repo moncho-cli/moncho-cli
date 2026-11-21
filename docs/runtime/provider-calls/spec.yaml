@@ -15,15 +15,22 @@ code:
   - path: api/ollama.js
     symbols: [callOllama]
   - path: config/constants.js
-    symbols: [BASE_URL, API_KEY, MODEL, THINKING_FILE, detectProvider, describeModel, PROVIDER]
+    symbols: [BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, THINKING_FILE, detectProvider, describeModel, PROVIDER]
 tests:
   - path: tests/ollama-provider.test.js
     cases:
       - detectProvider maps common base URLs (task.md item 5)
       - describeModel reports the configured provider and model
       - a default call injects the agent system prompt and normalises the response
+      - a configured MODEL_TEMPERATURE reaches the request body
       - systemPrompt:false omits the agent prompt (used by the context summariser)
       - the abort signal is honoured
       - a retried attempt is reported through onRetry, not the console
       - a throwing onRetry hook never costs the retry
       - the thinking capture resolves inside the project, and refuses to leave it
+  - path: tests/model-temperature.test.js
+    cases:
+      - MODEL_TEMPERATURE is unset unless the user configures one
+      - an out-of-range or unparseable MODEL_TEMPERATURE reads as unset
+      - a usable MODEL_TEMPERATURE is kept as a number, boundary values included
+      - an unset MODEL_TEMPERATURE leaves the key out of the request body

@@ -25,6 +25,7 @@ ENV_FLAGS=()
 [ -n "${OPENAI_BASE_URL:-}" ] && ENV_FLAGS+=(-e "OPENAI_BASE_URL=$OPENAI_BASE_URL")
 [ -n "${OPENAI_API_KEY:-}" ]  && ENV_FLAGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY")
 [ -n "${OPENAI_MODEL:-}" ]    && ENV_FLAGS+=(-e "OPENAI_MODEL=$OPENAI_MODEL")
+[ -n "${MODEL_TEMPERATURE:-}" ] && ENV_FLAGS+=(-e "MODEL_TEMPERATURE=$MODEL_TEMPERATURE")
 [ -n "${CONTEXT_MAX_LENGTH:-}" ] && ENV_FLAGS+=(-e "CONTEXT_MAX_LENGTH=$CONTEXT_MAX_LENGTH")
 [ -n "${COMPACTION_OLD_RATIO:-}" ] && ENV_FLAGS+=(-e "COMPACTION_OLD_RATIO=$COMPACTION_OLD_RATIO")
 [ -n "${PULSE_LIMIT:-}" ]     && ENV_FLAGS+=(-e "PULSE_LIMIT=$PULSE_LIMIT")
@@ -32,6 +33,7 @@ ENV_FLAGS=()
 [ -n "${LOG_FILE:-}" ]        && ENV_FLAGS+=(-e "LOG_FILE=$LOG_FILE")
 [ -n "${LOG_MAX_BYTES:-}" ]   && ENV_FLAGS+=(-e "LOG_MAX_BYTES=$LOG_MAX_BYTES")
 [ -n "${LOG_MAX_FILES:-}" ]   && ENV_FLAGS+=(-e "LOG_MAX_FILES=$LOG_MAX_FILES")
+[ -n "${CLIPBOARD_FILE_KEEP:-}" ] && ENV_FLAGS+=(-e "CLIPBOARD_FILE_KEEP=$CLIPBOARD_FILE_KEEP")
 
 # Build the application image from ./Dockerfile (installs deps incl. `diff`).
 build_image() {

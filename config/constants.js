@@ -24,6 +24,29 @@ export const BASE_URL = RAW_BASE_URL;
 export const API_KEY = process.env.OPENAI_API_KEY || "";
 export const MODEL = process.env.OPENAI_MODEL || "qwen3.6:35b-a3b-q4_K_M";
 
+/**
+ * A sampling temperature as a number, or `null` when the value cannot be used.
+ *
+ * `null` is a real answer here, not a failure: the temperature is **absent** from
+ * the request unless the user asks for it, so the provider's own default applies
+ * exactly as it did before this knob existed. A value outside the conventional
+ * 0–2 range, or one that does not parse, is treated as unset rather than sent —
+ * a typo must not silently change how the model answers.
+ */
+function toTemperature(value) {
+  const raw = String(value ?? "").trim();
+  if (raw === "") return null;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 2) return null;
+  return parsed;
+}
+
+/**
+ * The temperature a model call is sent with, or `null` for "do not send one".
+ * Configurable through `MODEL_TEMPERATURE`; see `api/ollama.js#buildBody`.
+ */
+export const MODEL_TEMPERATURE = toTemperature(process.env.MODEL_TEMPERATURE);
+
 // Alias kept for the live smoke test (agent/utils/stream-smoke-test.js).
 export const OLLAMA_URL = BASE_URL;
 
@@ -208,6 +231,32 @@ export const LOG_MAX_FILES = toPositiveInt(process.env.LOG_MAX_FILES, LOG_MAX_FI
  * The path is resolved through the sandbox (`utils/path-safety.js#resolveProjectPath`).
  */
 export const THINKING_FILE = process.env.THINKING_FILE || "agent/thinking.md";
+
+// ---------------------------------------------------------------------------
+// Clipboard copies (app/clipboard-file.js, docs/interface/clipboard-selection)
+// ---------------------------------------------------------------------------
+/**
+ * How the workspace keeps saved selections: `single` or `all`.
+ *
+ * `single` (the default) leaves exactly **one** file — each new copy replaces the
+ * previous one, so the workspace never accumulates scratch text. `all` keeps every
+ * copy under its own timestamped name, which is what a reader who wants a history
+ * of selections asks for. `timestamped` and `keep` are accepted spellings of `all`,
+ * and anything else falls back to `single`: the safe side of this knob is the one
+ * that leaves fewer files, not more.
+ */
+export function normalizeClipboardKeep(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return raw === "all" || raw === "timestamped" || raw === "keep" ? "all" : "single";
+}
+
+/**
+ * Whether a saved selection is kept alone or alongside a history of its own
+ * (task-backlog: "an environment variable to select if the clipboard copy behavior
+ * is to keep creating files, or if it should be just 1 file and it only has the last
+ * copy"). Read here and passed to the writer so the rule lives in one place.
+ */
+export const CLIPBOARD_FILE_KEEP = normalizeClipboardKeep(process.env.CLIPBOARD_FILE_KEEP);
 
 // ---------------------------------------------------------------------------
 // Task tracking files (task.md protocol: mark done, reset the plan, next item)

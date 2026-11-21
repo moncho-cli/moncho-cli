@@ -1,4 +1,4 @@
-import { BASE_URL, API_KEY, MODEL, THINKING_FILE as THINKING_TARGET } from '../config/constants.js';
+import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, THINKING_FILE as THINKING_TARGET } from '../config/constants.js';
 import { logEvent } from '../utils/logger.js';
 import { resolveProjectPath } from '../utils/path-safety.js';
 import fs from 'fs';
@@ -69,6 +69,11 @@ function buildBody(messages, tools, stream) {
   const body = { model: MODEL, messages, stream };
   const toolList = Array.isArray(tools) ? tools : [];
   if (toolList.length > 0) body.tools = toolList;
+  // The sampling temperature is sent only when the user configured one, so the
+  // provider's own default applies otherwise (`config/constants.js#MODEL_TEMPERATURE`).
+  // Sending an explicit `undefined` would serialise away in JSON, but omitting the key
+  // outright keeps the request byte-identical to what it was before the knob existed.
+  if (MODEL_TEMPERATURE !== null) body.temperature = MODEL_TEMPERATURE;
   if (stream && isOllamaProvider()) body.think = true; // Ollama-only flag
   return body;
 }

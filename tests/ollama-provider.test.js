@@ -53,6 +53,11 @@ const { port } = server.address();
 process.env.OPENAI_BASE_URL = `http://127.0.0.1:${port}/v1/chat/completions`;
 process.env.OPENAI_API_KEY = 'test-key';
 process.env.OPENAI_MODEL = 'stub-model';
+// A configured sampling temperature, read by config/constants.js at import time — the
+// default (unset) case is proven in tests/model-temperature.test.js, which runs in its
+// own process with the variable absent (backlog: "add an environment variable to
+// configure the temperature parameter of the model call").
+process.env.MODEL_TEMPERATURE = '0.3';
 
 const { callOllama } = await import('../api/ollama.js');
 const { describeModel, detectProvider } = await import('../config/constants.js');
@@ -82,6 +87,11 @@ test('a default call injects the agent system prompt and normalises the response
   assert.match(sent.messages[0].content, /MONCHO-CLI/);
   assert.equal(sent.messages.at(-1).content, 'hello');
   assert.equal(sent.stream, false);
+});
+
+test('a configured MODEL_TEMPERATURE reaches the request body', async () => {
+  await callOllama([{ role: 'user', content: 'hello' }], [], false, null);
+  assert.equal(requests.at(-1).temperature, 0.3);
 });
 
 test('systemPrompt:false omits the agent prompt (used by the context summariser)', async () => {

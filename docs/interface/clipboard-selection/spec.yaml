@@ -18,7 +18,12 @@ summary: >
   leaves the container as output that the host terminal may or may not honour. A file in the
   workspace is the one medium that works without a display server, and the reader can open it
   wherever they are. The saved file is gitignored, both in this repository and in a project's
-  local git excludes.
+  local git excludes. How many files a copy leaves behind is one knob, CLIPBOARD_FILE_KEEP:
+  `single` (the default) prunes the earlier clipboard files so exactly the last selection
+  remains, and `all` keeps every copy under its own timestamped name. The name still changes
+  with the clock in both modes, because the host watcher picks a selection up when a new name
+  appears; pruning is best-effort, prefix-scoped and runs only after a write has landed, so a
+  failed copy leaves the previous selection untouched and an ordinary file is never removed.
   The runner that starts the container runs on the host, where the clipboard actually lives,
   so bin/lib/clipboard-watch.sh watches the workspace and feeds each new selection to the
   host's own tool (pbcopy on macOS, clip.exe on WSL, wl-copy on Wayland, xclip or xsel on X11).
@@ -37,6 +42,8 @@ code:
     symbols: [bindSelectionGestures]
   - path: app/clipboard-file.js
     symbols: [CLIPBOARD_FILE_PREFIX, CLIPBOARD_FILE_GLOB, CLIPBOARD_MAX_ATTEMPTS, clipboardFileName, createClipboardFile]
+  - path: config/constants.js
+    symbols: [CLIPBOARD_FILE_KEEP, normalizeClipboardKeep]
   - path: app/toast.js
     symbols: [TOAST_TTL_MS, TOAST_MAX_CHARS, savedToastText, SAVED_TOAST_TEXT, formatToastText, createToast]
   - path: app/tui-toast.js
@@ -57,9 +64,13 @@ tests:
   - path: tests/clipboard-file.test.js
     cases:
       - "clipboardFileName() names the file with the local time, zero-padded"
+      - "normalizeClipboardKeep() defaults to a single file and accepts the aliases"
       - "the selection is written to the workspace under its time name"
-      - "a second copy in the same second does not overwrite the first"
+      - "single mode leaves exactly one file, the last copy"
+      - "single mode never touches a file that is not a clipboard file"
+      - "all mode keeps a timestamped history, and never overwrites one copy with another"
       - "an empty selection is not a file, and a failure is reported not thrown"
+      - "a failed copy leaves the previous selection untouched in single mode"
   - path: tests/clipboard-selection.test.js
     cases:
       - "sliceCells() takes whole clusters and never cuts a wide glyph in half"

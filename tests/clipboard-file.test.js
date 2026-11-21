@@ -10,11 +10,17 @@ import {
   clipboardFileName,
   createClipboardFile,
 } from '../app/clipboard-file.js';
+import { normalizeClipboardKeep } from '../config/constants.js';
 
 /**
  * The copy end (docs/interface/clipboard-selection): a selection is saved to a file in the
  * workspace, because a container has no clipboard to reach and the host terminal decides
  * whether to honour an escape sequence. The file is the honest answer.
+ *
+ * Retention is one knob (`CLIPBOARD_FILE_KEEP`): `single` leaves the last copy alone and
+ * `all` keeps a timestamped history. The name changes with the clock in both modes — the
+ * host watcher picks a selection up when a *new* name appears — so the modes differ in
+ * what they leave behind, never in how a copy is announced.
  */
 
 /** A scratch directory that is removed when the test finishes. */
@@ -31,6 +37,17 @@ test('clipboardFileName() names the file with the local time, zero-padded', () =
   // The gitignore glob matches the prefix, so a saved file never appears in a diff.
   assert.equal(CLIPBOARD_FILE_GLOB, '.moncho.clipboard.*');
   assert.ok(clipboardFileName(at).startsWith(CLIPBOARD_FILE_PREFIX));
+});
+
+test('normalizeClipboardKeep() defaults to a single file and accepts the aliases', () => {
+  // Anything unknown — including a misspelling — falls back to the mode that leaves
+  // *fewer* files, which is the safe side of this knob.
+  for (const raw of [undefined, null, '', 'single', ' ONE ', 'nonsense']) {
+    assert.equal(normalizeClipboardKeep(raw), 'single', `${JSON.stringify(raw)} is single`);
+  }
+  for (const raw of ['all', 'timestamped', 'KEEP']) {
+    assert.equal(normalizeClipboardKeep(raw), 'all', `${JSON.stringify(raw)} is all`);
+  }
 });
 
 test('the selection is written to the workspace under its time name', () => {
@@ -53,20 +70,62 @@ test('the selection is written to the workspace under its time name', () => {
   }
 });
 
-test('a second copy in the same second does not overwrite the first', () => {
+test('single mode leaves exactly one file, the last copy', () => {
   const dir = scratch();
   try {
+    // A fixed clock every second is the awkward case: the names collide, so the writer
+    // has to disambiguate the second copy *and* then prune the first it wrote.
     const clipboard = createClipboardFile({ dir, now: () => new Date(2026, 0, 2, 10, 0, 0) });
     const first = clipboard.write('first selection');
     const second = clipboard.write('second selection');
 
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
-    // The name is the same, so the writer must find another — the first is never lost.
+    assert.equal(clipboard.mode, 'single');
+    // The second copy has a distinct name (never truncating), and the first is gone.
+    assert.notEqual(second.file, first.file);
+    assert.deepEqual(fs.readdirSync(dir), [second.file]);
+    assert.equal(fs.readFileSync(second.path, 'utf8'), 'second selection');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('single mode never touches a file that is not a clipboard file', () => {
+  const dir = scratch();
+  try {
+    const keep = path.join(dir, 'notes.txt');
+    fs.writeFileSync(keep, 'project content');
+    const clipboard = createClipboardFile({ dir, now: () => new Date(2026, 0, 2, 10, 0, 0) });
+    clipboard.write('a selection');
+    clipboard.write('another selection');
+
+    // Only the prefixed files are the writer's business; an ordinary file is left alone.
+    assert.equal(fs.readFileSync(keep, 'utf8'), 'project content');
+    assert.equal(fs.readdirSync(dir).filter((n) => n.startsWith(CLIPBOARD_FILE_PREFIX)).length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('all mode keeps a timestamped history, and never overwrites one copy with another', () => {
+  const dir = scratch();
+  try {
+    const clipboard = createClipboardFile({
+      dir,
+      keep: 'all',
+      now: () => new Date(2026, 0, 2, 10, 0, 0),
+    });
+    const first = clipboard.write('first selection');
+    const second = clipboard.write('second selection');
+
+    assert.equal(clipboard.mode, 'all');
+    // The name is the same second, so the writer must find another — the first is never lost.
     assert.equal(first.file, '.moncho.clipboard.100000');
     assert.notEqual(second.file, first.file);
     assert.equal(fs.readFileSync(first.path, 'utf8'), 'first selection');
     assert.equal(fs.readFileSync(second.path, 'utf8'), 'second selection');
+    assert.equal(fs.readdirSync(dir).length, 2);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -88,6 +147,30 @@ test('an empty selection is not a file, and a failure is reported not thrown', (
     assert.equal(report.ok, false);
     assert.equal(report.error, 'ENOENT');
     assert.equal(report.file, null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failed copy leaves the previous selection untouched in single mode', () => {
+  const dir = scratch();
+  try {
+    const clipboard = createClipboardFile({
+      dir,
+      now: () => new Date(2026, 0, 2, 10, 0, 0),
+    });
+    const kept = clipboard.write('keep me');
+    // Every name in the second is taken, so a third attempt gives up. The prune runs only
+    // *after* a write lands, so the copy that is there survives the one that failed.
+    const writer = createClipboardFile({
+      dir,
+      now: () => new Date(2026, 0, 2, 10, 0, 0),
+      writeFileSync: () => { const error = new Error('exists'); error.code = 'EEXIST'; throw error; },
+    });
+    const failed = writer.write('this never lands');
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error, 'TOO_MANY');
+    assert.equal(fs.readFileSync(kept.path, 'utf8'), 'keep me');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

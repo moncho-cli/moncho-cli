@@ -180,6 +180,33 @@ Two rules keep the name honest:
 - **the text is written whole.** Unlike a terminal sequence there is no size limit to
   respect, so a large selection is saved in full. The medium is a file; it does not truncate.
 
+### How many files are kept
+
+`CLIPBOARD_FILE_KEEP` (`config/constants.js#CLIPBOARD_FILE_KEEP`) decides what a copy
+leaves behind, and it has two modes:
+
+- **`single` — the default.** A new copy prunes the earlier clipboard files, so the
+  workspace holds exactly one saved selection: the last one. This is the behaviour a
+  reader wants by default, because the saved text is scratch, not project content.
+- **`all` — opt-in.** Every copy keeps its own timestamped name, so the workspace is a
+  history of selections. `timestamped` and `keep` are accepted spellings; anything else
+  falls back to `single`, the side of the knob that leaves *fewer* files.
+
+Two details make it safe:
+
+- **the name still changes with the clock in both modes.** The host-side watcher
+  (`bin/lib/clipboard-watch.sh`) hands a selection over when a **new** name appears, so a
+  fixed name would be seen once and never again; `single` mode therefore keeps the
+  timestamped name and prunes the others rather than reusing one name.
+- **pruning is best-effort and prefix-scoped.** It runs only **after** a write has landed,
+  so a copy that failed leaves the previous selection untouched; it only ever removes
+  files carrying `CLIPBOARD_FILE_PREFIX`, so an ordinary file in the workspace can never
+  be deleted by a copy; and a prune that fails is swallowed, because losing a stale
+  scratch file must never cost the user the copy that succeeded.
+
+The rule the modes share is unchanged: a copy still **creates** its file exclusively and
+never truncates an existing one, so no two selections ever race over one name.
+
 ### What the report says
 
 The write returns `{ ok, name, path, bytes, error }`:

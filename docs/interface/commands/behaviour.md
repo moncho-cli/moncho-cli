@@ -53,6 +53,15 @@ registry and the commands that ship with it; the implementation is linked below.
   conversation view** from them and adopts the id, so the reloaded dialogue is on
   screen and later turns are saved into the same file
   (`docs/interface/session-replay`).
+- **`/new`** — start a fresh conversation without leaving the process
+  (`app/new-command.js`). It empties the live `ContextWindow` (chunks and journal alike),
+  resets the per-model accounting table and the model-call pulse, and reports
+  `NEW_SESSION` so the host does the rest of the identity: a fresh id on the recorder
+  (`createSessionRecorder().rotate()`), a new pair of tracking files, and an emptied
+  view. The previous conversation is **left on disk** — the host saves after every turn,
+  so `/new` opens a second conversation beside the first and `/sessions` still lists it.
+  It takes no argument; anything after it is refused as `UNKNOWN_ARG`, because a typo
+  that silently reset the conversation would be a bad trade.
 - **`/usage`** — the per-model token breakdown of this session
   (`docs/context/model-usage`): one line per model, **alphabetical** so two runs
   compare line by line, with the request count, the exact/estimated split and the
@@ -80,6 +89,10 @@ registry and the commands that ship with it; the implementation is linked below.
     was left unchanged — a compaction must never silently discard history.
 - **`/help`** — the command list, derived from the registry itself.
 
+The host branch that answers a `NEW_SESSION` result lives in `app/session-loop.js`
+next to the `RESUMED` one, because rotating a session is more than a window swap
+(`docs/runtime/session-store`, `docs/interface/session-replay`).
+
 ## The picker
 
 The choice itself is a pure model (`app/picker.js`): a cursor, a page window and
@@ -102,10 +115,11 @@ Each front end renders it its own way:
 
 ## See also
 
-- Implementation: `app/commands.js`, `app/compact-command.js`, `app/picker.js`,
-  `app/tui-modal.js`, `app/cli.js`, `main.js`
+- Implementation: `app/commands.js`, `app/new-command.js`, `app/compact-command.js`,
+  `app/picker.js`, `app/tui-modal.js`, `app/cli.js`, `main.js`
 - Spec of the numbers `/usage` prints: `docs/context/model-usage`
 - Spec of the stored sessions: `docs/runtime/session-store`
 - Spec of the reload after a resume: `docs/interface/session-replay`
 - Spec of the compaction `/compact` drives: `docs/context/compaction`
-- Proof: `tests/commands.test.js`, `tests/compact-command.test.js`, `tests/tui-modal.test.js`
+- Proof: `tests/commands.test.js`, `tests/new-command.test.js`,
+  `tests/compact-command.test.js`, `tests/tui-modal.test.js`
