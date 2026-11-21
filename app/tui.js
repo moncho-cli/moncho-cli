@@ -66,8 +66,6 @@ export { formatBrand, resolveBrandSize, BRAND_NAME, BRAND_VERSION, BRAND_COLOR, 
  *
  * Its shape is assembled by ./tui-surface.js, so this module stays the wiring:
  * which region exists, which key reaches it, and in what order it is torn down.
- * A non-TTY stdout (`./start.sh start` runs detached) means no screen at all, and
- * null, so the caller can fall back to the line chat.
  */
 export function createTui(options = {}) {
   const input = options.input || process.stdin;
@@ -105,11 +103,14 @@ export function createTui(options = {}) {
   });
 
   const pastes = createPasteRegistry();
-  // The clipboard a mouse selection is copied to, and what the reader is told about it
-  // (`docs/interface/clipboard-selection`, app/tui-clipboard.js): OSC 52 on the very
-  // stream the screen is painted on, and one notice near the top — never a row in the
-  // conversation, because a copy is about the reader's clipboard rather than the dialogue.
-  const clipboard = createSelectionClipboard({ screen, toast: () => toastBar });
+  // Where a mouse selection is saved and what the reader is told about it
+  // (`docs/interface/clipboard-selection`, app/tui-clipboard.js): a file in the workspace,
+  // one notice near the top. The directory and writer are options so a test writes nowhere.
+  const clipboard = createSelectionClipboard({
+    dir: options.clipboardDir,
+    writer: options.clipboardWriter,
+    toast: () => toastBar,
+  });
   // The transcript is a model + view pair behind one pane (app/tui-transcript.js):
   // the pane owns the click-to-toggle binding, the mouse selection and the operations the
   // host asks of the conversation, so the wiring below never reaches into the view.

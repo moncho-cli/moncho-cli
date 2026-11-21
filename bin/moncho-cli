@@ -33,6 +33,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$SCRIPT_DIR/lib/image.sh"
 # shellcheck source=lib/container.sh
 . "$SCRIPT_DIR/lib/container.sh"
+# shellcheck source=lib/clipboard-watch.sh
+. "$SCRIPT_DIR/lib/clipboard-watch.sh"
 # shellcheck source=lib/template.sh
 . "$SCRIPT_DIR/lib/template.sh"
 # shellcheck source=lib/git.sh

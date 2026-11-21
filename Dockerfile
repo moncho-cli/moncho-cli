@@ -9,6 +9,9 @@ FROM node:22-alpine
 #   * patch                    - GNU patch, the reference unified-diff applier
 #   * git                      - `git apply --check` / `git diff` as a second opinion
 # bash is installed because the repo scripts use `#!/bin/bash`.
+# A text selection is saved to a file in the workspace (app/clipboard-file.js),
+# so no clipboard client is installed: a Unix tool would be a client of a
+# display server this container does not have.
 # The version checks make the build fail loudly if a package is ever renamed
 # or dropped from the Alpine repos.
 RUN apk add --no-cache \

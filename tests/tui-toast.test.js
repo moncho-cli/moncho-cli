@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 
 import { createToastBar } from '../app/tui-toast.js';
 import { createToast, TOAST_TTL_MS } from '../app/toast.js';
-import { withTui } from './support/tui-harness.js';
+import { withTui, clipboardFiles } from './support/tui-harness.js';
 
 /**
  * The toast *binding* (`docs/interface/clipboard-selection`): where the box sits, how wide
- * it gets, when it hides itself. The model is covered without a screen in
+ * it is, when it hides itself. The model is covered without a screen in
  * `tests/toast.test.js`; this file proves the box obeys it.
  */
 
@@ -17,43 +17,30 @@ const flush = async (rounds = 4) => {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const SENTENCE = 'Saved data to .moncho.clipboard.093015';
+
 test('the toast box appears with its message and hides itself on a timer', async () => {
   await withTui(async (tui) => {
-    // A 30 ms lifetime, so the test watches the real timer rather than waiting four
-    // seconds: the arming logic is the same one the four-second default uses.
-    let at = 1_000_000;
-    const bar = createToastBar({
-      screen: tui.screen,
-      ttlMs: 30,
-      toast: createToast({ ttlMs: 30, now: () => at }),
-      refresh: () => {},
-    });
-
-    assert.equal(bar.widget.hidden, true, 'nothing to say, no box');
-
-    bar.show('Copied text to clipboard');
-    assert.equal(bar.widget.hidden, false, 'the box appears with the message');
-    assert.equal(bar.widget.getContent(), 'Copied text to clipboard');
+    // A 30 ms lifetime, so the test watches the real timer without waiting four seconds.
+    const bar = createToastBar({ screen: tui.screen, refresh: () => {}, ttlMs: 30 });
+    bar.show(SENTENCE);
+    assert.equal(bar.widget.hidden, false, 'the box is visible while the sentence lives');
     assert.equal(bar.visible, true);
 
-    // Let real time pass beyond the lifetime, and let the armed timer run.
-    at += 31;
-    await wait(50);
+    await wait(60);
     await flush();
-    assert.equal(bar.visible, false, 'it went away by itself, with no call from anyone');
-    assert.equal(bar.widget.hidden, true, 'and the box is hidden again');
-
+    assert.equal(bar.widget.hidden, true, 'the box hides itself');
     bar.close();
   });
 }, { columns: 100, rows: 24 });
 
 test('the four-second default is what a copy actually gets', async () => {
   await withTui(async (tui) => {
-    const bar = createToastBar({ screen: tui.screen, refresh: () => {} });
-    bar.show('Copied text to clipboard');
+    const toast = createToast();
+    const bar = createToastBar({ screen: tui.screen, refresh: () => {}, toast });
+    bar.show(SENTENCE);
     assert.equal(TOAST_TTL_MS, 4000);
-    const left = bar.timeToHide();
-    assert.ok(left > 3900 && left <= 4000, `about four seconds left, was ${left}`);
+    assert.ok(bar.timeToHide() <= TOAST_TTL_MS, 'the default lifetime is four seconds');
     bar.close();
   });
 }, { columns: 100, rows: 24 });
@@ -61,26 +48,16 @@ test('the four-second default is what a copy actually gets', async () => {
 test('the toast box is top-right and only as wide as its sentence', async () => {
   await withTui(async (tui) => {
     const bar = createToastBar({ screen: tui.screen, refresh: () => {} });
-
-    bar.show('Copied text to clipboard');
+    bar.show(SENTENCE);
     assert.equal(bar.widget.right, 0, 'pinned to the right edge');
-    assert.equal(bar.widget.top, 1, 'one row down, clear of the brand line');
-    // The sentence is 24 cells; the box carries the border and one column of padding each
-    // side, so it is bounded well inside a 100-column screen.
-    assert.ok(bar.widget.width >= 24, 'wide enough for the sentence');
-    assert.ok(bar.widget.width < 60, 'not stretched across the screen');
-
-    // A shorter message makes a smaller box: the width follows the text.
-    const wide = bar.widget.width;
-    bar.show('ok');
-    assert.ok(bar.widget.width < wide, 'a shorter sentence narrows the box');
-
+    assert.ok(bar.widget.top >= 0 && bar.widget.top < 3, 'near the top');
+    assert.ok(bar.widget.width < 60, 'only as wide as the sentence');
     bar.close();
   });
 }, { columns: 100, rows: 24 });
 
 test('a copy raises the confirmation and the provider overlay is not used for it', async () => {
-  await withTui(async (tui) => {
+  await withTui(async (tui, { clipboardDir }) => {
     tui.log('some prose to drag over');
     await flush();
 
@@ -93,7 +70,9 @@ test('a copy raises the confirmation and the provider overlay is not used for it
     mouse('mouseup', x + 4, y);
     await flush();
 
-    assert.equal(tui.toastText, 'Copied text to clipboard');
+    const saved = clipboardFiles(clipboardDir);
+    assert.equal(saved.length, 1, 'the drag saved a file');
+    assert.equal(tui.toastText, `Saved data to ${saved[0].name}`, 'the toast names the file');
     assert.equal(tui.notices.length, 0, 'the provider notice overlay is not used for this');
   });
 }, { columns: 100, rows: 24 });

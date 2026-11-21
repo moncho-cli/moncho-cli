@@ -1,4 +1,7 @@
 import { PassThrough } from 'node:stream';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { createTui } from '../../app/tui.js';
 
@@ -40,25 +43,45 @@ export function plainText(frame) {
     .replace(/\x1b[()][0-9A-B]/g, '');
 }
 
-/** Run `fn(tui, { input, output, chunks, painted })` against a fresh TUI. */
+/**
+ * Run `fn(tui, { input, output, chunks, painted, clipboardDir })` against a fresh TUI.
+ *
+ * A copy now writes a file, so every TUI gets a scratch directory of its own: a suite must
+ * never drop `.moncho.clipboard.*` files into the checkout it is testing.
+ */
 export async function withTui(fn, ttyOptions = {}) {
   const input = fakeTty(ttyOptions);
   const output = fakeTty(ttyOptions);
   const chunks = [];
   output.on('data', (chunk) => chunks.push(chunk.toString()));
+  const clipboardDir = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-tui-'));
 
-  const tui = createTui({ input, output, modelLabel: ttyOptions.modelLabel ?? DEFAULT_MODEL_LABEL });
+  const tui = createTui({
+    input,
+    output,
+    clipboardDir,
+    modelLabel: ttyOptions.modelLabel ?? DEFAULT_MODEL_LABEL,
+  });
   // neo-blessed buffers writes; flush the first paint before asserting.
   await new Promise((resolve) => setImmediate(resolve));
 
   try {
     // painted is a live accessor so assertions always see the latest frame.
-    return await fn(tui, { input, output, chunks, painted: () => chunks.join('') });
+    return await fn(tui, { input, output, chunks, painted: () => chunks.join(''), clipboardDir });
   } finally {
     if (tui) tui.close();
     input.destroy();
     output.destroy();
+    fs.rmSync(clipboardDir, { recursive: true, force: true });
   }
+}
+
+/** The clipboard files a TUI saved, oldest first, read back as text. */
+export function clipboardFiles(dir) {
+  return fs.readdirSync(dir)
+    .filter((name) => name.startsWith('.moncho.clipboard.'))
+    .sort()
+    .map((name) => ({ name, text: fs.readFileSync(path.join(dir, name), 'utf8') }));
 }
 
 /** Visible transcript text, with the blessed colour escapes stripped. */

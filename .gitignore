@@ -25,3 +25,9 @@ build/
 # The capture used to be written at the workspace root. Kept so an older checkout
 # that still has the file stays clean until it is deleted.
 thinking.md
+
+# A text selection saved to a file by the conversation's copy gesture
+# (app/clipboard-file.js). Written at the workspace root with a time-stamped name, it is
+# the user's own scratch file and never part of the project — the same kind of thing as
+# .moncho/ above, and ignored here as well as in a project's .git/info/exclude.
+.moncho.clipboard.*

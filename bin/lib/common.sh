@@ -64,6 +64,10 @@ resolve_workspace() {
   PROJECT_IMAGE="moncho-project:$WORKSPACE_HASH"
   STATE_VOLUME="moncho-state-$WORKSPACE_HASH"
   MONCHO_DIR="$WORKSPACE/.moncho"
+  # The watcher that picks a selection up from the workspace and puts it on the host
+  # clipboard (bin/lib/clipboard-watch.sh). Its pid lives with the rest of the runner's
+  # bookkeeping, so a later `stop` finds the watcher this session's `start` left running.
+  WATCH_PIDFILE="$MONCHO_DIR/clipboard-watch.pid"
   BASE_IMAGE="$BASE_IMAGE_NAME:$(moncho_version)"
 }
 

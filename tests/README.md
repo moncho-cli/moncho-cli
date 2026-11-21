@@ -76,11 +76,11 @@ Suites are named after the capability they prove, mirroring the `docs/` tree:
 | `stale-read.test.js` | The stale-read guard: a read is fingerprinted, a write or patch into a file that changed since is refused with `STALE_READ`, and a never-read or brand-new file is written as before. |
 | `clipboard-selection.test.js` | Selecting text in the conversation: the release and cell points, the cluster-exact extraction, and the rule that a plain click still toggles a block. |
 | `clipboard-mouse-wire.test.js` | The gesture driven by the bytes a real terminal sends (SGR reports): a drag arrives as repeated `mousedown`, so it must extend rather than restart, and a release outside the pane must still finish it — the two bugs the synthetic-action suites could not see. |
-| `clipboard-copy.test.js` | The copy end: the bounded OSC 52 sequence, its tmux and screen envelopes, and a missing or throwing writer reported rather than thrown. |
-| `clipboard-native.test.js` | The clipboard tool that delivers first (`pbcopy` / `clip.exe` / `wl-copy` / `xclip` / `xsel`): the order per platform, the fall-through, a missing tool remembered, and the OSC 52 fallback when none works. |
-| `clipboard-highlight.test.js` | The reverse-video mark over exactly the copied cells, spliced at a cell boundary through the line's own tags. |
-| `clipboard-selection-tui.test.js` | The whole gesture through a real screen: a release copies and a plain click still toggles a block, a wrapped line is copied from the line it started on, and the copy is a top-right toast, never a row in the conversation. |
-| `toast.test.js` | The copy confirmation model: one plain sentence, four seconds, a second copy replacing the first, and a blank message not being a toast. |
+| `clipboard-file.test.js` | The copy end: a selection becomes a time-stamped file in the workspace (`.moncho.clipboard.HHMMSS`), a second copy in the same second gets its own name instead of overwriting, and a failed write is reported rather than thrown. |
+| `clipboard-watch.test.js` | The host-side pickup (`bin/lib/clipboard-watch.sh`): the tool chosen per platform (`pbcopy` / `clip.exe` / `wl-copy` / `xclip` / `xsel`), a new selection fed to it exactly once, a stale file left alone so starting the agent never clobbers the clipboard, an ordinary file ignored, and `stop` really ending the watcher. Drives the real script against a fake clipboard tool, so the assertion is on the bytes the tool received. |
+| `clipboard-highlight.test.js` | The reverse-video mark over exactly the selected cells, spliced at a cell boundary through the line's own tags. |
+| `clipboard-selection-tui.test.js` | The whole gesture through a real screen: a release saves a file and a plain click still toggles a block, a wrapped line is saved from the line it started on, and the confirmation is a top-right toast naming the file, never a row in the conversation. |
+| `toast.test.js` | The copy confirmation model: the two sentences a copy can say (a proven one and a sent one), four seconds, a second copy replacing the first, and a blank message not being a toast. |
 | `tui-toast.test.js` | The toast box itself: top-right, only as wide as its sentence, and hidden by its own timer. |
 
 `tests/support/` holds shared harnesses (currently the TTY/TUI helper) that the

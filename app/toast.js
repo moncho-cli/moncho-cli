@@ -19,13 +19,22 @@ export const TOAST_TTL_MS = 4000;
 export const TOAST_MAX_CHARS = 60;
 
 /**
- * The words the copy toast uses, kept here so the wording is one decision in one place.
+ * The sentence a copy shows, built from the file it landed in.
  *
- * Deliberately the plain sentence, not a character count: the count answers a question
- * nobody asked ("how much did I copy?") while the sentence answers the one they did
- * ("did it work?").
+ * The name is in the sentence because the name is the *point*: the reader's next move is
+ * to open that file, and a sentence without it would leave them to guess or to search.
+ * The workspace is not repeated — the reader is already standing in it.
+ *
+ * Deliberately not a character count: the count answers a question nobody asked ("how much
+ * did I copy?") while the sentence answers the one they did ("where did my text go?").
  */
-export const COPIED_TOAST_TEXT = 'Copied text to clipboard';
+export function savedToastText(file) {
+  const name = String(file ?? '').trim();
+  return name ? `Saved data to ${name}` : 'Saved data to a clipboard file';
+}
+
+/** The prefix of the copy sentence, kept as a constant so the wording is one decision. */
+export const SAVED_TOAST_TEXT = 'Saved data to';
 
 /** Fit `text` to the toast's width, cutting between grapheme clusters with an `…`. */
 export function formatToastText(text, maxChars = TOAST_MAX_CHARS) {

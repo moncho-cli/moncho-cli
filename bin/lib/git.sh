@@ -59,6 +59,10 @@ ensure_local_excludes() {
   if [ -n "$rel" ]; then prefix="/$rel"; else prefix=""; fi
 
   add_exclude_pattern "$file" "${prefix}/.moncho/"
+  # A text selection saved by the copy gesture lands at the workspace root with a
+  # time-stamped name (app/clipboard-file.js). It is the user's scratch file, so it is
+  # excluded the same way moncho's own directories are.
+  add_exclude_pattern "$file" "${prefix}/.moncho.clipboard.*"
   # The state directory only lands in the workspace under --state-in-repo; excluding it
   # unconditionally is harmless and means a later switch cannot leak a stray file.
   add_exclude_pattern "$file" "${prefix}/agent/"

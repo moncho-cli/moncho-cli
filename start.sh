@@ -3,6 +3,15 @@
 IMAGE_NAME="moncho"
 CONTAINER_NAME="moncho"
 
+# The host-side clipboard pickup (bin/lib/clipboard-watch.sh): a selection the agent saves
+# into the workspace is read on the host and fed to the host's own clipboard tool. Sourced
+# by absolute path, so it works whatever directory this script is invoked from.
+START_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=bin/lib/clipboard-watch.sh
+. "$START_DIR/bin/lib/clipboard-watch.sh"
+# Where the watcher's pid is recorded, so `stop` can end it. Named after this checkout.
+WATCH_PIDFILE="$START_DIR/.moncho/clipboard-watch.pid"
+
 # Load local .env (if present) so provider settings are available to pass into the container.
 if [ -f .env ]; then
   set -a
@@ -58,9 +67,12 @@ case "$1" in
       "$IMAGE_NAME" \
       node main.js
     echo "Container started: $CONTAINER_NAME"
+    # Detached: the watcher outlives this script, and `stop` is what ends it.
+    clipboard_watch_start "$(pwd)" "$WATCH_PIDFILE" 1
     ;;
   stop)
     echo "Stopping container..."
+    clipboard_watch_stop "$WATCH_PIDFILE"
     if [ "$(docker ps -aq -f name=$CONTAINER_NAME)" ]; then
       docker stop "$CONTAINER_NAME" && docker rm "$CONTAINER_NAME"
       echo "Container stopped and removed."
@@ -72,6 +84,9 @@ case "$1" in
   run)
     echo "Running application in foreground (interactive)..."
     ensure_image
+    # The watcher lives exactly as long as this run: it reads what the agent saves into
+    # the workspace and feeds the host's clipboard, then goes when the container does.
+    clipboard_watch_start "$(pwd)" "$WATCH_PIDFILE" 0
     docker run --rm -it --name "$CONTAINER_NAME" \
       -u "$(id -u):$(id -g)" \
       --add-host=host.containers.internal:host-gateway \
@@ -82,6 +97,7 @@ case "$1" in
       "${ENV_FLAGS[@]}" \
       "$IMAGE_NAME" \
       node main.js
+    clipboard_watch_stop "$WATCH_PIDFILE"
     ;;
   build)
     build_image

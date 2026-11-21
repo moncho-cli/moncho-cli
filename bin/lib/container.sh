@@ -75,7 +75,9 @@ run_container() {
   fi
   if container_exists; then
     log "Reusing the existing container $CONTAINER_NAME"
+    clipboard_watch_start "$WORKSPACE" "$WATCH_PIDFILE" 0
     docker start -ai "$CONTAINER_NAME"
+    clipboard_watch_stop "$WATCH_PIDFILE"
     return 0
   fi
 
@@ -91,10 +93,14 @@ run_container() {
   fi
 
   log "Starting $CONTAINER_NAME (workspace $WORKSPACE)"
+  # The watcher serves the selections made during this run, and dies with it (the
+  # foreground path is the one where the lifecycle is obvious).
+  clipboard_watch_start "$WORKSPACE" "$WATCH_PIDFILE" 0
   # `${arr[@]+"${arr[@]}"}` rather than `"${arr[@]}"`: `disposable` is empty under
   # --sync-files, and an empty array expansion is an unbound variable under `set -u`
   # on bash 3.2, which is what macOS ships.
   docker run ${disposable[@]+"${disposable[@]}"} "${tty[@]}" "${RUN_ARGS[@]}"
+  clipboard_watch_stop "$WATCH_PIDFILE"
 
   if [ "$SYNC_FILES" = "1" ]; then
     sync_back
@@ -113,6 +119,7 @@ start_container() {
     log "Starting the existing container $CONTAINER_NAME"
     docker start "$CONTAINER_NAME" >/dev/null
     log "Started: $CONTAINER_NAME"
+    clipboard_watch_start "$WORKSPACE" "$WATCH_PIDFILE" 1
     return 0
   fi
 
@@ -126,10 +133,15 @@ start_container() {
 
   docker run "${flags[@]}" "${RUN_ARGS[@]}" >/dev/null
   log "Started: $CONTAINER_NAME"
+  # The container is detached, so the watcher must be too: it keeps running until a
+  # `stop` ends it, and its pid lives beside the container's own bookkeeping.
+  clipboard_watch_start "$WORKSPACE" "$WATCH_PIDFILE" 1
 }
 
 # `stop`: stop and remove every container labelled with this workspace.
 stop_container() {
+  # The watcher goes first: it serves a container that is about to disappear.
+  clipboard_watch_stop "$WATCH_PIDFILE"
   if ! container_exists; then
     warn "no container for this project ($CONTAINER_NAME)"
     return 0

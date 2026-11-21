@@ -129,6 +129,29 @@ container can always be inspected and removed.
 `--do-not-mount` and `--copy-files` are mutually exclusive. `--sync-files` requires one
 of them, because a bind mount already writes straight through.
 
+### Copying a selection to your clipboard
+
+Selecting text in the conversation and releasing the mouse saves it to a file in the
+workspace **and** puts it on your clipboard. The file is named `.moncho.clipboard.HHMMSS`
+after the local time of the copy, and a four-second toast in the top-right corner names it:
+**Saved data to .moncho.clipboard.091507**.
+
+A container has no clipboard to reach — a Unix clipboard tool is a client of a display
+server it does not have, and an OSC 52 sequence is only a hope that your terminal honours
+it. So the agent writes the file, and **the runner reads it on your host** and feeds it to
+the tool you actually paste from: `pbcopy` on macOS, `clip.exe` on WSL, `wl-copy` on
+Wayland, `xclip` or `xsel` on X11. Nothing is mounted for this and no privilege is needed:
+the workspace is a bind mount, so the file the agent writes is a file the host can read.
+
+The watcher starts and stops with the container. Running in the foreground it ends when the
+agent does; detached (`start`) it keeps working until `moncho-cli stop`. On a host with no
+display server — a bare SSH session — no watcher starts, the file is still written, and you
+can open it whenever you like.
+
+A copy never overwrites an earlier one: a second selection in the same second gets its own
+name, so nothing you saved is lost. The files are gitignored — in this repository and in a
+project's `.git/info/exclude` — so they never appear in a diff.
+
 ## Configuration
 
 Moncho reads **one** env file: `./.env.moncho`, or whatever `--env` points at. A generic

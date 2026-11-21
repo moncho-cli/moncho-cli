@@ -8,8 +8,9 @@ import { contentPoint } from './transcript-geometry.js';
  *
  * A terminal's own selection is invisible to the process: the terminal paints it and
  * keeps it, and a program can neither read it nor be told it happened. So the
- * conversation makes the selection itself, in **content coordinates**, and hands the
- * result to the terminal with OSC 52 (`app/clipboard.js`).
+ * conversation makes the selection itself, in **content coordinates**, and saves the
+ * result to a file in the workspace (`app/clipboard-file.js`) — a container has no
+ * clipboard to reach, and a file is the medium that needs no display server.
  *
  * The one decision that makes this exact rather than approximate: the rows the user
  * dragged over are **blessed's own wrapped rows**. A display line longer than the
@@ -179,10 +180,10 @@ export function pointAt(widget, data) {
    * copies and consumes the click, so dragging across a collapsed block copies its header
    * instead of toggling it.
    *
-   * `copy` is the clipboard writer (`app/clipboard.js#createClipboard`), injected so the
-   * whole gesture is exercised without a terminal; `notify` is told what happened, so the
-   * reader learns the copy landed, and the two are separate because a copy can succeed with
-   * nothing to announce (a test) or fail with something to say (no writer).
+   * `copy` is the file writer (`app/clipboard-file.js#createClipboardFile`), injected so the
+   * whole gesture is exercised without touching a directory; `notify` is told what happened,
+   * so the reader learns where the selection was saved, and the two are separate because a
+   * copy can succeed with nothing to announce (a test) or fail with something to say.
    *
    * `repaint` is called whenever the band changes and when the gesture ends: the band has to
    * follow the pointer during the drag and disappear on release, and the selection is

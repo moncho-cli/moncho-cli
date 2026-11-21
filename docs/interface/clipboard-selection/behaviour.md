@@ -1,13 +1,14 @@
-# Interface — selecting text in the conversation and copying it on release
+# Interface — selecting text in the conversation and saving it on release
 
 A terminal keeps its own selection: the terminal paints it, the terminal holds it, and
 the process is never told it happened. So Moncho makes the selection itself — in the
-conversation's own model — and hands the result to the terminal with **OSC 52**, which
-is the one way a TUI can put text on the clipboard of the machine the user is sitting at.
+conversation's own model — and saves the result to a **file in the workspace**, which is
+the one medium that needs neither a display server nor the terminal's cooperation. A
+container has no clipboard to reach, and an escape sequence is a hope; a file is a fact.
 
-This spec fixes what a drag means, what a plain click still means, what is written, and
-what the reader is told — including the one neo-blessed behaviour that decides the whole
-design. The implementation is linked at the bottom.
+This spec fixes what a drag means, what a plain click still means, where the text is
+written, and what the reader is told — including the one neo-blessed behaviour that
+decides the whole design. The implementation is linked at the bottom.
 
 ## The gesture
 
@@ -91,99 +92,133 @@ A selection is two points, each a **line** and a **cell**:
 The two points are normalised to reading order, so dragging upwards copies the same thing
 as dragging downwards, and the extraction is made **between grapheme clusters**: a cluster
 is taken when any of its cells is inside the range, so a wide glyph or an emoji is copied
-whole or not at all. Half a `👍🏽` on the clipboard is worse than none.
+whole or not at all. Half a `👍🏽` in the saved file is worse than none.
 
 Trailing whitespace is dropped from every copied row. A prose row is padded to the
 region's width by its background band, and that padding is paint, not text — copying it
-would put a screenful of spaces on the user's clipboard.
+would put a screenful of spaces in the saved file.
 
-## What is written, and how it gets there
+## What is written, and where it goes
 
-Two paths, tried in this order, because they are not equally trustworthy.
+The text is written to a **file in the workspace**, and the name is the whole contract.
 
-### 1. A native clipboard tool — the one that really delivers
+### Why a file, and not the clipboard
 
-`app/clipboard-native.js` hands the text to the platform's own tool and checks its exit
-status:
+A program inside a container cannot reach the clipboard the user pastes from. That is not a
+bug in the program; it is what a container is. Two approaches were tried and both are
+hopes rather than facts:
 
-| Session | Tool |
-| ------- | ---- |
+- **a native clipboard tool** (`pbcopy`, `xclip`, `wl-copy`, `xsel`) is a *client of a
+  display server*. Inside a container there is no display server — `DISPLAY` and
+  `WAYLAND_DISPLAY` are unset — so the tool has nothing to talk to. It is not that the
+  clipboard is in the wrong place; there is no clipboard in the container at all;
+- **OSC 52** is a terminal escape sequence. It leaves the container as ordinary output and
+  arrives at the *host's* terminal, which may honour it or may drop it in silence. xterm
+  gates it behind its window-operations resource, tmux needs `set-clipboard on`, and many
+  terminals do not implement it. A copy that "worked" because the sequence was written is a
+  copy nobody can prove.
+
+A file needs neither a display server nor a terminal's cooperation. It is written where the
+user already is, and opening it is a command they already know. So the copy is a file, and
+the honest thing the program can say is **where it put it**.
+
+### The runner picks it up — the clipboard the user actually pastes from
+
+The container cannot reach the host's clipboard, but the **host** can, and the runner that
+starts the container already runs there. The workspace is bind-mounted both ways, so the
+file the agent writes is a file the host can read; a watcher beside the container hands each
+one to the host's own tool (`bin/lib/clipboard-watch.sh`):
+
+| Host | Tool |
+| ---- | ---- |
 | macOS | `pbcopy` |
-| Windows | `clip.exe` |
-| Wayland (`WAYLAND_DISPLAY` set) | `wl-copy`, then `xclip`, then `xsel` |
-| X11 | `xclip -selection clipboard`, then `xsel --clipboard --input`, then `wl-copy` |
+| WSL | `clip.exe` — Windows' own, reaching the real Windows clipboard |
+| Wayland | `wl-copy` |
+| X11 | `xclip -selection clipboard`, else `xsel --clipboard --input` |
+| no display server | none — no watcher runs, and the file is still there to open |
 
-A tool that exits 0 has **really put the text where the user will paste it**, which is the
-only kind of proof this feature can have. A tool that is not installed is remembered as
-missing (`ENOENT`), so a box without `xclip` pays for one failed process per session and
-never again; every spawn is bounded by a timeout, because a wedged clipboard daemon must not
-freeze the conversation.
+The watcher is **started and stopped with the container**: a foreground `run` keeps it as a
+child and ends it when the container returns, a detached `start` leaves it running until
+`moncho-cli stop` (or `./start.sh stop`), and a pidfile under the workspace's `.moncho/` is
+how the later command finds it.
 
-### 2. The terminal's own clipboard — OSC 52, the fallback
+Three rules make it trustworthy:
 
-`app/clipboard.js` builds one escape sequence and writes it to the terminal:
+- **it is silent.** The TUI owns the terminal, so anything the watcher printed would corrupt
+the display it exists to serve. Every one of its commands redirects both streams.
+- **it never re-copies.** Everything already in the directory when it starts is marked seen
+first. Otherwise starting the agent in a workspace holding last week's selection would
+silently overwrite the clipboard on startup — the one thing a watcher must never do.
+- **it never copies half a selection.** A file is handed over on the poll *after* the one
+that first saw it, and only when its size did not change in between, so a write still in
+progress is never read.
+
+So the file remains the mechanism and the record, and on a host with a clipboard the text
+also lands where the reader actually pastes from — which is what the whole feature was for.
+
+### The name
 
 ```
-OSC 52 ; c ; <base64 of the UTF-8 text> BEL
+<workspace>/.moncho.clipboard.HHMMSS
 ```
 
-This is the only clipboard a *bare* terminal offers a program, and it is what still works on
-a machine with no clipboard tool at all — an SSH session into a container, a minimal image.
-It is deliberately **second**, because it is a hope rather than a fact: the terminal may
-implement it and may not. xterm gates it behind its window-operations resource, tmux needs
-`set-clipboard on`, and a terminal that does not implement it **drops the sequence in
-silence** — which looks exactly like a copy that never happened, confirmation toast and all.
-That is why the native tool is tried first.
+- **`.moncho.clipboard.`** is the prefix, and it is also the gitignore pattern
+  (`.moncho.clipboard.*`). A saved selection is the user's scratch text, never project
+  content, so it is ignored in this repository's `.gitignore` and in the runner's
+  `.git/info/exclude` for a project workspace.
+- **`HHMMSS`** is the local time of the copy, zero-padded — `09:15:07` becomes `091507`. The
+  name is for the person reading it, not the program, so it is the time on their own clock.
+- **the workspace** is the process's working directory, `/app` in the container. The file
+  therefore appears in the bind-mounted directory the user is already looking at, and it
+  survives the container.
 
-The sequence itself has three properties, each a rule:
+Two rules keep the name honest:
 
-- **bounded.** Terminals drop or truncate an oversized OSC 52, and a copy silently cut in
-  half is worse than one that says it was cut. The text is trimmed to
-  `CLIPBOARD_MAX_BYTES` (100 KB) of *encoded* payload — the unit the terminal counts —
-  always between clusters, with a `…` charged to the budget, and the report says
-  `truncated: true` so the caller can say so.
-- **multiplexer-aware.** tmux and GNU screen swallow a bare OSC 52 unless it is passed
-  through in their own envelope, so the writer wraps the sequence for whichever one the
-  environment names.
-- **never fatal.** A missing or throwing writer is reported as `ok: false` with a reason,
-  never propagated: a copy is a convenience, and losing the clipboard must not take the
-  conversation down with it. An empty selection is not a copy at all and emits nothing,
-  rather than a sequence that would clear the user's clipboard.
+- **a copy never overwrites another.** The file is created exclusively; if that name is
+  already taken, the writer tries the next one. A second copy in the same second gets its
+  own file, so a fast double-copy cannot destroy the first selection.
+- **the text is written whole.** Unlike a terminal sequence there is no size limit to
+  respect, so a large selection is saved in full. The medium is a file; it does not truncate.
+
+### What the report says
+
+The write returns `{ ok, name, path, bytes, error }`:
+
+| Field | Meaning |
+| ----- | ------- |
+| `ok` | `true` when the file exists on disk |
+| `name` | the file's basename, e.g. `.moncho.clipboard.091507` |
+| `path` | the absolute path, for a caller that wants it |
+| `bytes` | the byte length of the text written |
+| `error` | `ENOENT`, `EACCES`, `EISDIR` and so on when the write failed — never thrown |
+
+The report is what the toast is built from. An empty selection is not a failure — there is
+nothing to save — and it produces no toast at all.
 
 ## What the reader sees
 
-- **the selection is marked** while the drag is live: reverse video over exactly the cells
-  that will be copied, so what is marked and what is copied cannot disagree. The mark is
-  inserted at a cell boundary through the line's own tags, which keeps a row's colours —
-  a cyan `You:`, a bold heading — readable *under* it; a line with no selection comes back
-  byte-for-byte. The mark is cleared the moment the gesture ends.
-- **the copy is confirmed** by a small bordered box in the **top-right corner** reading
-  `Copied text to clipboard` (`app/toast.js`, `app/tui-toast.js`). It is deliberately not
-  the transient notice overlay: that one carries provider news — a retry, a failure — and
-  holds it for three minutes across the whole width, because a reader who looked away must
-  still find it. A copy is something the reader just did on purpose and needs only a
-  flicker of proof, so the toast is one plain sentence, four seconds, in a corner.
-- **a failure says why** in the same corner (`Could not copy: <reason>`), because silence
-  would leave the reader believing their text had been captured. An empty selection is
-  silence: nothing was selected, which is not a failure.
+The toast is the only feedback, and it names the file:
 
-Both are presentation only. A selection is never a context chunk, never reaches the model
-and never enters a session file, and the line CLI — which wires no transcript pane — is
-untouched.
+> **Saved data to .moncho.clipboard.091507**
+
+- **the sentence is the file's name**, because that is the thing the reader needs. "Copied"
+  would be a claim the program cannot support; "saved" is a fact it can.
+- **the toast sits in the top-right corner** for four seconds, never in the conversation's
+  notice overlay and never as a row in the transcript — a copy is presentation, not dialogue.
+- **the band is visible while the drag is live** and cleared on release, so the reader sees
+  what will be saved before it is.
+
+The saved file is the record. On a host with a clipboard tool the runner also hands the
+text to it, so pasting works; on a host without one the file is still there to open, and
+nothing in the program claims a copy landed when it cannot prove it did.
 
 ## See also
 
-- The gesture and the extraction: `app/transcript-select.js`
-- The escape sequence and its bounds: `app/clipboard.js`
-- The native tool that delivers first: `app/clipboard-native.js`
-- The reverse-video mark: `app/transcript-highlight.js`
-- The mouse binding and the event order: `app/transcript-mouse.js`
-- The pane that owns it: `app/tui-transcript.js`
-- The confirmation and its four seconds: `app/toast.js`, `app/tui-toast.js`
-- The transcript model and the row-space math: `docs/interface/transcript-blocks`
-- The band a copied row is padded by: `docs/interface/prose-bands`
-- Proof: `tests/clipboard-selection.test.js`, `tests/clipboard-selection-tui.test.js`,
-  `tests/clipboard-mouse-wire.test.js`, `tests/clipboard-copy.test.js`,
-  `tests/clipboard-highlight.test.js`, `tests/toast.test.js`, `tests/tui-toast.test.js`
-- The encoding a real terminal sends, and where blessed misreads it:
-  `node_modules/neo-blessed/lib/program.js#_bindMouse`
+- The gesture and its blessed quirks: `app/transcript-mouse.js`, `app/transcript-select.js`
+- The band that marks the selection: `app/transcript-highlight.js`
+- The file writer and its naming rule: `app/clipboard-file.js`
+- The sentence and its four seconds: `app/toast.js`, `app/tui-toast.js`
+- The wiring that connects them: `app/tui-clipboard.js`
+- The gitignore rules: `.gitignore` (`/.moncho.clipboard.*`), `bin/lib/git.sh`
+- The host-side pickup and its lifecycle: `bin/lib/clipboard-watch.sh`, `bin/lib/container.sh`,
+  `start.sh`

@@ -16,6 +16,10 @@ FROM node:22-alpine
 # The patch workflow cross-checks a change with several *independent*
 # implementations, and the dev image installs exactly these four. The version
 # checks make the build fail loudly if a package is renamed or dropped.
+#
+# A text selection is saved to a file in the workspace (app/clipboard-file.js),
+# so the image needs no clipboard client at all: a Unix tool would be a client
+# of a display server this container does not have.
 RUN apk add --no-cache \
       bash \
       diffutils \
