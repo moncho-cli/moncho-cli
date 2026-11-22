@@ -72,7 +72,7 @@ test('every auto-loaded tool declares the required intent parameter', async () =
   }
 
   const names = tools.map((t) => t.function.name);
-  for (const expected of ['read_file', 'hint_file', 'write_file', 'edit_file', 'run_bash', 'run_npm', 'compact_context', 'update_task', 'grep', 'blob']) {
+  for (const expected of ['read_file', 'hint_file', 'write_file', 'edit_file', 'write_plan_md', 'edit_plan_md', 'run_bash', 'run_npm', 'compact_context', 'update_task', 'grep', 'blob']) {
     assert.ok(names.includes(expected), `missing tool ${expected}`);
   }
 });

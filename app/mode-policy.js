@@ -1,6 +1,5 @@
 import { MODES, normalizeMode } from './session-mode.js';
 import { TOOL_GUARD_REFUSAL } from './tool-guard.js';
-import { isSessionTrackingPath } from '../utils/tracking-fence.js';
 
 /**
  * The mode as a *policy*: which tools a session may use, and which calls are refused.
@@ -21,20 +20,28 @@ import { isSessionTrackingPath } from '../utils/tracking-fence.js';
  * | mode | may read | may write |
  * | ---- | -------- | --------- |
  * | `chat` | the read-only set | no tool: its own session record is the host's |
- * | `design` | the read-only set, plus `update_task` | `task.md` / `implementation_plan.md`, through `write_file` / `edit_file` |
+ * | `design` | the read-only set, plus `update_task` | its own `task.md` / `implementation_plan.md`, through `write_plan_md` / `edit_plan_md` |
  * | `work` | everything | everything |
+ *
+ * **A `design` session writes through tools that take no path.** That is the load-bearing
+ * decision here. It used to be offered the generic `write_file` / `edit_file` and this
+ * module policed their `path` argument against the session folder — a rule the model was
+ * asked to respect and the gate had to enforce. `write_plan_md` / `edit_plan_md`
+ * (`utils/tracking-draft.js`) name only *which* of the two documents they mean, and the
+ * location comes from the store that owns it, so the scope is a property of the tool
+ * rather than a check it performs. A tool that cannot name a file cannot name the wrong
+ * one, which is why there is no path rule left to state: the two families below are
+ * simply **not advertised** in `design`, and the gate refuses them if one is still named.
  *
  * A **shell is not a scoped writer**: `run_bash` / `run_npm` can write a file, rewrite
  * one or install a package, so they can never be restricted to two paths and are
  * therefore refused in both `chat` and `design`. Treating them as read-only would make
  * every other rule here decorative.
  *
- * A **delete is not a scoped write either**: `write_file` and `edit_file` are scoped by
- * path because a `design` session authors exactly two documents, and a document can be
- * corrected by writing it again. Nothing a mode may write is anything it may destroy, so
- * `delete_file` is its own family (`DESTRUCTIVE_TOOLS`) and is refused in `chat` and
- * `design` without a path check — a `design` session has no writable file worth keeping
- * *and* no reason to remove one.
+ * A **delete is not a scoped write either**: a `design` session may author its own
+ * checklist, but nothing it may write is anything it may destroy, so `delete_file` is its
+ * own family (`DESTRUCTIVE_TOOLS`) and is refused in `chat` and `design` without a path
+ * check.
  *
  * Pure and terminal-free: the tool list is passed in and the answer is a value, so the
  * whole policy is unit tested without a provider or a screen.
@@ -66,19 +73,27 @@ export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 
  */
 export const TRACKING_TOOLS = Object.freeze(['update_task']);
 
-/** The two files a `design` session may write, as they appear in a tool argument. */
+/** The two files a `design` session may write, as the documents are named. */
 export const DESIGN_WRITABLE_FILES = Object.freeze(['task.md', 'implementation_plan.md']);
 
 /**
- * A `design` session writes its tracking files **where they live**: one session folder
- * under `agent/sessions/` (`agent/sessions/<id>/task.md`, `utils/tracking-store.js`). The
- * folder is fixed and the project root is not one of its places, so "design writes two
- * files" stays a claim about two files rather than about any file that happens to carry
- * one of the two names. The shape is `isSessionTrackingPath()`'s, shared with the fence so
- * the mode and the writer cannot disagree about where a tracking file may live.
+ * The writers a `design` session authors its two documents with.
+ *
+ * They are the mode's own tools, not the generic pair: neither takes a `path`, so the
+ * scope is the tool's rather than a rule this module has to enforce. `write_plan_md`
+ * authors a document from a draft (re-rendered into the canonical shape) and
+ * `edit_plan_md` changes one by literal search/replace — the same two operations
+ * `write_file` / `edit_file` perform everywhere else, minus the ability to name a target.
  */
+export const DESIGN_WRITER_TOOLS = Object.freeze(['write_plan_md', 'edit_plan_md']);
 
-/** Writers that name the file they touch, so the policy can scope them by path. */
+/**
+ * The generic writers: they name the file they touch, and they touch any file.
+ *
+ * They are `work`-only. A `design` session has `DESIGN_WRITER_TOOLS` for the two
+ * documents it owns, so handing it these as well would only re-open the path question
+ * the dedicated pair exists to close.
+ */
 export const SCOPED_WRITER_TOOLS = Object.freeze(['write_file', 'edit_file']);
 
 /**
@@ -95,34 +110,9 @@ export const DESTRUCTIVE_TOOLS = Object.freeze(['delete_file']);
 export const SHELL_TOOLS = Object.freeze(['run_bash', 'run_npm']);
 
 /** Every tool that can mutate something, scoped or not. */
-export const WRITER_TOOLS = Object.freeze([...SCOPED_WRITER_TOOLS, ...SHELL_TOOLS, ...DESTRUCTIVE_TOOLS]);
-
-/**
- * Normalise a path argument so `task.md`, `./task.md`, `/task.md` and `foo/../task.md`
- * are all compared as the same file: a policy a `./` prefix could walk around would be
- * worse than no policy at all.
- */
-export function normalizeTargetPath(value) {
-  const raw = String(value ?? '').trim().replace(/\\/g, '/');
-  if (!raw) return '';
-  const segments = [];
-  for (const segment of raw.split('/')) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') {
-      if (segments.length === 0) return ''; // walks out of the project: never writable
-      segments.pop();
-      continue;
-    }
-    segments.push(segment);
-  }
-  return segments.join('/');
-}
-
-/** True when `target` names one of the files a `design` session may write. */
-export function isDesignWritable(target) {
-  const path = normalizeTargetPath(target);
-  return path !== '' && isSessionTrackingPath(path);
-}
+export const WRITER_TOOLS = Object.freeze([
+  ...SCOPED_WRITER_TOOLS, ...DESIGN_WRITER_TOOLS, ...SHELL_TOOLS, ...DESTRUCTIVE_TOOLS,
+]);
 
 /** The name a call names, from either accepted call shape. */
 function callName(call) {
@@ -137,6 +127,11 @@ function callPath(call) {
 /** The tool name a tool *definition* declares (the shape `utils/tool-loader.js` builds). */
 function toolName(tool) {
   return String(tool?.function?.name ?? tool?.name ?? '');
+}
+
+/** How a refusal names the target of a call that carries a path, for the model's benefit. */
+function targetOf(target) {
+  return target === undefined ? 'an unnamed target' : `"${target}"`;
 }
 
 /**
@@ -159,13 +154,13 @@ export function refusalForMode(mode, call, name = callName(call)) {
     );
   }
 
-  // Design: the two tracking files, and nothing else.
+  // Design: the tracking loop and the mode's own two path-free writers, nothing else.
   if (TRACKING_TOOLS.includes(name)) return null;
-  if (SCOPED_WRITER_TOOLS.includes(name) && isDesignWritable(target)) return null;
+  if (DESIGN_WRITER_TOOLS.includes(name)) return null;
   if (DESTRUCTIVE_TOOLS.includes(name)) {
     return refuse(
       `the session is in Design, which authors ${DESIGN_WRITABLE_FILES.join(' and ')} `
-      + `and removes nothing, so ${name} on ${target === undefined ? 'an unnamed target' : `"${target}"`} may not run`,
+      + `and removes nothing, so ${name} on ${targetOf(target)} may not run`,
     );
   }
   if (SHELL_TOOLS.includes(name)) {
@@ -175,8 +170,8 @@ export function refusalForMode(mode, call, name = callName(call)) {
     );
   }
   return refuse(
-    `the session is in Design, whose only writable files are ${DESIGN_WRITABLE_FILES.join(' and ')}, `
-    + `so ${name} on ${target === undefined ? 'an unnamed target' : `"${target}"`} may not run`,
+    `the session is in Design, which writes only its own ${DESIGN_WRITABLE_FILES.join(' and ')} `
+    + `and only through ${DESIGN_WRITER_TOOLS.join(' / ')}, so ${name} on ${targetOf(target)} may not run`,
   );
 }
 
@@ -186,8 +181,9 @@ export function refusalForMode(mode, call, name = callName(call)) {
  *
  * `work` gets the whole list (a copy, never the caller's array), `chat` gets the
  * read-only set, and `design` gets the read-only set plus the tracking tool and the
- * scoped writers — the gate is what keeps those two on the tracking files. A shell is
- * advertised in neither, so it is not even offered where it would be refused.
+ * mode's own path-free writers. A shell and the generic writers are advertised in
+ * neither, so they are not even offered where they would be refused — which is the
+ * whole point of the narrowed list: a tool the mode may not use costs tokens to send.
  *
  * An unknown mode is `chat` (the safe fallback, `app/session-mode.js#normalizeMode`).
  */
@@ -197,7 +193,7 @@ export function toolsForMode(mode, tools = []) {
   if (current === MODES.WORK) return [...list];
 
   const allowed = current === MODES.DESIGN
-    ? [...READ_ONLY_TOOLS, ...TRACKING_TOOLS, ...SCOPED_WRITER_TOOLS]
+    ? [...READ_ONLY_TOOLS, ...TRACKING_TOOLS, ...DESIGN_WRITER_TOOLS]
     : [...READ_ONLY_TOOLS];
   return list.filter((tool) => allowed.includes(toolName(tool)));
 }

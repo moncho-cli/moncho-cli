@@ -1,14 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
-  READ_ONLY_TOOLS, TRACKING_TOOLS, SCOPED_WRITER_TOOLS, SHELL_TOOLS, WRITER_TOOLS,
-  DESTRUCTIVE_TOOLS, DESIGN_WRITABLE_FILES, normalizeTargetPath, isDesignWritable,
-  refusalForMode, toolsForMode, gateForMode,
+  READ_ONLY_TOOLS, TRACKING_TOOLS, DESIGN_WRITER_TOOLS, SCOPED_WRITER_TOOLS, SHELL_TOOLS,
+  WRITER_TOOLS, DESTRUCTIVE_TOOLS, DESIGN_WRITABLE_FILES, refusalForMode, toolsForMode,
+  gateForMode,
 } from '../app/mode-policy.js';
-import { createSessionMode, MODES } from '../app/session-mode.js';
+import { createSessionMode, MODES, MODE_ORDER } from '../app/session-mode.js';
 import { TOOL_GUARD_REFUSAL } from '../app/tool-guard.js';
 import { ConversationManager } from '../app/conversation-manager.js';
+
+/** The shipped system prompt: sent on every call, in every mode. */
+const prompt = fs.readFileSync(new URL('../config/prompt.md', import.meta.url), 'utf-8');
 
 /** A tool definition shaped like the ones `utils/tool-loader.js` produces. */
 const tool = (name) => ({ type: 'function', function: { name, parameters: {} } });
@@ -17,7 +21,8 @@ const ALL = [
   tool('read_file'), tool('hint_file'), tool('blob'), tool('grep'), tool('read_capture'),
   tool('web_fetch'),
   tool('compact_context'),
-  tool('update_task'), tool('write_file'), tool('edit_file'), tool('delete_file'),
+  tool('update_task'), tool('write_plan_md'), tool('edit_plan_md'),
+  tool('write_file'), tool('edit_file'), tool('delete_file'),
   tool('run_bash'), tool('run_npm'),
 ];
 
@@ -27,7 +32,7 @@ const names = (tools) => tools.map((t) => t.function.name);
 const call = (name, args = {}) => ({ id: `c-${name}`, name, args, intent: 'probe' });
 
 test('the tool families are disjoint, so one table decides every mode', () => {
-  const families = [READ_ONLY_TOOLS, TRACKING_TOOLS, SCOPED_WRITER_TOOLS, SHELL_TOOLS];
+  const families = [READ_ONLY_TOOLS, TRACKING_TOOLS, DESIGN_WRITER_TOOLS, SCOPED_WRITER_TOOLS, SHELL_TOOLS];
   for (const family of families) {
     assert.equal(new Set(family).size, family.length, 'a family holds no duplicate');
   }
@@ -38,7 +43,9 @@ test('the tool families are disjoint, so one table decides every mode', () => {
       seen.add(name);
     }
   }
-  assert.deepEqual(WRITER_TOOLS, [...SCOPED_WRITER_TOOLS, ...SHELL_TOOLS, ...DESTRUCTIVE_TOOLS]);
+  assert.deepEqual(WRITER_TOOLS, [
+    ...SCOPED_WRITER_TOOLS, ...DESIGN_WRITER_TOOLS, ...SHELL_TOOLS, ...DESTRUCTIVE_TOOLS,
+  ]);
   // A shell can write a file, so it is a writer and never "read-only".
   for (const name of SHELL_TOOLS) {
     assert.ok(!READ_ONLY_TOOLS.includes(name));
@@ -54,21 +61,17 @@ test('the tool families are disjoint, so one table decides every mode', () => {
   assert.deepEqual(DESIGN_WRITABLE_FILES, ['task.md', 'implementation_plan.md']);
 });
 
-test('normalizeTargetPath collapses the ways one file can be spelled', () => {
-  for (const spelling of ['task.md', './task.md', 'a/../task.md', 'a/b/../../task.md']) {
-    assert.equal(normalizeTargetPath(spelling), 'task.md', spelling);
+test('the design writers take no path, which is what makes them the mode scope', () => {
+  // The scope is the tool's, not a rule the policy enforces: a writer that cannot name a
+  // file cannot name the wrong one, so the generic pair is a different family.
+  assert.deepEqual(DESIGN_WRITER_TOOLS, ['write_plan_md', 'edit_plan_md']);
+  for (const name of DESIGN_WRITER_TOOLS) {
+    assert.ok(WRITER_TOOLS.includes(name), `${name} is a writer`);
+    assert.ok(!SCOPED_WRITER_TOOLS.includes(name), `${name} names no target`);
+    assert.ok(!READ_ONLY_TOOLS.includes(name), `${name} is not read-only`);
   }
-  assert.equal(normalizeTargetPath('/task.md'), 'task.md');
-  assert.equal(normalizeTargetPath('sub\\task.md'), 'sub/task.md');
-  assert.equal(normalizeTargetPath('  task.md  '), 'task.md');
-  // Anything that walks out of the project is never a writable target.
-  assert.equal(normalizeTargetPath('../task.md'), '');
-  assert.equal(normalizeTargetPath('a/../../task.md'), '');
-  assert.equal(normalizeTargetPath(''), '');
-  assert.equal(isDesignWritable('./agent/sessions/s1/implementation_plan.md'), true);
-  assert.equal(isDesignWritable('agent/sessions/s1/task.md'), true);
-  assert.equal(isDesignWritable('./implementation_plan.md'), false, 'the root is not a session');
-  assert.equal(isDesignWritable('src/task.md'), false);
+  // The generic writers touch any file, so they are the work-only family.
+  assert.deepEqual(SCOPED_WRITER_TOOLS, ['write_file', 'edit_file']);
 });
 
 test('Chat is read-only: every writer is refused and every reader is allowed', () => {
@@ -86,34 +89,31 @@ test('Chat is read-only: every writer is refused and every reader is allowed', (
   assert.equal(refusalForMode(MODES.CHAT, call('update_task')).mode, 'chat');
 });
 
-test('Design writes the two tracking files and nothing else', () => {
-  for (const name of [...READ_ONLY_TOOLS, ...TRACKING_TOOLS]) {
+test('Design writes its own two documents through its own writers, and nothing else', () => {
+  for (const name of [...READ_ONLY_TOOLS, ...TRACKING_TOOLS, ...DESIGN_WRITER_TOOLS]) {
     assert.equal(refusalForMode(MODES.DESIGN, call(name)), null, name);
   }
-  // A session writes its own pair where they live, under agent/sessions/<id>/ — and the
-  // project root is not one of those places, so a root `task.md` is refused.
-  for (const path of [
-    'agent/sessions/2026-02-14T10-30-00-000Z/task.md',
-    './agent/sessions/s1/implementation_plan.md',
-  ]) {
-    assert.equal(refusalForMode(MODES.DESIGN, call('write_file', { path })), null, path);
-  }
-  // But only there: one folder deep, only the two names, and no walking back out.
-  for (const path of [
-    'task.md',
-    './implementation_plan.md',
-    'agent/sessions/task.md',
-    'agent/sessions/a/b/task.md',
-    'agent/sessions/s1/notes.md',
-    'agent/sessions/s1/../task.md',
-  ]) {
-    assert.ok(refusalForMode(MODES.DESIGN, call('write_file', { path })), path);
-  }
-  assert.equal(refusalForMode(MODES.DESIGN, call('edit_file', { path: './agent/sessions/s1/task.md' })), null);
 
+  // The generic writers are refused in Design whatever path they name: the mode has its
+  // own tools for the two documents, so a path check is no longer the rule.
+  for (const name of SCOPED_WRITER_TOOLS) {
+    for (const path of [
+      'app/tui.js',
+      'task.md',
+      'agent/sessions/s1/task.md',
+      'agent/sessions/s1/implementation_plan.md',
+    ]) {
+      const refusal = refusalForMode(MODES.DESIGN, call(name, { path }));
+      assert.equal(refusal.code, TOOL_GUARD_REFUSAL, `${name} ${path}`);
+      assert.equal(refusal.mode, 'design');
+      assert.match(refusal.reason, /write_plan_md \/ edit_plan_md/);
+    }
+    // A writer with no path at all is refused for the same reason.
+    assert.match(refusalForMode(MODES.DESIGN, call(name)).reason, /unnamed target/);
+  }
+
+  // The refusal names the source it was aimed at, so the model can correct itself.
   const source = refusalForMode(MODES.DESIGN, call('write_file', { path: 'app/tui.js' }));
-  assert.equal(source.code, TOOL_GUARD_REFUSAL);
-  assert.equal(source.mode, 'design');
   assert.match(source.reason, /task\.md and implementation_plan\.md/);
   assert.match(source.reason, /app\/tui\.js/);
 
@@ -123,8 +123,10 @@ test('Design writes the two tracking files and nothing else', () => {
     assert.equal(shell.mode, 'design', name);
     assert.match(shell.reason, /shell cannot be scoped/);
   }
-  // A scoped writer with no path is refused too, and the reason says so.
-  assert.match(refusalForMode(MODES.DESIGN, call('write_file')).reason, /unnamed target/);
+  // And a delete is refused: a design session authors documents, it does not destroy them.
+  const deletion = refusalForMode(MODES.DESIGN, call('delete_file', { path: 'task.md' }));
+  assert.equal(deletion.mode, 'design');
+  assert.match(deletion.reason, /removes nothing/);
 });
 
 test('Work is unrestricted, and an unknown mode falls back to the read-only rule', () => {
@@ -143,12 +145,18 @@ test('toolsForMode narrows the list the provider is offered', () => {
   assert.notEqual(work, ALL);
 
   assert.deepEqual(names(toolsForMode(MODES.CHAT, ALL)), [...READ_ONLY_TOOLS]);
-  // Design keeps the scoped writers: the gate is what keeps them on the tracking
-  // files, and hiding `write_file` from the mode that writes `task.md` would be wrong.
-  // A shell is offered in neither, so it is not even advertised where it is refused.
+  // Design is offered its own path-free writers instead of the generic pair, so the mode
+  // is never invited to name a target it would be refused for. A shell is offered in
+  // neither mode, so it is not even advertised where it is refused.
   assert.deepEqual(names(toolsForMode(MODES.DESIGN, ALL)), [
-    ...READ_ONLY_TOOLS, ...TRACKING_TOOLS, ...SCOPED_WRITER_TOOLS,
+    ...READ_ONLY_TOOLS, ...TRACKING_TOOLS, ...DESIGN_WRITER_TOOLS,
   ]);
+  // The tools the mode may not use are *absent* from the list, not merely refused: the
+  // whole point is that they cost no tokens where they cannot be called.
+  for (const name of [...SCOPED_WRITER_TOOLS, ...SHELL_TOOLS, ...DESTRUCTIVE_TOOLS]) {
+    assert.ok(!names(toolsForMode(MODES.DESIGN, ALL)).includes(name), `${name} is not advertised in Design`);
+    assert.ok(!names(toolsForMode(MODES.CHAT, ALL)).includes(name), `${name} is not advertised in Chat`);
+  }
   // Junk is Chat, and a missing list is not a crash.
   assert.deepEqual(names(toolsForMode('nonsense', ALL)), [...READ_ONLY_TOOLS]);
   assert.deepEqual(toolsForMode(MODES.WORK, null), []);
@@ -159,10 +167,14 @@ test('gateForMode reads the live mode, so a Tab mid-turn bites the next call', (
   const gate = gateForMode({ getMode: () => ({ mode: mode.mode, work: mode.work }) });
 
   assert.equal(gate(call('write_file', { path: 'app/tui.js' })).mode, 'chat');
+  assert.equal(gate(call('write_plan_md', { file: 'plan' })).mode, 'chat');
 
   mode.setMode(MODES.DESIGN);
-  assert.equal(gate(call('write_file', { path: 'app/tui.js' })).mode, 'design');
-  assert.equal(gate(call('write_file', { path: 'agent/sessions/s1/task.md' })), null);
+  // In Design the generic writer is refused even for the session's own file...
+  assert.equal(gate(call('write_file', { path: 'agent/sessions/s1/task.md' })).mode, 'design');
+  // ...while the mode's own writer is allowed, because it names no path at all.
+  assert.equal(gate(call('write_plan_md', { file: 'task' })), null);
+  assert.equal(gate(call('edit_plan_md', { file: 'plan' })), null);
 
   mode.setWork(true);
   assert.equal(gate(call('write_file', { path: 'app/tui.js' })), null);
@@ -226,4 +238,90 @@ test('a Chat turn advertises the read-only list and refuses the write the model 
   assert.match(toolChunk.content, /"tool": "write_file"/, 'the refusal names the tool');
   assert.match(toolChunk.content, /"guidance":/, 'the model is told how to recover');
   assert.match(toolChunk.content, /strictly read-only/);
+});
+
+test('a Design turn is offered its own writers, and a generic write is still refused', async () => {
+  const mode = createSessionMode({ mode: MODES.DESIGN });
+  const invoked = [];
+  const toolFunctions = {
+    write_plan_md: async () => { invoked.push('write_plan_md'); return JSON.stringify({ status: 'success' }); },
+    write_file: async () => { invoked.push('write_file'); return 'written'; },
+  };
+  const tools = [
+    { type: 'function', function: { name: 'read_file', parameters: {} } },
+    { type: 'function', function: { name: 'write_plan_md', parameters: {} } },
+    { type: 'function', function: { name: 'write_file', parameters: {} } },
+  ];
+
+  const advertised = [];
+  const callModel = async (messages, advertisedTools) => {
+    advertised.push(advertisedTools.map((t) => t.function.name));
+    if (advertised.length > 1) return { message: { role: 'assistant', content: 'Noted.' } };
+    // A model naming the generic writer anyway — an older prompt, or a stale habit.
+    return {
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'write_file', arguments: JSON.stringify({ path: 'agent/sessions/s1/task.md', intent: 'author it' }) },
+        }],
+      },
+    };
+  };
+
+  const manager = new ConversationManager(toolFunctions, () => toolsForMode(mode.mode, tools), () => null, {
+    log: () => {},
+    callModel,
+    toolGate: gateForMode({ getMode: () => ({ mode: mode.mode, work: mode.work }) }),
+  });
+
+  await manager.processInput('let us write the backlog for this');
+
+  assert.deepEqual(advertised[0], ['read_file', 'write_plan_md'], 'Design is offered its own writer, not the generic one');
+  assert.deepEqual(invoked, [], 'the generic write never reached its tool');
+  const toolChunk = manager.chunks.find((chunk) => chunk.role === 'tool');
+  assert.match(toolChunk.content, /"mode": "design"/);
+  assert.match(toolChunk.content, /write_plan_md \/ edit_plan_md/);
+});
+
+test('the always-sent prompt never explains the mode, which is implicit in the tool list', () => {
+  // `config/prompt.md` travels with *every* call, in every mode, so a sentence about
+  // "in a design session…" is an instruction about a state the model cannot observe: it
+  // would be wrong in two of the three modes and the model would have to ignore it. The
+  // mode is implicit in the list `toolsForMode()` hands over, and anything conditional
+  // belongs in the refusal the model receives or in the description of the tool it is
+  // offered — never in prose it reads when the condition does not hold.
+  // The prompt legitimately uses some of these words for other things ("a design smell"
+  // in the file-size rule), so the guard is on the *phrasings* that talk about the mode:
+  // naming a session's mode, a mode by name as a state, or the gate's own code.
+  for (const phrasing of [
+    /\bdesign (?:mode|session)\b/i,
+    /\bchat (?:mode|session)\b/i,
+    /\bsession'?s? mode\b/i,
+    /\bthe mode\b/i,
+    /work:on/i,
+    /work lock/i,
+    /TOOL_REFUSED_BY_MODE/,
+  ]) {
+    assert.doesNotMatch(prompt, phrasing, `the prompt must not explain ${phrasing}`);
+  }
+
+  // The three modes are still the ones the policy knows — the rule is about the prompt,
+  // not about forgetting the modes exist.
+  assert.deepEqual([...MODE_ORDER], ['chat', 'design', 'work']);
+});
+
+test('the tracking writers are described by what they do, not by when they are offered', () => {
+  // The same rule, at the one place it is easiest to get wrong: the two design-mode
+  // writers are named in the prompt, so they must be described by their behaviour —
+  // they author the session's pair and take no path — and never as "the design session's
+  // tools", which is a condition the model cannot check.
+  const section = prompt.slice(prompt.indexOf('**write_plan_md**'), prompt.indexOf('A write or a patch'));
+  assert.ok(section.length > 0, 'the prompt still names the two tracking writers');
+  assert.match(section, /no `path` argument at all/i, 'it says what makes them different');
+  assert.match(section, /`"task"` or `"plan"`/, 'and how the call names the document');
+  assert.doesNotMatch(section, /\bdesign\b/i, 'but never as the tools of a mode');
+  assert.doesNotMatch(section, /\bchat\b/i);
 });

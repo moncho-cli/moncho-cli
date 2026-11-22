@@ -146,16 +146,28 @@ The checklist is not a summary written after the work: it is the record of what 
 conversation decided. A discussion that reaches an agreement and ends without an item
 on `task.md` loses that agreement, because the transcript is then the only place it
 ever lived. A decision therefore becomes an item **when it is agreed**: a `design`
-session authors the draft with `write_file` at the path `update_task` reported
-(normalised into the canonical document, see below), and a `work` session starts the item
+session authors the draft with its own `write_plan_md` (which takes no path and normalises
+the draft into the canonical document, see below), and a `work` session starts the item
 with `update_task` (`action: "start"` plus the `steps` just agreed). The prompt states the
 rule (`prompt.md`, section 8) because the model is the one that has to follow it.
 
 ## Who may author them
 
-The two files are **tool-owned**. `write_file` and `patch_file` name a target, so
-`utils/tracking-fence.js` decides what happens when that target is one of them, and the two
-tools answer differently because the operations differ in kind:
+The two files are **tool-owned**. `update_task` owns the loop in every mode, and which
+*other* writer may touch the pair depends on the mode (`docs/interface/modes`):
+
+- in **`design`**, the mode's own `write_plan_md` / `edit_plan_md`
+  (`utils/tracking-draft.js`). They take **no path**: the call names only which of the two
+  documents it means (`"task"` or `"plan"`), and the location comes from
+  `utils/tracking-store.js#trackingPaths()`, so a design session cannot point them
+  anywhere else. Authoring is a draft that is **re-rendered** into the canonical document
+  (`canonicalised: true`), and an edit is re-canonicalised after it applies, so a design
+  session can never leave a malformed file behind;
+- in **`work`**, the generic `write_file` / `edit_file`, whose target is a path argument
+  and therefore has to be fenced.
+
+The generic writers are the ones `utils/tracking-fence.js` decides about, and the two
+answer differently because the operations differ in kind:
 
 - **`write_file` re-renders.** Handing it a checklist is a legitimate way to author one —
   a `design` session has no `add` action to grow a list from — so the content is accepted
@@ -177,6 +189,10 @@ The comparison is on the file **name** for the two editing writers, so the fence
 the session copies exactly like a stray root file and needs no upkeep when the folder
 policy changes. The *location* rule is the stricter, writer-specific half: only
 `write_file` can create a file, so only `write_file` asks where it would land.
+
+The mode's own writers need none of that machinery, and that is the point of having them:
+a tool with no `path` argument has no location to check, so the fence answers for the
+generic pair a `work` session may call and for nothing a `design` session can reach.
 
 ## The item list and the plan steps
 
@@ -235,6 +251,8 @@ policy changes. The *location* rule is the stricter, writer-specific half: only
 - Implementation: `tools/update_task.js`, `utils/tracking-store.js`,
   `utils/tracking-format.js`, `utils/tracking-fence.js`, `utils/plan-file.js`,
   `utils/file-io.js`, `utils/host.js`, `utils/session-store.js`, `config/constants.js`
+- The design mode's own writers: `tools/write_plan_md.js`, `tools/edit_plan_md.js`,
+  over the shared half in `utils/tracking-draft.js`
 - The intent modes that scope these writers: `docs/interface/modes`
 - The system prompt that teaches the template: `prompt.md` (section 8)
 - Where a session and its folder live: `docs/runtime/session-store`

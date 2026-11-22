@@ -30,12 +30,16 @@ nothing it cannot describe.
   *no tool touches the project tree*, never "nothing lands on disk".
 - `design` may write **only** the two tracking files, `task.md` and
   `implementation_plan.md`: it is the mode that turns a discussion into a backlog,
-  never the mode that turns the backlog into code.
+  never the mode that turns the backlog into code. It writes them through its **own**
+  two tools, `write_plan_md` / `edit_plan_md`, which take **no path at all** — see
+  *Design writes through tools that name no path* below.
 - Those two files live **only in the session folder** (`agent/sessions/<id>/`, see
-  `docs/agent/task-tracking`), so `design` may write them there and nowhere else — one
-  folder deep, and only under those two names. The project root is not a place either
-  file may appear: a checklist belongs to a conversation, so `write_file` refuses a root
-  `task.md` (`utils/tracking-fence.js#trackingLocationRefusal`).
+  `docs/agent/task-tracking`), so `design` may write them there and nowhere else. That is
+  a property of the tools rather than a check the policy performs: the location comes
+  from `utils/tracking-store.js#trackingPaths()`, and `write_plan_md` has no argument
+  through which another file could be named. The project root is not a place either file
+  may appear, which `utils/tracking-fence.js#trackingLocationRefusal` still enforces for
+  the generic `write_file` a `work` session may call.
 - `work` executes the backlog: talk the work through and the agent acts on it. The
   `work:on` **lock** is an optional extra, not how a session normally works — see
   *The work lock* below.
@@ -78,12 +82,69 @@ gate read the live session mode, so a `Tab` mid-turn tightens the very next call
   known once the call arrives, and unlike a write it cannot be corrected by writing
   again — so it never gets the two-file exception, and `design` refuses it exactly
   like the shell family.
-- `design` writes its two files through `write_file` / `edit_file`, whose target is
-  checked after `normalizeTargetPath()`: `./task.md`, `/task.md` and `a/../task.md`
-  are the same file, and a path that walks out of the project is never writable.
-- A per-session target is accepted only in its exact shape,
-  `agent/sessions/<id>/task.md` (or `…/implementation_plan.md`): the folder and the
-  file name are both fixed, and no deeper nesting is writable.
+- `design` writes its two files through `write_plan_md` / `edit_plan_md`, which take no
+  `path` at all: the call names only *which* of the pair it means (`"task"` or `"plan"`),
+  and `utils/tracking-store.js#trackingPaths()` answers where that is. A per-session
+  target is therefore not something the policy has to accept or refuse — a tool that
+  cannot name a file cannot name the wrong one, which is the whole reason the mode got
+  its own writers. The generic `write_file` / `edit_file` are `work`-only: they touch
+  any file, so a mode that owns two documents has no use for them, and offering them
+  would re-open the path question the dedicated pair exists to close.
+
+### Design writes through tools that name no path
+
+The two tools a `design` session authors its documents with are
+`DESIGN_WRITER_TOOLS` — `write_plan_md` and `edit_plan_md`, implemented over one shared
+half in `utils/tracking-draft.js`. They are the *same two operations* the generic pair
+performs, minus the argument that made them dangerous:
+
+| operation | generic (work) | design |
+| --------- | -------------- | ------ |
+| author a document from a draft | `write_file` | `write_plan_md` |
+| change one by literal search/replace | `edit_file` | `edit_plan_md` |
+
+The decision is worth stating because it replaced a weaker one. `design` used to be
+offered the generic writers, and the policy policed their `path` against
+`agent/sessions/<id>/task.md` and `…/implementation_plan.md`. That is a rule the model is
+asked to respect and the gate has to enforce, and it can only ever be as good as the path
+normalisation behind it. A writer that takes **no** `path` has nothing to police: the
+location is read from `utils/tracking-store.js#trackingPaths()`, the one place that
+decides where a session's pair lives, so the scope is a property of the tool rather than a
+check it performs.
+
+The other half of the same decision is the list. The backlog asked for the tools the mode
+may not call to be **removed from the array sent to the provider**, not merely refused when
+named — a tool the mode cannot use still costs tokens in every request. `toolsForMode()`
+is where that happens: `work` gets the whole list, `chat` the read-only set, and `design`
+the read-only set plus `update_task` and its two writers. The generic writers, the shells
+and `delete_file` are absent from a `design` list and absent from a `chat` one, so a mode
+is never *invited* to call what it may not use; the gate is what still answers a model that
+names one from an older prompt.
+
+### The prompt never explains the mode
+
+`config/prompt.md` is the system prompt of **every** call, in every mode, so it must say
+nothing about which mode the session is in. The mode is *implicit in the tool list*: the
+model discovers what it may do by what it is offered, and a sentence about "in a design
+session…" is an instruction about a state the model cannot observe and was never asked to
+reason about. It would also be wrong half the time — the same text is sent under all three
+modes — so the model would be told to hold a distinction it has no way to check and would
+have to ignore.
+
+The rule follows from what the prompt is: a document that travels with **every** request.
+Anything conditional on the mode belongs in the refusal the model actually receives
+(`TOOL_REFUSED_BY_MODE`, `docs/agent/tool-refusal`) or in the tool description of the tool
+that *is* offered — never in prose the model reads when the condition does not hold. This
+is the same reason the prompt names no session path (`docs/agent/session-context`): a fact
+the model cannot act on at the moment it reads it is text that costs tokens and teaches
+nothing.
+
+Two consequences worth naming, because both were bugs:
+
+- the tracking writers are described by **what they do** (`write_plan_md` / `edit_plan_md`
+  author the session's pair and take no path), never by *when* they are offered; and
+- the refusal rule says what the model can act on — a refused call is policy, so say what
+  you would need instead — without naming the mode or the gate that produced it.
 
 Anything that is not one of the three names is `chat`. `normalizeMode()` is the single
 place that says so, so a corrupt session file, an environment variable or a typo falls
@@ -216,9 +277,12 @@ not the plan.
 - The key that walks the ring and the route a refusal takes: `app/tui-keys.js`,
   `app/mode-controller.js`, `docs/interface/notice-overlay`
 - The policy table itself: `app/mode-policy.js`
+- The two writers `design` authors its documents with: `tools/write_plan_md.js`,
+  `tools/edit_plan_md.js`, over the shared half in `utils/tracking-draft.js`
 - The gate every call passes: `app/tool-guard.js`, `docs/agent/tool-multicall`
 - Commands that move the mode: `docs/interface/commands`
 - The session file: `docs/runtime/session-store`
 - Proof: `tests/session-mode.test.js`, `tests/session-mode-label.test.js`,
-  `tests/mode-controller.test.js`, `tests/mode-policy.test.js` and
+  `tests/mode-controller.test.js`, `tests/mode-policy.test.js`,
+  `tests/design-writers.test.js` and
   `tests/work-command.test.js`, `tests/work-drive.test.js`

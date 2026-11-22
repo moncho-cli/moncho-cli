@@ -42,7 +42,7 @@ subdivides the kind into families:
 | family | tools | colour | reads as |
 | ------ | ----- | ------ | -------- |
 | `read` | `read_file`, `blob`, `grep` | bright cyan | looking, nothing changed |
-| `write` | `write_file`, `edit_file`, `delete_file` | green | the tree changed |
+| `write` | `write_file`, `edit_file`, `delete_file`, `write_plan_md`, `edit_plan_md` | green | the tree changed |
 | `bash` | `run_bash`, `run_npm` | yellow | a process ran |
 | `other` | `update_task`, `compact_context`, anything unlisted | yellow | neither of the above |
 

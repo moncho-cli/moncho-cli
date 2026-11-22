@@ -33,6 +33,8 @@ test('each tool name maps to its operation family, and an unknown name to other'
     write_file: 'write',
     edit_file: 'write',
     delete_file: 'write',
+    write_plan_md: 'write',
+    edit_plan_md: 'write',
     run_bash: 'bash',
     run_npm: 'bash',
   });
@@ -68,6 +70,10 @@ test('toolColorFor resolves a tool name, a family name and junk', () => {
   assert.equal(toolColorFor('write_file'), 'green');
   assert.equal(toolColorFor('edit_file'), 'green');
   assert.equal(toolColorFor('delete_file'), 'green');
+  // The design mode's own writers are writers too: a document changed is a tree changed,
+  // so a reader sees them in the same green as any other write.
+  assert.equal(toolColorFor('write_plan_md'), 'green');
+  assert.equal(toolColorFor('edit_plan_md'), 'green');
   assert.equal(toolColorFor('run_bash'), 'yellow');
   assert.equal(toolColorFor('run_npm'), 'yellow');
   // A family name passes straight through, which is what the fallback path needs.
