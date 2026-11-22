@@ -14,6 +14,8 @@ summary: >
 code:
   - path: api/ollama.js
     symbols: [callOllama]
+  - path: api/provider-response.js
+    symbols: [normalizeUsage, normalizeResponse]
   - path: config/constants.js
     symbols: [BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, THINKING_FILE, detectProvider, describeModel, PROVIDER]
 tests:

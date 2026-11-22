@@ -1,5 +1,8 @@
 import { normalizeSkin, DEFAULT_SKIN, PALETTE_KEYS, PRESENTATION_KEYS } from '../utils/skins-store.js';
-import { BLESSED_COLORS, isColorName } from '../utils/color-names.js';
+import {
+  BLESSED_COLORS, BLESSED_BACKGROUNDS, isColorName, isBackgroundColorName,
+} from '../utils/color-names.js';
+import { BACKGROUND_KEYS } from '../utils/skins-store.js';
 /**
  * The **prompt** half of `/skins prompt` (`docs/interface/skins`): turning a
  * natural-language request ("a warm sunset, easier on the eyes") into a skin the
@@ -28,7 +31,7 @@ import { BLESSED_COLORS, isColorName } from '../utils/color-names.js';
 /** Every colour key a proposal may carry, palette first then tokens. */
 export const SKIN_COLOR_KEYS = Object.freeze([
   ...PALETTE_KEYS,
-  'border', 'brand', 'hint', 'selected', 'selectedFg',
+  'border', 'brand', 'hint', 'selected', 'selectedFg', 'userBg', 'assistantBg',
 ]);
 
 // The vocabulary a proposal may name: exactly the colours a blessed tag really paints
@@ -37,18 +40,66 @@ export const SKIN_COLOR_KEYS = Object.freeze([
 const COLOR_VOCABULARY = BLESSED_COLORS;
 
 /** The system text: what a skin is, and the exact shape of the answer. */
+/**
+ * The example object the system text shows, built from the real key lists so the wording can
+ * never drift from the store: a key the model is not told about is a key it can never move.
+ */
+function shapeExample() {
+  const palette = PALETTE_KEYS.map((key) => `"${key}":"<c>"`).join(',');
+  const tokens = ['border', 'brand', 'hint', 'selected', 'selectedFg', 'userBg', 'assistantBg']
+    .map((key) => `"${key}":"<c>"`).join(',');
+  return `{"name":"<slug>","palette":{${palette}},${tokens},"boldIntent":true,"boldTracking":true}`;
+}
+
+/**
+ * The one paragraph explaining what each group of keys actually paints, so the model's
+ * choice is informed rather than guessed at.
+ *
+ * It is spelled out because the omission had a cost: the prompt used to name only the eight
+ * row kinds and five look tokens, so the chrome keys (`frame`, `table`, `code`, `quote`,
+ * `bullet`, `heading`), the three tool families and the two prose **backgrounds** did not
+ * exist as far as the model was concerned. A request for "green background for user
+ * messages" then had no key to land on, so the model moved the nearest foreground and
+ * reported success while the band never changed — the reported bug.
+ */
+function keyGuide() {
+  return [
+    'The palette keys, and what each one paints:',
+    '  user, tool, intent, context, error, notice, tracking, refusal — one colour per kind of conversation row.',
+    '  frame, table, code, quote, bullet, heading — the chrome the renderer paints (a fence and tool delimiter, a table frame, inline code, a quote, a list bullet, a heading).',
+    '  toolRead, toolWrite, toolBash — the three tool families (looking, changing, running a command).',
+    'The tokens beside the palette:',
+    '  border, brand, hint — the modal border, the brand line and the input hint.',
+    '  selected, selectedFg — the band behind the highlighted slash-command row, and the text on it.',
+    '  userBg, assistantBg — the BACKGROUND band behind, respectively, the user\'s echoed prompt and the model\'s prose.',
+    '  boldIntent, boldTracking — true or false.',
+    'A request for a BACKGROUND ("user messages on green", "the model prose in blue") is',
+    'userBg or assistantBg and is a background colour. Changing `user` or `intent` instead',
+    'changes only the text colour and leaves the band as it was, which is not what was asked.',
+  ].join('\n');
+}
+
+/** The rules that apply to both prompts. */
+function commonRules() {
+  return [
+    `Every "<c>" is a blessed colour name, one of: ${COLOR_VOCABULARY.join(', ')}.`,
+    `For the three BACKGROUND tokens (selected, userBg, assistantBg) use one of: ${BLESSED_BACKGROUNDS.join(', ')}.`,
+    'Never use a hex code or an rgb() value: a character-cell terminal addresses named colours.',
+    'Keep the parts of the conversation distinguishable: the user echo, the tool rows, the',
+    'intent, the context notices, the errors, the tracking milestones and the refusals must',
+    'not share a colour.',
+  ];
+}
+
 export function skinSystemPrompt() {
   return [
     'You design terminal colour skins for Moncho, a coding agent.',
     'Answer with ONE JSON object and nothing else. No prose, no code fence.',
     'Shape:',
-    '{"name":"<slug>","palette":{"user":"<c>","tool":"<c>","intent":"<c>","context":"<c>","error":"<c>","notice":"<c>","tracking":"<c>","refusal":"<c>"},',
-    '"border":"<c>","brand":"<c>","hint":"<c>","selected":"<c>","selectedFg":"<c>","boldIntent":true,"boldTracking":true}',
-    `Every "<c>" is a blessed colour name, one of: ${COLOR_VOCABULARY.join(', ')}.`,
-    'Never use a hex code or an rgb() value: a character-cell terminal addresses named colours.',
-    'Keep the parts of the conversation distinguishable: the user echo, tool rows, the intent,',
-    'context notices, errors, tracking milestones and refusals must not share a colour.',
-    'Values you omit keep their current colour.',
+    shapeExample(),
+    keyGuide(),
+    ...commonRules(),
+    'A value you omit keeps the colour it has now.',
   ].join('\n');
 }
 
@@ -66,13 +117,13 @@ export function skinCustomizeSystemPrompt() {
     'Answer with ONE JSON object and nothing else. No prose, no code fence.',
     'Do NOT include a name: the skin being adjusted keeps its name.',
     'Shape:',
-    '{"palette":{"intent":"<c>","user":"<c>"},"border":"<c>","boldIntent":true}',
-    `Every "<c>" is a blessed colour name, one of: ${COLOR_VOCABULARY.join(', ')}.`,
-    'Never use a hex code or an rgb() value: a character-cell terminal addresses named colours.',
-    'Return only the keys the request asks you to change; omit everything else so it keeps',
-    'its current colour. Keep the parts of the conversation distinguishable: the user echo,',
-    'the intent, the context notices, the tool rows, the tracking milestones and the',
-    'refusals must not share a colour.',
+    '{"palette":{"<palette-key>":"<c>"},"<token>":"<c>","boldIntent":true}',
+    keyGuide(),
+    ...commonRules(),
+    'Return ONLY the keys the request asks you to change. Omit every other key, and the',
+    'whole palette if the request does not touch a row colour: a key you omit keeps the',
+    'colour it has now, which is what makes a small request a small change. Do not send the',
+    'whole palette back unless the request asks for the whole look to change.',
   ].join('\n');
 }
 
@@ -155,8 +206,19 @@ export function validateProposal(proposal) {
     }
   }
 
-  for (const key of ['border', 'brand', 'hint', 'selected', 'selectedFg']) {
+  // The colour tokens, the two prose bands (`userBg`/`assistantBg`) included: an answer that
+  // names a band is a real answer now, so it is checked rather than refused as unknown.
+  for (const key of ['border', 'brand', 'hint', 'selected', 'selectedFg', 'userBg', 'assistantBg']) {
     if (proposal[key] === undefined) continue;
+    // A background token goes through the background vocabulary, which holds the same names
+    // as the foreground one: blessed paints a bright background as well as a bright
+    // foreground (`utils/color-names.js#BLESSED_BACKGROUNDS`). A name it cannot paint at
+    // all is refused by name, so the modal shows the reason beside the request.
+    if (BACKGROUND_KEYS.includes(key)) {
+      if (isBackgroundColorName(proposal[key])) continue;
+      problems.push(`${key}=${JSON.stringify(proposal[key])} is not a colour this terminal can paint as a background.`);
+      continue;
+    }
     if (isColorName(proposal[key])) continue;
     problems.push(`${key}=${JSON.stringify(proposal[key])} is not a colour this terminal can paint.`);
   }
@@ -186,7 +248,7 @@ export function mergeProposal(proposal, { base = DEFAULT_SKIN } = {}) {
     if (given[key] !== undefined) palette[key] = given[key];
   }
   const merged = { ...floor, ...raw, name: raw.name ?? floor.name, palette };
-  for (const key of ['border', 'brand', 'hint', 'selected', 'selectedFg']) {
+  for (const key of ['border', 'brand', 'hint', 'selected', 'selectedFg', 'userBg', 'assistantBg']) {
     if (raw[key] === undefined) merged[key] = floor[key];
   }
   for (const key of ['boldIntent', 'boldTracking']) {

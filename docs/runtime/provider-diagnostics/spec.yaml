@@ -1,0 +1,48 @@
+id: runtime/provider-diagnostics
+domain: runtime
+title: The diagnosis of a provider call that failed — the status, the provider's reason and the tool-call pairing
+status: active
+summary: >
+  A provider refuses a request because of its shape, and says why in its own body; the
+  harness used to throw that body away, leaving an operator with "HTTP error! status:
+  400" and nothing to act on. Every non-200 is now recorded in the operational log
+  before the error is raised: the status, the provider's own reason (extracted from
+  every body shape in the wild — the JSON error.message of an OpenAI-compatible
+  provider, Ollama's plain-string error, a bare text body), the shape of the request
+  that was sent (message and role counts, content bytes, tool count, streaming) and the
+  tool-call pairing analysis. The pairing is the finding this exists for: a provider
+  refuses a history whose tool messages no longer answer the calls above them, and
+  such a history keeps being refused while a new session works — so the record names
+  the call ids that lost their result and the results that were orphaned. The
+  conversation's words are never copied into the record (the log is not a second
+  transcript); only the provider's error body is quoted, and it is read within a cap.
+  The error raised carries the status and the provider's reason. Nothing in the path can
+  throw: an unreadable body is reported as unreadable, a junk history is an empty
+  history, and the log write itself never throws.
+code:
+  - path: api/provider-analysis.js
+    symbols: [MAX_ERROR_BODY_CHARS, MAX_REASON_CHARS, extractProviderReason, analyzeToolPairing, describeRequestShape, buildProviderDiagnostic, formatProviderDiagnostic]
+  - path: api/provider-diagnostics.js
+    symbols: [MAX_ERROR_BODY_CHARS, readErrorBody, ProviderHttpError, recordProviderFailure]
+  - path: api/provider-response.js
+    symbols: [normalizeUsage, normalizeResponse]
+  - path: api/ollama.js
+    symbols: [callOllama, normalizeUsage]
+  - path: utils/logger.js
+    symbols: [logEvent]
+  - path: utils/host.js
+    symbols: [registerLogger, clearLogger]
+tests:
+  - path: tests/provider-diagnostics.test.js
+    cases:
+      - "the provider reason is read from every body shape in the wild"
+      - "the tool-call pairing names the calls that lost their result"
+      - "the request is described by its shape, never by its words"
+      - "the diagnostic carries the status, the reason and the pairing"
+      - "a non-200 is recorded in the log with the provider reason and the pairing"
+      - "the last attempt is an error, and an unreadable body never throws"
+      - "an error body is read within its cap, and a missing one is empty"
+  - path: tests/ollama-provider.test.js
+    cases:
+      - "a retried attempt is reported through onRetry, not the console"
+      - "a throwing onRetry hook never costs the retry"

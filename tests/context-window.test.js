@@ -14,7 +14,7 @@ import {
   formatTokenCount,
   formatUsage
 } from '../utils/tokens.js';
-import { SUMMARIZER_SYSTEM_PROMPT, buildSummaryPrompt, splitByTokenBudget, compactChunks, buildSummaryChunk, lastUserChunk, describeCompactionSplit } from '../utils/compaction.js';import { COMPACTION_SUMMARY_PREFIX, COMPACTION_OLD_RATIO, COMPACTION_KEEP_RATIO } from '../config/constants.js';
+import { SUMMARIZER_SYSTEM_PROMPT, buildSummaryPrompt, splitByTokenBudget, compactChunks, buildSummaryChunk, lastUserChunk, describeCompactionSplit, alignSplitToToolBatches } from '../utils/compaction.js';import { COMPACTION_SUMMARY_PREFIX, COMPACTION_OLD_RATIO, COMPACTION_KEEP_RATIO } from '../config/constants.js';
 /**
  * The context machinery (docs/context/compaction): the configurable-ratio
  * compaction, the live window and the compact_context tool.
@@ -88,6 +88,51 @@ test('a window of one chunk is never compacted away', () => {
   const split = splitByTokenBudget([chunk('only')]);
   assert.equal(split.older.length, 0);
   assert.equal(split.kept.length, 1);
+});
+
+test('the split never cuts a tool batch in half', () => {
+  // A window holding one assistant tool-call message and the two results answering
+  // it, followed by the reply. The boundary the token budget picks can land between
+  // the call and its results — and a kept tail that starts with a `tool` message is
+  // refused by the provider with a 400, forever, because the history is carried from
+  // call to call. A new session works; this one is stuck. That is the bug.
+  const chunks = [
+    chunk('the original question', 'user'),
+    { role: 'assistant', content: null, tool_calls: [{ id: 'call_0' }, { id: 'call_1' }] },
+    { role: 'tool', tool_call_id: 'call_0', content: 'result zero' },
+    { role: 'tool', tool_call_id: 'call_1', content: 'result one' },
+    chunk('the answer', 'assistant'),
+  ];
+
+  // The boundary is forced onto the cut, and the alignment moves it off it: the whole
+  // batch is kept, so the kept tail starts on the call and carries its results.
+  const cut = 2;
+  assert.equal(chunks[cut].role, 'tool', 'the boundary the budget picks is inside the batch');
+  const aligned = alignSplitToToolBatches(chunks, cut);
+  assert.equal(aligned, 1, 'the boundary moves up to where the batch starts');
+  assert.equal(chunks[aligned].role, 'assistant');
+  assert.deepEqual(chunks[aligned].tool_calls.map((call) => call.id), ['call_0', 'call_1']);
+
+  // And the split as a whole never leaves a kept tail that starts with a result.
+  for (const size of [1, 2, 3, 5, 10, 40]) {
+    const sized = [
+      chunk('x'.repeat(size * 100), 'user'),
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call_0' }] },
+      { role: 'tool', tool_call_id: 'call_0', content: 'result zero' },
+      chunk('the answer', 'assistant'),
+    ];
+    const { kept } = splitByTokenBudget(sized);
+    assert.ok(kept.length > 0, `the kept tail must never be empty (size ${size})`);
+    assert.notEqual(kept[0]?.role, 'tool', `a kept tail must never start with a result (size ${size})`);
+    const calls = kept.filter((c) => c.role === 'assistant' && Array.isArray(c.tool_calls));
+    const results = kept.filter((c) => c.role === 'tool');
+    if (calls.length > 0) {
+      const ids = calls.flatMap((c) => c.tool_calls.map((call) => call.id));
+      for (const result of results) {
+        assert.ok(ids.includes(result.tool_call_id), 'every kept result answers a kept call');
+      }
+    }
+  }
 });
 
 test('compactChunks replaces the old block with one summary chunk and keeps the tail verbatim', async () => {

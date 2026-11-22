@@ -282,6 +282,28 @@ export const TOO_MANY_TOOL_CALLS = "TOO_MANY_TOOL_CALLS";
  * turn: after this many refusals the batch runs and the skip is announced.
  */
 export const APPROACH_MAX_REFUSALS = toPositiveInt(process.env.APPROACH_MAX_REFUSALS, 2);
+
+// ---------------------------------------------------------------------------
+// File size budget (task-backlog: "while we chose to develop with a hard limit
+// of 300 lines, this must be configurable, ......")
+// ---------------------------------------------------------------------------
+/**
+ * The default file size budget, in lines.
+ *
+ * The project chose 300 lines when it was small; 600 fits it now. The number is a
+ * **default**, not a constant: it is the fallback for a configuration that is absent
+ * or unusable, and it is what the agent prompt says when nobody configured otherwise.
+ */
+export const FILE_LINE_LIMIT_DEFAULT = 600;
+/**
+ * How many lines a file may hold before it must be split along its responsibilities.
+ *
+ * Configurable through `FILE_LINE_LIMIT`, because a limit that fits one moment of a
+ * project's life and not the next is a habit rather than a rule. The value is
+ * normalised by `utils/file-size-budget.js#normalizeFileLineLimit`, so a broken
+ * environment variable can never disable the rule or invert it.
+ */
+export const FILE_LINE_LIMIT = toPositiveInt(process.env.FILE_LINE_LIMIT, FILE_LINE_LIMIT_DEFAULT);
 /** The guidance a refused call carries, so the model can correct itself. */
 export const TOO_MANY_TOOL_CALLS_GUIDANCE =
   `Ask for at most ${MAX_PARALLEL_TOOL_CALLS} tools at a time and wait for their results before the next batch.`;

@@ -33,6 +33,7 @@ specs:
   - agent/session-context
   - agent/project-discovery
   - agent/file-hint
+  - agent/file-size-budget
   - agent/line-paging
   - agent/project-rules
   - agent/web-fetch
@@ -64,6 +65,7 @@ specs:
   - interface/tracking-notice
   - interface/tracking-block
   - runtime/provider-calls
+  - runtime/provider-diagnostics
   - runtime/startup-wiring
   - runtime/session-store
   - runtime/conversation-log

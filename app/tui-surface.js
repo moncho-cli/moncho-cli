@@ -1,4 +1,6 @@
 import { createChooser } from './tui-modal.js';
+import { activePalette, activeTokens } from './theme.js';
+import { logEvent } from '../utils/logger.js';
 import { reloadConversation } from './session-replay.js';
 import { queueSurface } from './queue-bar.js';
 import { hintSurface } from './input-hint.js';
@@ -180,8 +182,18 @@ export function createTuiSurface({
       noticeBar?.paint?.();
       toastBar?.paint?.();
       slashBar?.paint?.();
-      view.repaintInPlace?.();
+      // The transcript is repainted **from the model**, not from a frozen frame: every
+      // stored row is re-coloured at paint time (`app/transcript-view.js#paintRecord`), so
+      // a skin reaches the rows already on screen and not only the chrome. This is the one
+      // call that proves it, so its effect (the number of rows repainted) is recorded — a
+      // "applied but nothing changed" report is answered by whether this ran at all.
+      const repainted = view.repaintInPlace?.();
       refresh?.();
+      logEvent('info', 'skins', 'theme repainted', {
+        transcript: repainted !== false,
+        rows: view.model?.lineRecords?.().length ?? null,
+        live: { palette: activePalette(), ...activeTokens() },
+      });
     },
     scrollBy,
     scrollPage,

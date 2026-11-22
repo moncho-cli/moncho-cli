@@ -120,8 +120,10 @@ means nothing and the file it names may not even exist.
 
 1. Read the spec for the capability you are changing before you touch the code. If there
    is none, that is the first thing to write.
-2. Change the code. Keep a module under 300 lines; past that, split it by
-   responsibility and keep the import path working.
+2. Change the code. Keep a module under the **configured file size budget**
+   (`FILE_LINE_LIMIT`, default 600 lines); past that, split it by responsibility and
+   keep the import path working. The number the agent is told is the same one, rendered
+   into `config/prompt.md` — change the variable, not the prose.
 3. Update the spec: the behaviour, and the `path#symbol` references if a symbol moved.
 4. Add or update the case in `tests/`, named after the capability.
 5. Run the suite in the container: `./start.sh exec npm test`. A failing case is a real

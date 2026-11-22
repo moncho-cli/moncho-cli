@@ -1,6 +1,9 @@
-import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, THINKING_FILE as THINKING_TARGET } from '../config/constants.js';
+import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, THINKING_FILE as THINKING_TARGET, FILE_LINE_LIMIT } from '../config/constants.js';
 import { logEvent } from '../utils/logger.js';
 import { resolveProjectPath } from '../utils/path-safety.js';
+import { recordProviderFailure } from './provider-diagnostics.js';
+import { normalizeResponse } from './provider-response.js';
+import { renderFileLineLimit, unresolvedPlaceholders } from '../utils/file-size-budget.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -31,7 +34,19 @@ async function loadSystemPrompt() {
   // instead of naming it a second time (Dockerfile.agent).
   const promptPath = path.join(__dirname, '..', 'config', 'prompt.md');
   try {
-    return fs.readFileSync(promptPath, 'utf-8').trim();
+    const raw = fs.readFileSync(promptPath, 'utf-8').trim();
+    // The file size budget is **configured** (`FILE_LINE_LIMIT`), and the prompt is
+    // where the model reads it — so the configured numbers are rendered into the
+    // prompt here. A placeholder that survived would tell the model nothing, so it
+    // is reported rather than shipped.
+    const prompt = renderFileLineLimit(raw, { limit: FILE_LINE_LIMIT });
+    const unresolved = unresolvedPlaceholders(prompt);
+    if (unresolved.length > 0) {
+      logEvent('error', 'provider', 'the agent prompt still carries an unrendered placeholder', {
+        placeholders: unresolved,
+      });
+    }
+    return prompt;
   } catch (error) {
     // The agent answers without its prompt from here on, which is exactly the kind
     // of silent degradation this log exists to make findable.
@@ -78,71 +93,10 @@ function buildBody(messages, tools, stream) {
   return body;
 }
 
-function normalizeToolCalls(toolCalls) {
-  if (!Array.isArray(toolCalls)) return undefined;
-  return toolCalls.map((tc, i) => ({
-    id: tc.id || `call_${i}`,
-    type: tc.type || "function",
-    function: {
-      name: tc.function?.name,
-      arguments:
-        typeof tc.function?.arguments === "string"
-          ? tc.function.arguments
-          : JSON.stringify(tc.function?.arguments ?? {}),
-    },
-  }));
-}
-
-/**
- * The token counters of one provider response, in one shape, or null.
- *
- * Providers spell usage differently — OpenAI-compatible APIs answer with
- * `usage: { prompt_tokens, completion_tokens, total_tokens }`, Ollama with the
- * flat `prompt_eval_count` / `eval_count` on the response root — so this is the
- * only place that knows both. Returning **null** for a provider that reports
- * nothing is deliberate: the accounting layer must be able to tell an exact
- * count from its own estimate (`utils/usage-stats.js`).
- */
-export function normalizeUsage(data) {
-  const usage = data?.usage || data?.message?.usage || null;
-  const prompt = usage?.prompt_tokens ?? data?.prompt_eval_count;
-  const completion = usage?.completion_tokens ?? data?.eval_count;
-  if (prompt == null && completion == null) return null;
-
-  const promptTokens = Number(prompt) || 0;
-  const completionTokens = Number(completion) || 0;
-  return {
-    promptTokens,
-    completionTokens,
-    totalTokens: Number(usage?.total_tokens) || promptTokens + completionTokens,
-  };
-}
-
-function normalizeResponse(data) {
-  const usage = normalizeUsage(data);
-  // Ollama shape: { message: { content, thinking, tool_calls } }
-  if (data && data.message) {
-    return {
-      message: {
-        content: data.message.content ?? "",
-        tool_calls: normalizeToolCalls(data.message.tool_calls),
-      },
-      usage,
-    };
-  }
-  // OpenAI-compatible shape: { choices: [ { message: { content, tool_calls } } ] }
-  const choice = data?.choices?.[0]?.message;
-  if (choice) {
-    return {
-      message: {
-        content: choice.content ?? "",
-        tool_calls: normalizeToolCalls(choice.tool_calls),
-      },
-      usage,
-    };
-  }
-  return { message: { content: "" }, usage };
-}
+// The response shapes are normalised in their own module (api/provider-response.js);
+// `normalizeUsage()` is re-exported here because it is the symbol the specs and the
+// accounting layer name.
+export { normalizeUsage } from './provider-response.js';
 
 /**
  * @param {object[]} messages
@@ -191,7 +145,21 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          // A non-200 is recorded before it is raised: the status alone never says why,
+          // so the log keeps the provider's own reason, the shape of the request that
+          // provoked it, and whether the tool calls in that history are still answered
+          // (api/provider-diagnostics.js). A streaming request is refused on exactly the
+          // same grounds, so both branches record the same record.
+          throw await recordProviderFailure({
+            response,
+            messages: ollamaMessages,
+            tools,
+            stream: isStreaming,
+            url: BASE_URL,
+            model: MODEL,
+            attempt,
+            maxRetries,
+          });
         }
 
         return normalizeResponse(await response.json());
@@ -205,7 +173,21 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          // A non-200 is recorded before it is raised: the status alone never says why,
+          // so the log keeps the provider's own reason, the shape of the request that
+          // provoked it, and whether the tool calls in that history are still answered
+          // (api/provider-diagnostics.js). A streaming request is refused on exactly the
+          // same grounds, so both branches record the same record.
+          throw await recordProviderFailure({
+            response,
+            messages: ollamaMessages,
+            tools,
+            stream: isStreaming,
+            url: BASE_URL,
+            model: MODEL,
+            attempt,
+            maxRetries,
+          });
         }
 
         const reader = response.body.getReader();

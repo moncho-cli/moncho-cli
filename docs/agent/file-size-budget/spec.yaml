@@ -1,0 +1,44 @@
+id: agent/file-size-budget
+domain: agent
+title: A configurable file size budget, rendered into the prompt the model reads
+status: active
+summary: >
+  The agent is told how large a file may be before it must be split, and that number is
+  configurable: the project chose a hard limit of 300 lines when it was small and 600
+  fits it now, so the budget lives in the environment (FILE_LINE_LIMIT, default 600)
+  and the code reads it from there. The value is normalised the way every other knob is
+  — a positive integer is used as it is, anything else falls back to the default, so a
+  broken environment variable can never disable the rule or invert it. The ceiling is
+  derived from the budget rather than configured separately (600 -> 900), because "split
+  when you get close" and "this is the point where it is refused" are different
+  instructions and a second variable could contradict the first. The rule is prose in the
+  agent prompt (config/prompt.md section 3.1), so the configured numbers are rendered
+  into it: the prompt carries the placeholders {{FILE_LINE_LIMIT}} and
+  {{FILE_LINE_CEILING}}, and api/ollama.js#loadSystemPrompt substitutes them before the
+  prompt reaches the provider, so the model always reads the budget that is actually in
+  force. A prompt with no placeholder is returned unchanged, every occurrence is
+  replaced, and a placeholder that survived the rendering is reported rather than
+  shipped — a prompt carrying a literal placeholder tells the model nothing. The prompt
+  file stays the one place the rule is written: the module substitutes numbers into it
+  and never restates the prose. The budget is instructive, not enforced: a file the
+  model wrote is a file the model wrote.
+code:
+  - path: utils/file-size-budget.js
+    symbols: [FILE_LINE_LIMIT_PLACEHOLDER, FILE_LINE_CEILING_PLACEHOLDER, FILE_LINE_PLACEHOLDERS, normalizeFileLineLimit, fileLineCeiling, fileLineNumbers, renderFileLineLimit, unresolvedPlaceholders]
+  - path: config/constants.js
+    symbols: [FILE_LINE_LIMIT_DEFAULT, FILE_LINE_LIMIT]
+  - path: api/ollama.js
+    symbols: [callOllama]
+  - path: config/prompt.md
+    symbols: []
+tests:
+  - path: tests/file-size-budget.test.js
+    cases:
+      - "the budget is normalised, and a broken value falls back to the default"
+      - "the ceiling is derived from the budget, never configured separately"
+      - "the prompt carries the configured budget and ceiling"
+      - "a prompt with no placeholder is returned unchanged"
+      - "every occurrence of a placeholder is replaced"
+      - "a placeholder that survived the rendering is reported"
+      - "the shipped prompt renders to the configured budget, and the limit is 600"
+      - "the provider sends the rendered prompt, not the placeholder"

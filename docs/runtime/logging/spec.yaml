@@ -37,6 +37,10 @@ code:
     symbols: [main]
   - path: api/ollama.js
     symbols: [callOllama, normalizeUsage]
+  - path: api/provider-diagnostics.js
+    symbols: [recordProviderFailure, ProviderHttpError, readErrorBody]
+  - path: api/provider-analysis.js
+    symbols: [analyzeToolPairing, buildProviderDiagnostic, formatProviderDiagnostic, extractProviderReason]
   - path: app/turn-runner.js
     symbols: [runTurn, isAbortFailure]
   - path: app/tool-batch.js

@@ -1,5 +1,24 @@
-import { isColorName } from '../utils/color-names.js';
-import { fgTag } from './paint-tags.js';
+import { isColorName, isBackgroundColorName } from '../utils/color-names.js';
+import { PROSE_BACKGROUNDS, ROLE_OF_BAND_TOKEN } from './band-palette.js';
+
+// The row painters (the intent, a tracking update, a refusal, a timestamp) live in
+// `app/theme-colors.js`: they are the *presentation* of one row rather than a value of the
+// palette. Re-exported here because this is the path every consumer and every spec reaches
+// for a live colour or tag through.
+export { colorizeIntent, colorizeTracking, colorizeRefusal, colorizeStamp } from './theme-colors.js';
+import {
+  activeSkinName, setSkinName, markSkinBootstrapped, isSkinBootstrapped,
+  clearSkinBootstrapped, restoreSkinName,
+} from './skin-identity.js';
+
+// The two prose backgrounds are the leaf module's live object (`app/band-palette.js`) and
+// the skin identity/bootstrap flag its own (`app/skin-identity.js`); both are re-exported
+// here because this is the one place the rest of the program reads live theme state from
+// (`app/theme.js` re-exports this module's names), so a consumer's import never changes.
+export { PROSE_BACKGROUNDS } from './band-palette.js';
+export {
+  activeSkinName, markSkinBootstrapped, isSkinBootstrapped, restoreSkinName,
+} from './skin-identity.js';
 
 /**
  * The **live** conversation palette (`docs/interface/skins`): one colour per kind of
@@ -129,8 +148,18 @@ export const SLASH_COLORS = {
 };
 
 /**
- * The presentation tokens a skin may move besides the palette: a border, the brand line,
- * the input hint and the two bold attributes. Live, exactly like `CONVERSATION_COLORS`.
+ * The two background bands around the sides of the dialogue live in `app/band-palette.js`
+ * (imported and re-exported above) because `app/prose-band.js` reads them and must not pull
+ * this module into the render path. `setTokens()` mutates that object **in place**, so
+ * `bandColor()` — and therefore every band on screen — follows a skin at paint time.
+ *
+ * Their values, the dark form each is and why, are documented where they live
+ * (`app/band-palette.js`); the absence of a band key was the reported bug — every request
+ * in the log asked for a *background*, there was no token for one, so the model moved the
+ * nearest foreground, reported success, and the band stayed exactly as it was.
+ *
+ * The presentation tokens a skin may move besides the palette are below: a border, the brand
+ * line, the input hint and the two bold attributes. Live, exactly like `CONVERSATION_COLORS`.
  */
 export const THEME_TOKENS = {
   /** the border of the modal / picker boxes (`app/tui-modal.js`) */
@@ -144,50 +173,6 @@ export const THEME_TOKENS = {
   /** whether a `[Tracking]` row is bold (`TRACKING_BOLD`) */
   boldTracking: true,
 };
-
-/**
- * One intent, painted the way the backlog asks for it: a bright blue and bold. The
- * colour makes it findable inside the tool row that carries it, the bold makes it stand
- * out in a wall of output. Pure: the caller (or the test) gets a blessed tag back as a
- * string, never a screen. Reads the *live* colour, so a skin repaints it.
- */
-export function colorizeIntent(text) {
-  const body = String(text ?? '');
-  const color = CONVERSATION_COLORS.intent;
-  if (THEME_TOKENS.boldIntent === false) return fgTag(color, body);
-  return fgTag(color, `{bold}${body}{/bold}`);
-}
-
-/**
- * One tracking update, painted the way a milestone should read: its own bright colour
- * plus bold, so a `[Tracking]` row can never be mistaken for a tool result or a context
- * notice (magenta). Reads the live colour and bold token.
- */
-export function colorizeTracking(text) {
-  const body = String(text ?? '');
-  const color = CONVERSATION_COLORS.tracking;
-  if (THEME_TOKENS.boldTracking === false) return fgTag(color, body);
-  return fgTag(color, `{bold}${body}{/bold}`);
-}
-
-/**
- * One refusal row, painted the way the news it carries should read: the bright red no
- * other row uses, plus bold, so a refused call is findable in a wall of tool output and
- * can never be mistaken for a plain error (red, not bold). Reads the live colour.
- */
-export function colorizeRefusal(text) {
-  const body = String(text ?? '');
-  const color = CONVERSATION_COLORS.refusal;
-  return fgTag(color, `{bold}${body}{/bold}`);
-}
-
-/** One timestamp, painted as chrome: the live low-key colour, and never bold. */
-export function colorizeStamp(stamp) {
-  const body = String(stamp ?? '');
-  if (!body) return '';
-  const color = CONVERSATION_COLORS.notice;
-  return `${fgTag(color, body)} `;
-}
 
 // `isColorName` (the closed vocabulary of names a blessed tag really paints) comes from
 // `utils/color-names.js` and is re-exported below, so the palette, the store and the
@@ -203,66 +188,21 @@ export function activePalette() {
 }
 
 /**
- * The **name** of the skin in force, or `null` before any skin was chosen.
+ * The presentation tokens in force right now, the selected band and the two prose
+ * backgrounds included.
  *
- * This is the one piece of state the palette cannot express by its colours: two different
- * skins can share every colour, so "which skin is on" has to be remembered rather than
- * inferred. `applySkin()` sets it, `resetTheme()` clears it, and the host reads it on every
- * session save so the conversation records the look it was held in
- * (`docs/runtime/session-store`).
- *
- * It is deliberately **not** part of `CONVERSATION_COLORS`: a name is not a colour, and the
- * palette is what gets copied into `activePalette()` for painting.
+ * The bands ride here (and not only in `PROSE_BACKGROUNDS`) because this is the read side
+ * the command persists: `/skins save <name>` writes `{ ...activeTokens() }`, so a band a
+ * user built by hand is only kept if the token set carries it.
  */
-let currentSkinName = null;
-
-/** The name of the skin in force, or null while the shipped default is on. */
-export function activeSkinName() {
-  return currentSkinName;
-}
-
-/**
- * Whether the project's saved skin has been bootstrapped yet.
- *
- * The host applies the project's active skin **once**, before the screen is built, and a
- * resumed session then restores *its own* skin. Without this flag the later restore would
- * paint the session's skin and two lines later the startup path would paint the project's
- * over it, so the resume would appear to do nothing.
- */
-let bootstrapped = false;
-
-/** Mark the startup skin as applied, so a resume may restore a session's own skin. */
-export function markSkinBootstrapped() {
-  bootstrapped = true;
-  return bootstrapped;
-}
-
-/** True once the project's skin has been applied for this process. */
-export function isSkinBootstrapped() {
-  return bootstrapped;
-}
-
-/**
- * Restore the look a **resumed session** was held in.
- *
- * Deliberately refused before the startup skin was applied: at that point the startup path
- * has not run yet and would overwrite whatever this set. `name` may be null — a session
- * file written before the field existed carries no skin and must leave the look alone
- * rather than reset it.
- *
- * @param {string|null} name the skin name the session recorded
- * @returns {boolean} whether the look moved
- */
-export function restoreSkinName(name) {
-  if (!bootstrapped) return false;
-  if (typeof name !== 'string' || !name) return false;
-  currentSkinName = name;
-  return true;
-}
-
-/** The presentation tokens in force right now, the selected band included. */
 export function activeTokens() {
-  return { ...THEME_TOKENS, selected: SLASH_COLORS.selected, selectedFg: SLASH_COLORS.selectedFg };
+  return {
+    ...THEME_TOKENS,
+    selected: SLASH_COLORS.selected,
+    selectedFg: SLASH_COLORS.selectedFg,
+    userBg: PROSE_BACKGROUNDS.user,
+    assistantBg: PROSE_BACKGROUNDS.assistant,
+  };
 }
 
 /**
@@ -293,8 +233,21 @@ export function setTokens(tokens = {}) {
     for (const key of ['boldIntent', 'boldTracking']) {
       if (typeof tokens[key] === 'boolean') THEME_TOKENS[key] = tokens[key];
     }
-    for (const key of ['selected', 'selectedFg']) {
-      if (isColorName(tokens[key])) SLASH_COLORS[key] = tokens[key].trim();
+    // `selected` is a **background** band, so it is checked against the background vocabulary
+    // (`utils/color-names.js#BLESSED_BACKGROUNDS`) — the same set of names a foreground
+    // takes, because blessed paints a bright background as well as a bright foreground.
+    // `selectedFg` is the text *on* the band, so it is an ordinary foreground.
+    if (isBackgroundColorName(tokens.selected)) SLASH_COLORS.selected = tokens.selected.trim();
+    if (isColorName(tokens.selectedFg)) SLASH_COLORS.selectedFg = tokens.selectedFg.trim();
+    // The two prose bands: a token name (`userBg`) maps to the role a band is painted from
+    // (`user`), through the shared map in the leaf module. Mutating `PROSE_BACKGROUNDS` in
+    // place is what makes the next paint of the transcript wear the new background instead
+    // of the one it was banded with.
+    for (const [key, role] of Object.entries(ROLE_OF_BAND_TOKEN)) {
+      // A band is a background, so it takes the background vocabulary: the same names a
+      // foreground takes, because blessed paints a bright background as well as a bright
+      // foreground (`utils/color-names.js#BLESSED_BACKGROUNDS`).
+      if (isBackgroundColorName(tokens[key])) PROSE_BACKGROUNDS[role] = tokens[key].trim();
     }
   }
   return activeTokens();
@@ -312,8 +265,8 @@ export function applySkin(skin = {}) {
   // resume reads back (`activeSkinName()`). A skin with no usable name leaves the
   // current one alone rather than clearing it.
   const name = typeof skin?.name === 'string' ? skin.name.trim() : '';
-  if (name) currentSkinName = name;
-  return { palette: activePalette(), tokens: activeTokens(), name: currentSkinName };
+  if (name) setSkinName(name);
+  return { palette: activePalette(), tokens: activeTokens(), name: activeSkinName() };
 }
 
 /** Restore the shipped palette and tokens (what `/skins reset` does). */
@@ -323,11 +276,12 @@ export function resetTheme() {
   }
   setTokens({
     border: 'cyan', brand: 'bright-white', hint: 'grey',
-    selected: 'blue', selectedFg: 'white', boldIntent: true, boldTracking: true,
+    selected: 'blue', selectedFg: 'white', userBg: 'blue', assistantBg: 'red',
+    boldIntent: true, boldTracking: true,
   });
-  currentSkinName = null;
+  setSkinName(null);
   // The shipped look is also the *unbootstrapped* state: a reset means the startup path has
   // not chosen a project skin yet, so a later resume is licensed to restore its own again.
-  bootstrapped = false;
+  clearSkinBootstrapped();
   return { palette: activePalette(), tokens: activeTokens(), name: null };
 }

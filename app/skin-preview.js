@@ -40,12 +40,27 @@ function wrapEntries(label, entries, width) {
   return rows;
 }
 
+/**
+ * The row that names the proposed skin: `skin: <name>`.
+ *
+ * It is the one row of the preview that says **what** is being proposed, so it is
+ * written here rather than inline in the preview: the modal needs the same row to
+ * keep it on screen when the box is too small for the whole preview
+ * (`app/skin-modal-layout.js`), and the two must not drift apart.
+ *
+ * @param {object} skin the proposed skin
+ * @returns {string} the row
+ */
+export function formatSkinName(skin) {
+  return `skin: ${skin?.name ?? '?'}`;
+}
+
 /** The palette/token preview lines of a proposed skin, so the modal shows the look. */
 export function formatSkinPreview(skin, { width = 0 } = {}) {
   const palette = PALETTE_KEYS.map((key) => `${key}:${skin?.palette?.[key] ?? '?'}`);
   const tokens = PRESENTATION_KEYS.map((key) => `${key}:${skin?.[key] ?? '?'}`);
   return [
-    `skin: ${skin?.name ?? '?'}`,
+    formatSkinName(skin),
     ...wrapEntries('palette ', palette, width),
     ...wrapEntries('tokens  ', tokens, width),
   ];

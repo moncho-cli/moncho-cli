@@ -27,13 +27,29 @@ summary: >
   (app/transcript-view.js) applies colorizeLine() to each stored row on every paint, so a
   skin repaints the conversation that is already on screen instead of only the chrome and
   the rows written afterwards; a block body carries its one colour (bodyColor) beside the
-  payload rather than inside it and is re-wrapped on every paint. The
+  payload rather than inside it and is re-wrapped on every paint. The two prose background
+  bands (userBg/assistantBg) are live skin tokens too: PROSE_BACKGROUNDS lives in
+  app/band-palette.js, setTokens() mutates it in place, and app/prose-band.js reads it at
+  paint time, so a request for a *background* reaches the screen — its absence was the
+  reported "it saved but nothing changed". The
   /skins command (app/skins-command.js) lists, applies, saves, resets and builds a look
   from key=value tokens; /skins prompt <request> reaches a modal subchat
   (app/skin-prompt.js + app/skin-modal.js) where one injected model call proposes a skin
   that the user confirms (apply / apply-and-save / cancel) before the command moves any
   state, and whose waiting state is live while the call is in flight (a spinner frame and
-  climbing elapsed seconds, driven by an unref'd timer). /skins customize <request> opens
+  climbing elapsed seconds, driven by an unref'd timer). The modal box is sized to the
+  live terminal rather than to a percentage of it, and its body is fitted to the box
+  with the actions, the request, the name and the hint reserved — the preview is what
+  gets cut when the box is small — so the action list is never clipped off the bottom
+  of the box, and a resize refits both the box and the body. The modal owns the
+  keyboard through a lease (app/keyboard-ownership.js): the host stands down for
+  Escape and Tab while a modal holds it, so Escape cancels the modal without aborting
+  the turn and Tab moves the modal focus without cycling the session mode. The system
+  text names every
+  palette key, every token and both bands, and says a background request means userBg or
+  assistantBg, so the model is never left inventing a key. The request is answered from the
+  live profile (the colours on screen), not the file, so a customize request changes only
+  what the user asked and keeps the rest. /skins customize <request> opens
   the same box in update mode: the model adjusts the skin already in force rather than
   proposing a new one, the name is settled so there is no name field, and the change is
   written over the active skin's own file — it never creates a skin and never moves the
@@ -43,11 +59,21 @@ code:
   - path: utils/skins-store.js
     symbols: [SKINS_DIR, ACTIVE_FILE, PALETTE_KEYS, PRESENTATION_KEYS, SKIN_KEYS, SKIN_NAME_RE, isColorName, DEFAULT_PALETTE, DEFAULT_PRESENTATION, DEFAULT_SKIN_NAME, DEFAULT_SKIN, normalizeSkin, slugName, skinPath, listSkinPaths, listSkins, readSkin, saveSkin, deleteSkin, readActiveName, writeActiveName]
   - path: utils/color-names.js
-    symbols: [BLESSED_COLORS, isColorName]
+    symbols: [BLESSED_COLORS, BLESSED_BACKGROUNDS, isColorName, isBackgroundColorName]
+  - path: app/terminal-capability.js
+    symbols: [UNKNOWN_COLOR_COUNT, setTerminalColorCount, terminalColorCount, supportsBrightColors, effectiveBackgroundName, reducedBackgrounds]
   - path: app/paint-tags.js
     symbols: [FALLBACK_COLOR, fgTag, fgOpen, fgClose, hasSymbolicTags, resolveTags, stripSymbolicTags, symbolicTag]
   - path: app/theme-palette.js
-    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS, INTENT_COLOR, INTENT_BOLD, TRACKING_COLOR, TRACKING_BOLD, STAMP_COLOR, REFUSAL_COLOR, REFUSAL_BOLD, DEFAULT_CONVERSATION_COLORS, isColorName, activePalette, activeTokens, setPalette, setTokens, applySkin, resetTheme, colorizeIntent, colorizeTracking, colorizeRefusal, colorizeStamp]
+    symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS, INTENT_COLOR, INTENT_BOLD, TRACKING_COLOR, TRACKING_BOLD, STAMP_COLOR, REFUSAL_COLOR, REFUSAL_BOLD, DEFAULT_CONVERSATION_COLORS, isColorName, activePalette, activeTokens, setPalette, setTokens, applySkin, resetTheme]
+  - path: app/band-palette.js
+    symbols: [PROSE_BACKGROUNDS, BAND_TOKEN_OF, ROLE_OF_BAND_TOKEN]
+  - path: app/skin-identity.js
+    symbols: [activeSkinName, setSkinName, markSkinBootstrapped, isSkinBootstrapped, clearSkinBootstrapped, restoreSkinName]
+  - path: app/theme-colors.js
+    symbols: [colorizeIntent, colorizeTracking, colorizeRefusal, colorizeStamp]
+  - path: app/skin-tokens.js
+    symbols: [COLOR_TOKEN_KEYS, BOOLEAN_TOKEN_KEYS, SUGGESTED_COLORS, activeName, parseTokens, colorTalkLabel, badValueMessage, parseSkinsArgs, formatSkinLines]
   - path: app/theme.js
     symbols: [CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS, DEFAULT_CONVERSATION_COLORS, activePalette, activeTokens, setPalette, setTokens, applySkin, resetTheme, colorizeIntent, colorizeTracking, colorizeStamp, colorizeLine]
   - path: app/skins-command.js
@@ -59,13 +85,19 @@ code:
   - path: app/skin-prompt.js
     symbols: [SKIN_COLOR_KEYS, skinSystemPrompt, skinCustomizeSystemPrompt, skinUserPrompt, buildSkinMessages, parseSkinProposal, mergeProposal, validateProposal, createSkinProposer, isDefaultSkin]
   - path: app/skin-preview.js
-    symbols: [formatSkinPreview, formatSkinWaiting, formatSkinBody, formatSkinHint]
+    symbols: [formatSkinPreview, formatSkinWaiting, formatSkinBody, formatSkinHint, formatSkinName]
+  - path: app/skin-modal-layout.js
+    symbols: [MIN_MODAL_WIDTH, MIN_MODAL_HEIGHT, MODAL_WIDTH_FRACTION, MODAL_HEIGHT_FRACTION, MODAL_CHROME_ROWS, MODAL_CHROME_COLUMNS, modalBoxSize, modalInterior, visibleWidth, fitRow, fitModalRows]
+  - path: app/keyboard-ownership.js
+    symbols: [KEYBOARD_OWNER_MODAL, KEYBOARD_OWNER_EVENT, claimKeyboard, releaseKeyboard, releaseKeyboardLater, keyboardHolders, keyboardHeld, keyboardHeldBy]
   - path: app/skin-actions.js
-    symbols: [SKIN_ACTIONS, CUSTOMIZE_ACTIONS, availableActions, actionAt, moveIndex, decideKey]
+    symbols: [SKIN_ACTIONS, CUSTOMIZE_ACTIONS, availableActions, actionAt, moveIndex, clampIndex, decideKey]
   - path: app/skin-name-field.js
     symbols: [SKIN_NAME_CARET, SKIN_NAME_RESERVED, validateSkinName, createSkinNameField]
   - path: app/skin-modal.js
     symbols: [SKIN_SPINNER_INTERVAL_MS, SKIN_ACTIONS, formatSkinPreview, formatSkinBody, openSkinModal]
+  - path: app/tui-keys.js
+    symbols: [bindKeys]
   - path: app/skin-subchat.js
     symbols: [createSkinSubchat]
   - path: app/tui-render.js
@@ -89,16 +121,37 @@ code:
   - path: main.js
     symbols: [main]
 tests:
-  - path: tests/skins.test.js
+  - path: tests/skins-store.test.js
     cases:
       - "the store names the skin shape and keeps the shipped palette as the default"
       - "normalizeSkin() fills defaults, drops invented keys and rejects a hex colour"
       - "isColorName() accepts only the names a blessed tag really paints"
       - "saveSkin() writes one JSON file per name and listSkins() reports it"
       - "the active skin is remembered in agent/skins/active.json, and a corrupt record falls back"
+  - path: tests/skins.test.js
+    cases:
+      - "a bright or light name paints as a background too, so a background token takes it"
       - "the palette and the tokens are live: setPalette/applySkin/resetTheme move them in place"
       - "applying a skin repaints the conversation already on screen"
       - "a skin moves the tool rows: the kind colour is live, the families are not"
+      - "a skin moves the prose band backgrounds, and the band follows the live palette"
+      - "a repaint records the live profile, so a band that did not move is diagnosable"
+  - path: tests/skins-colors.test.js
+    cases:
+      - "every blessed colour name resolves as a background, through a real widget"
+      - "a bright background is the bright escape, not the base one"
+      - "the background vocabulary is the same set as the foreground one"
+      - "the tag layer builds a background tag for a bright name"
+      - "the terminal capability says what the screen will really show"
+  - path: tests/skins-background-command.test.js
+    cases:
+      - "/skins accepts the two prose band tokens, so a background request reaches the screen"
+      - "/skins takes a bright background, and refuses only a colour blessed cannot paint"
+      - "a bright background reaches the real screen cells, through the real command"
+      - "the real /skins command repaints a live transcript, bands included, exactly as the loop wires it"
+      - "applying a skin records the live profile — the bands included — in the operational log"
+  - path: tests/skins-paint.test.js
+    cases:
       - "the slash bar, the notice rows and the input hint read the live palette"
       - "the tag layer resolves a palette key to the live colour, and never leaks a symbol"
       - "the renderer emits symbolic tags, so a skin moves a fence, a table frame and a quote"
@@ -122,18 +175,47 @@ tests:
       - "applyProjectSkin() with no stored skin opens in the built-in default and still bootstraps"
       - "rememberAppliedSkin() writes the applied skin as the project default and repaints"
       - "restoreSessionSkin() is refused before the bootstrap and applies the file after it"
+      - "a stored skin whose band blessed cannot paint is named in the log when it is applied"
   - path: tests/skins-prompt.test.js
     cases:
       - "parseSkinProposal() finds the JSON in a chatty answer and rejects a non-object"
       - "mergeProposal() keeps the base for what the proposal did not name"
+      - "the system prompts name every key a skin can move, the two bands and the chrome included"
+      - "validateProposal() accepts the two band tokens, and refuses an unpaintable one"
+      - "mergeProposal() moves the prose band a proposal named and keeps the one it did not"
+      - "liveProfile() is the look on screen, not the file, so customize adjusts what the user sees"
       - "validateProposal() refuses an invalid colour, an unknown key and a bad boolean"
       - "createSkinProposer() refuses an invalid proposal instead of applying the default"
       - "createSkinProposer() answers a skin from an injected model call, and null from junk"
+      - "createSkinProposer() in customize mode asks for the change and keeps the base name"
+  - path: tests/skins-modal.test.js
+    cases:
       - "openSkinModal() offers only Cancel while the skin is being prepared"
       - "openSkinModal() shows the proposal with an editable name and resolves the edited choice"
       - "the name in the field is the name the skin is saved under"
       - "the apply actions are unavailable while the name is unusable"
       - "openSkinModal() in customize mode offers only the update action and no name field"
-      - "createSkinProposer() in customize mode asks for the change and keeps the base name"
       - "formatSkinPreview() wraps a long palette on the colour boundaries"
       - "the waiting state is live: the frame moves and the seconds climb while the call runs"
+  - path: tests/skins-modal-keys.test.js
+    cases:
+      - "the arrow keys move the action cursor from the name field, and take the focus with them"
+      - "openSkinModal() moves the cursor and the focus on an arrow, so Enter applies what is highlighted"
+      - "the cursor is clamped to the actions offered, so a shrinking list never loses the highlight"
+  - path: tests/skins-modal-layout.test.js
+    cases:
+      - "the box is sized to the terminal, and never wider or taller than it"
+      - "the actions are reserved, and the preview is what gets cut"
+      - "a row is cut to the width, between graphemes, and its tags are closed"
+      - "the actions are on the screen, at every terminal size"
+      - "a resize refits the box and the body to the new terminal"
+      - "the modal owns the keyboard, and the host stands down for it"
+      - "a lease is released at the end of the event, not in the middle of it"
+      - "two screens hold their own keyboard leases"
+  - path: tests/skins-modal-screen.test.js
+    cases:
+      - "real arrow bytes move the cursor, and the marked row on the screen moves with it"
+      - "the actions are on the rendered screen, and the terminal never saw them clipped"
+      - "a real Escape byte cancels the modal without interrupting the turn"
+      - "a real Tab byte moves the modal focus and does not cycle the session mode"
+      - "the real typed characters land in the name field, once each"

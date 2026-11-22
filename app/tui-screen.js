@@ -1,4 +1,5 @@
 import blessed from 'neo-blessed';
+import { setTerminalColorCount } from './terminal-capability.js';
 
 /**
  * The blessed screen itself, and the repaint latch that goes with it.
@@ -35,6 +36,12 @@ export function createScreen({ input, output } = {}) {
     warnings: false,
     autoPadding: true,
   });
+
+  // The terminal's own colour capability, recorded once from the real screen: a bright
+  // background is painted as its base colour on a terminal with fewer than sixteen colours,
+  // and the skins command says so rather than letting the user think the colour was
+  // ignored (`app/terminal-capability.js`).
+  setTerminalColorCount(screen.tput?.colors ?? null);
 
   let closed = false;
 

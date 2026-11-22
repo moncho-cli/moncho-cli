@@ -33,6 +33,12 @@ So the log is deliberately **not** a second transcript: it records events, and a
 carries a scope (`provider`, `session`, `tool`, `logger`, `startup`), a flattened
 message and optional structured details. No chunk is ever copied into it.
 
+The one place a failure is described in more detail is a **non-200 provider answer**
+(`docs/runtime/provider-diagnostics`): there the provider's own error body is quoted,
+because that is the diagnosis rather than the conversation, and the request is
+described by its *shape* — roles, counts, sizes, call ids — never by the words of the
+conversation.
+
 ## The three levels and the threshold
 
 `utils/logger.js` knows exactly three levels, in the order a threshold walks them:
@@ -130,6 +136,7 @@ start writing logs behind the caller's back.
 | `provider` | `error` | `config/prompt.md` could not be read, so the agent answers without its prompt | `api/ollama.js#loadSystemPrompt` |
 | `provider` | `error` | The last attempt failed and the call is given up | `api/ollama.js#callOllama` |
 | `provider` | `warn` | An attempt failed and is being retried | `api/ollama.js#callOllama` |
+| `provider` | `warn` / `error` | A provider answered a non-200: the status, its own reason, the shape of the request and the tool-call pairing of the history it carried | `api/provider-diagnostics.js#recordProviderFailure` |
 | `provider` | `warn` | An empty response; the turn retries it | `app/turn-runner.js#runTurn` |
 | `provider` | `info` | The call was aborted by the user (ESC / Ctrl+C) | `api/ollama.js#callOllama`, `app/turn-runner.js#runTurn` |
 | `provider` | `error` | The failure that ended the turn | `app/turn-runner.js#runTurn` |

@@ -1,4 +1,8 @@
 import { isInterruptKey, isTabKey, isShiftTabKey } from '../utils/keys.js';
+import {
+  claimKeyboard, releaseKeyboardLater, keyboardHeldBy, KEYBOARD_OWNER_MODAL,
+  KEYBOARD_OWNER_EVENT,
+} from './keyboard-ownership.js';
 
 /**
  * The TUI's key bindings, kept apart from the screen wiring.
@@ -26,12 +30,17 @@ export function bindKeys({
 } = {}) {
   if (!screen) return { dispose() {} };
 
-  /** Lock key dispatch for this one event, so blessed skips the focused widget. */
+  /**
+   * Lock key dispatch for this one event, so blessed skips the focused widget.
+   *
+   * The lock is a **lease** (`app/keyboard-ownership.js`), not a boolean: it is taken
+   * for the one event and released at the end of it, and it can never unlock a modal
+   * that is still open — a plain `screen.lockKeys = false` would clear the lock of a
+   * modal that had nothing to do with this key.
+   */
   const lockOnce = () => {
-    screen.lockKeys = true;
-    queueMicrotask(() => {
-      screen.lockKeys = false;
-    });
+    const lease = claimKeyboard({ screen, label: KEYBOARD_OWNER_EVENT });
+    releaseKeyboardLater(lease);
   };
 
   /**
@@ -45,6 +54,13 @@ export function bindKeys({
    * request to change mode.
    */
   const onProgramKeypress = (ch, key) => {
+    // A modal owns the keyboard while it is open (`app/keyboard-ownership.js`): the
+    // key that closes the modal is still travelling through the program's listeners,
+    // so the host must see the modal as the owner of *that* key. Escape then cancels
+    // the modal and leaves the running turn alone, and Tab moves the modal's focus
+    // instead of cycling the session mode. Before the lease existed, both happened at
+    // once: Escape aborted the very turn the modal was a part of.
+    if (keyboardHeldBy(KEYBOARD_OWNER_MODAL)) return false;
     if (isInterruptKey(ch, key)) {
       lockOnce();
       if (typeof onInterrupt === 'function') onInterrupt();

@@ -2,7 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { resolveProjectPath } from './path-safety.js';
 import { writeFileVerified, readFileIfExists } from './file-io.js';
-import { BLESSED_COLORS, isColorName } from './color-names.js';
+import {
+  BLESSED_COLORS, BLESSED_BACKGROUNDS, isColorName, isBackgroundColorName,
+} from './color-names.js';
 
 /**
  * Skins: the per-project look of the conversation (`docs/interface/skins`).
@@ -51,14 +53,34 @@ export const PALETTE_KEYS = Object.freeze([
 
 /** The presentation tokens a skin may carry besides the palette. */
 export const PRESENTATION_KEYS = Object.freeze([
-  'border', 'brand', 'hint', 'selected', 'selectedFg', 'boldIntent', 'boldTracking',
+  'border', 'brand', 'hint', 'selected', 'selectedFg',
+  // the two prose backgrounds (`app/prose-band.js`): the band behind the user's echoed
+  // prompt and the band behind the model's prose. They are tokens rather than palette
+  // keys because a band is a *background* on a whole row, not the foreground of a row's
+  // kind — but they are live exactly like the palette, so `userBg=green` reaches the
+  // screen. Their absence was the reported bug: every request for a background was
+  // answered with a foreground, so the band never moved and the change "did nothing".
+  'userBg', 'assistantBg',
+  'boldIntent', 'boldTracking',
 ]);
 
 /** Every top-level key a canonical skin holds. */
 export const SKIN_KEYS = Object.freeze(['name', 'palette', ...PRESENTATION_KEYS]);
 
 /** The paintable colour names a skin may use (re-exported from the leaf vocabulary). */
-export { BLESSED_COLORS, isColorName };
+export { BLESSED_COLORS, BLESSED_BACKGROUNDS, isColorName, isBackgroundColorName };
+
+/**
+ * The tokens whose value is a **background**.
+ *
+ * `selected`, `userBg` and `assistantBg` are painted with `{<colour>-bg}`, so they go
+ * through the background vocabulary (`utils/color-names.js#BLESSED_BACKGROUNDS`) rather
+ * than the foreground one. The two vocabularies hold the same names today — blessed paints
+ * a bright background as well as a bright foreground — but they are kept apart because a
+ * background is a different question, and a name the switch has no case for would be
+ * printed literally on the row the band was meant to fill.
+ */
+export const BACKGROUND_KEYS = Object.freeze(['selected', 'userBg', 'assistantBg']);
 
 /** A skin name: it becomes a file name, so it stays a plain slug. */
 export const SKIN_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -98,6 +120,18 @@ export const DEFAULT_PRESENTATION = Object.freeze({
   selected: 'blue',
   /** the text on that band */
   selectedFg: 'white',
+  /**
+   * the background band behind the user's echoed prompt (`app/prose-band.js`). `blue` is
+   * the one coloured band a terminal is certain to paint, which is why it is the shipped
+   * value rather than a brighter one — a bright background glares under a whole block.
+   */
+  userBg: 'blue',
+  /**
+   * the background band behind the model's prose. The dark `red` (`\x1b[41m`), not the
+   * bright form: the band sits under the whole foreground palette, so it has to stay
+   * legible, and it must differ from the user's band.
+   */
+  assistantBg: 'red',
   /** whether the intent is bold as well as coloured (`app/theme.js#INTENT_BOLD`) */
   boldIntent: true,
   /** whether a `[Tracking]` row is bold (`app/theme.js#TRACKING_BOLD`) */
@@ -143,8 +177,11 @@ export function normalizeSkin(input) {
   }
 
   const skin = { name, palette };
-  for (const key of ['border', 'brand', 'hint', 'selected', 'selectedFg']) {
-    skin[key] = isColorName(source[key]) ? source[key].trim() : DEFAULT_PRESENTATION[key];
+  for (const key of ['border', 'brand', 'hint', 'selected', 'selectedFg', 'userBg', 'assistantBg']) {
+    // The three background tokens go through the background vocabulary: a band named with
+    // a colour blessed cannot paint as a background would put a literal tag on the row.
+    const usable = BACKGROUND_KEYS.includes(key) ? isBackgroundColorName : isColorName;
+    skin[key] = usable(source[key]) ? source[key].trim() : DEFAULT_PRESENTATION[key];
   }
   for (const key of ['boldIntent', 'boldTracking']) {
     skin[key] = typeof source[key] === 'boolean' ? source[key] : DEFAULT_PRESENTATION[key];

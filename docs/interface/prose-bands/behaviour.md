@@ -25,26 +25,27 @@ tracking rows — has **no** band: `bandColor()` answers `null` and `bandLine()`
 the line byte-for-byte. A band can therefore never be applied by accident to a row
 that is not one of the two sides.
 
-## Why the model's band is the dark yellow
+## The two bands are live skin state
 
-The user's `blue` is the one coloured band a terminal is certain to paint, so it stays.
-The model's side was `grey`, and **grey was the bug**: blessed resolves it to bright
-black (`\x1b[100m`), which on a dark terminal is all but the default background, so the
-margins and the fill looked like transparent gaps rather than like a band.
+The pair is **not** a constant: `PROSE_BACKGROUNDS` lives in `app/band-palette.js`, is
+re-exported by `app/theme-palette.js` (and by `app/prose-band.js` as `BAND_BACKGROUNDS`,
+an alias of the same object), and `setTokens()` mutates it **in place** under the two
+tokens `userBg`/`assistantBg` (`BAND_TOKEN_OF` maps them to the roles). `bandColor()`
+reads it at paint time, so a skin moves a band exactly like a foreground and the rows
+already on screen follow — the same live-object rule every other colour obeys.
 
-The replacement is `yellow`, which blessed paints as the ANSI dark yellow (`\x1b[43m`)
-— a brown on any ordinary terminal. A truer brown would need one of the 256-colour
-indices, and blessed only reaches those when the terminal reports them: the hex tag
-`{#8b4513-bg}` is silently mapped down to **red** (`\x1b[41m`) on a terminal that does
-not, which would be a different colour on different machines. A brown that is sometimes
-red is worse than a dark warm colour that is always brown, so the band names the one
-colour a 16-colour terminal certainly has.
+This is deliberate and load-bearing: a band was a frozen constant before, and that was
+the reported bug. Every request in the log asked for a *background* ("user messages to be
+green background", "the model prose in blue background"); there was no token for one, so
+the model moved the nearest foreground, reported success, and the band behind every row
+stayed exactly as it was. Naming the two bands as skin tokens is what closes that gap.
 
 ## Why the model's band is the dark red
 
 Both bands are the **dark** form of their colour, so every foreground the palette paints
 stays legible on top of them.
 
+The user's `blue` is the one coloured band a terminal is certain to paint, so it stays.
 The model's side was `grey` first, and **grey was the bug**: blessed resolves it to
 bright black (`\x1b[100m`), which on a dark terminal is all but the default background,
 so the margins and the fill looked like transparent gaps rather than like a band. It then

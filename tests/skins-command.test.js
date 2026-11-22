@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { saveSkin, readSkin, readActiveName, writeActiveName } from '../utils/skins-store.js';
-import { activePalette, applySkin, resetTheme } from '../app/theme.js';
+import { activePalette, activeTokens, applySkin, resetTheme } from '../app/theme.js';
 import { parseSkinsArgs, skinsCommand } from '../app/skins-command.js';
+import { createLogger } from '../utils/logger.js';
+import { registerLogger, clearLogger } from '../utils/host.js';
+import { rememberAppliedSkin } from '../app/skin-host.js';
+import { withTui } from './support/tui-harness.js';
 
 /**
  * `/skins` (`docs/interface/skins`), the **command** half: the grammar it accepts and the

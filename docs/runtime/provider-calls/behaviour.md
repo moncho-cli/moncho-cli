@@ -36,6 +36,17 @@ implementation is linked below.
   `function`, and `arguments` is always a JSON string (an object is stringified).
   This is what lets the conversation store one uniform assistant chunk.
 
+## A non-200 is recorded before it is raised
+
+- Every non-200 answer — streaming or not — is **recorded before the error is raised**
+  (`api/provider-diagnostics.js`): the status, the provider's own reason, the shape of
+  the request and the tool-call pairing of the history it carried. The error the call
+  raises carries the status and the provider's reason, so a reader sees more than a
+  number. The whole contract is `docs/runtime/provider-diagnostics`.
+- The record is the way to tell "the provider is broken" from "this session's history is
+  broken": a history whose `tool` messages no longer answer the calls above them is
+  refused with a 400 and keeps being refused, while a new session works.
+
 ## Retries and cancellation
 
 - A transport/HTTP failure is retried up to 3 times with a delay between attempts —
@@ -73,5 +84,6 @@ implementation is linked below.
 
 ## See also
 
-- Implementation: `api/ollama.js`, `config/constants.js`
-- Proof: `tests/ollama-provider.test.js`, `tests/model-temperature.test.js`
+- Implementation: `api/ollama.js`, `config/constants.js`, `api/provider-response.js`
+- Proof: `tests/ollama-provider.test.js`, `tests/model-temperature.test.js`,
+  `tests/provider-diagnostics.test.js`

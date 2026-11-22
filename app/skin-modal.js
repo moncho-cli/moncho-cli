@@ -1,8 +1,16 @@
 import blessed from 'neo-blessed';
 import { activeTokens } from './theme.js';
 import { fgTag } from './paint-tags.js';
-import { SKIN_ACTIONS, availableActions, actionAt, moveIndex, decideKey } from './skin-actions.js';
+import {
+  SKIN_ACTIONS, availableActions, actionAt, moveIndex, clampIndex, decideKey,
+} from './skin-actions.js';
 import { createSkinNameField } from './skin-name-field.js';
+import {
+  modalBoxSize, modalInterior, fitModalRows, fitRow, visibleWidth,
+} from './skin-modal-layout.js';
+import {
+  claimKeyboard, releaseKeyboardLater, KEYBOARD_OWNER_MODAL,
+} from './keyboard-ownership.js';
 
 // The body text lives in its own module (`app/skin-preview.js`) so the wording is
 // available without a terminal; these are re-exported because the modal is where callers
@@ -10,11 +18,11 @@ import { createSkinNameField } from './skin-name-field.js';
 export {
   formatSkinPreview, formatSkinWaiting, formatSkinBody, formatSkinHint,
 } from './skin-preview.js';
-import { formatSkinBody, formatSkinHint } from './skin-preview.js';
+import { formatSkinBody, formatSkinHint, formatSkinName } from './skin-preview.js';
 
 // The action list and the key contract moved to `app/skin-actions.js`; re-exported so the
 // modal stays the one place a caller imports the widget from.
-export { SKIN_ACTIONS, availableActions } from './skin-actions.js';
+export { SKIN_ACTIONS, availableActions, clampIndex } from './skin-actions.js';
 
 /**
  * The `/skins prompt` **subchat modal** (`docs/interface/skins`): the one place a
@@ -26,7 +34,11 @@ export { SKIN_ACTIONS, availableActions } from './skin-actions.js';
  *    sequences it and paints the answer. The whole widget is testable with a stub.
  *  - **the modal owns the keyboard** while it is open: the screen's dispatch is locked and
  *    a program-level listener is prepended, so neither the input box nor the transcript
- *    sees the keystrokes (`app/tui-modal.js` does the same).
+ *    sees the keystrokes (`app/tui-modal.js` does the same). The claim is a **lease**
+ *    (`app/keyboard-ownership.js`), not a boolean: the host asks who holds the keyboard
+ *    before it answers Escape or Tab, so a key the modal has already taken is not also
+ *    handed to the host — Escape cancels the modal *without* aborting the running turn,
+ *    and Tab moves the modal's focus *without* cycling the session mode.
  *  - **the name is the user's.** The proposal arrives with a name, and the field is
  *    prefilled with it — but the user may change it, because the person who asked knows
  *    what the look should be called. The field takes the focus the moment the proposal
@@ -43,7 +55,13 @@ export { SKIN_ACTIONS, availableActions } from './skin-actions.js';
  * user's to choose and the box offers both apply choices. `/skins customize` updates the
  * skin already in force, so the name is settled: `editable: false` drops the name field
  * and `customize: true` swaps the action list for the update-only one. Everything else —
- * the waiting state, the keyboard lock, the structural gate — is the same code.
+ * the waiting state, the keyboard lease, the structural gate — is the same code.
+ *
+ * **The box fits the terminal.** The size is computed from the live screen
+ * (`app/skin-modal-layout.js`), not taken as a percentage of it, and the body is fitted
+ * to the box with the **actions reserved**: they are what the user has to be able to
+ * read to answer the modal, and they used to be pushed off the bottom of the box and
+ * clipped away. A resize refits the box and repaints the body against the new size.
  */
 
 /** How often the waiting state repaints. */
@@ -105,14 +123,26 @@ export function openSkinModal({
   const currentAction = () => actionAt(actions(), index);
 
   return new Promise((resolve) => {
+    // The size of the box is read off the **live** screen, so it is right on the
+    // terminal it was opened on and is recomputed when that terminal is resized.
+    const screenSize = () => ({
+      columns: Number(screen?.width) || 0,
+      rows: Number(screen?.height) || 0,
+    });
+    const boxSize = () => modalBoxSize(screenSize());
+    const interior = () => modalInterior(boxSize());
+
     const widget = screen
       ? blessed.box({
         parent: screen,
         label: ` ${title} `,
         top: 'center',
         left: 'center',
-        width: '80%',
-        height: '60%',
+        // A **number**, not a percentage: a percentage is resolved against the screen
+        // once, when the box is created, so the box would keep the size of the
+        // terminal it was opened on after the terminal changed.
+        width: boxSize().width,
+        height: boxSize().height,
         border: { type: 'line' },
         tags: true,
         padding: { left: 1, right: 1 },
@@ -121,9 +151,12 @@ export function openSkinModal({
       })
       : null;
 
-    const previousLock = screen?.lockKeys;
     let done = false;
     let spinnerTimer = null;
+    // The keyboard lease: taken when the modal opens, released when it closes. The
+    // host asks who holds the keyboard before it answers Escape or Tab, so a key the
+    // modal has taken is never also handed to the host (`app/keyboard-ownership.js`).
+    let lease = null;
 
     const tick = () => {
       frame += 1;
@@ -134,6 +167,10 @@ export function openSkinModal({
     /** The action rows, with the cursor on the highlighted one. */
     const actionRows = () => {
       const list = actions();
+      // The list can shrink under the cursor (emptying the name drops the apply actions),
+      // so the cursor is settled against it before the rows are built: every paint shows
+      // a highlighted action, never a list with none.
+      index = clampIndex(index, list.length);
       const cursor = activeTokens().border;
       return list.map((action, position) => {
         const marker = position === index ? '>' : ' ';
@@ -145,24 +182,36 @@ export function openSkinModal({
     const paint = () => {
       if (!widget) return;
       const ready = state.state === 'ready' && Boolean(state.skin);
+      const room = interior();
+      const nameRow = ready && editable ? field.row({ focused: focus === FOCUS_NAME }) : '';
+      const nameError = ready && editable ? field.errorRow() : '';
+      const hint = formatSkinHint({
+        state: state.state, nameError: ready && editable ? field.error : '', focus, editable,
+      });
       const body = formatSkinBody({
         ...state,
-        width: roomFor(),
+        width: room.columns,
         frame,
         elapsedMs: now() - startedAt,
-        nameRow: ready && editable ? field.row({ focused: focus === FOCUS_NAME }) : '',
-        nameError: ready && editable ? field.errorRow() : '',
-        hint: formatSkinHint({
-          state: state.state, nameError: ready && editable ? field.error : '', focus, editable,
-        }),
+        nameRow,
+        nameError,
+        hint,
       });
-      widget.setContent([...body, '', ...actionRows()].join('\n'));
+      // The row that says **what** is proposed is kept on screen too: the preview is
+      // the first thing to go when the box is small, and a proposal whose name has
+      // been cut away is a proposal the user cannot confirm.
+      const proposalRow = ready ? formatSkinName(state.skin) : '';
+      // The body is fitted to the box with the **actions reserved**: the rows that
+      // answer the modal are never the ones cut away, and neither are the request,
+      // the name or the hint (`app/skin-modal-layout.js`). The preview is what goes.
+      const rows = fitModalRows({
+        body,
+        actions: actionRows(),
+        room: room.rows,
+        keep: [proposalRow, nameRow, nameError, hint],
+      });
+      widget.setContent(rows.map((row) => fitRow(row, room.columns)).join('\n'));
       repaint();
-    };
-
-    const roomFor = () => {
-      const width = Number(widget?.width) || 0;
-      return width > 4 ? width - 4 : 0;
     };
 
     const close = (value) => {
@@ -171,12 +220,37 @@ export function openSkinModal({
       stopWaiting();
       if (screen) {
         screen.program?.removeListener('keypress', onKey);
-        screen.lockKeys = previousLock;
+        // The lease goes at the **end of the event**, not in the middle of it: the key
+        // that closed the modal is still travelling through the program's listeners,
+        // and the modal is still its owner until they have all seen it. Releasing it
+        // here instead would let the host answer that same Escape — aborting the very
+        // turn the modal was a part of.
+        //
+        // The token is passed **by value** to the release: the lease variable is
+        // cleared right after, and a release that read it later would find nothing
+        // to release — the modal would keep the keyboard for ever.
+        releaseKeyboardLater(lease);
       }
+      lease = null;
       widget?.destroy();
       if (typeof onOpenChange === 'function') onOpenChange(false);
       repaint();
       resolve(value);
+    };
+
+    /**
+     * Refit the box to the screen it is on, and repaint the body against the new size.
+     *
+     * Blessed relayouts the box on a resize, but the **body** was wrapped for the width
+     * the box had before, so the preview ran past the edge and the actions could be
+     * pushed out of a box that had become shorter. Both are recomputed here.
+     */
+    const refit = () => {
+      if (!widget || done) return;
+      const size = boxSize();
+      if (widget.width !== size.width) widget.width = size.width;
+      if (widget.height !== size.height) widget.height = size.height;
+      paint();
     };
 
     /** The choice the highlighted action makes, or null when it cannot be made. */
@@ -213,6 +287,10 @@ export function openSkinModal({
           field.insert(intent.text);
           break;
         case 'move':
+          // An arrow means "I am choosing now": the cursor moves *and* the focus joins it
+          // in the list, so Enter applies what is highlighted instead of going to the
+          // actions — the two-step that made the arrows feel dead (`app/skin-actions.js`).
+          focus = FOCUS_ACTIONS;
           index = moveIndex(index, intent.delta, list.length);
           break;
         case 'choose':
@@ -232,9 +310,14 @@ export function openSkinModal({
     }
 
     if (screen) {
-      screen.lockKeys = true;
+      // The lease is taken before the lock is written, so the lock and the claim are
+      // one thing: the screen's dispatch is locked while a modal holds the keyboard.
+      lease = claimKeyboard({ screen, label: KEYBOARD_OWNER_MODAL });
       if (typeof onOpenChange === 'function') onOpenChange(true);
       screen.program?.prependListener('keypress', onKey);
+      // A resize refits the box and the body: the size is read off the live screen, so
+      // the modal follows the terminal it is on instead of keeping the old one's shape.
+      screen.on?.('resize', refit);
     }
     paint();
     startWaiting();
@@ -280,6 +363,7 @@ export function openSkinModal({
       };
       widget.cancel = () => close(null);
       widget.paint = paint;
+      widget.refit = refit;
       widget.state = () => ({ ...state, focus, index, actions: actions().map((a) => a.id) });
       widget.name = () => field.value;
       widget.slug = () => field.slug;
@@ -290,6 +374,9 @@ export function openSkinModal({
       widget.tick = tick;
       widget.field = field;
       widget.isWaiting = () => spinnerTimer !== null;
+      // The rows the box can show, for the tests that assert on the **visible** screen.
+      widget.visibleRows = () => widget.getContent().split('\n');
+      widget.room = () => interior();
     }
   });
 }

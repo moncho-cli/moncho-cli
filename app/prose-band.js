@@ -1,4 +1,10 @@
 import { padVisible } from './tagged-text.js';
+import { bgTag } from './paint-tags.js';
+import { PROSE_BACKGROUNDS, BAND_TOKEN_OF } from './band-palette.js';
+
+// The band token names are part of this module's public surface (the store persists a band
+// under them), so they are re-exported from here as well as from the leaf module.
+export { BAND_TOKEN_OF } from './band-palette.js';
 
 export { padVisible };
 
@@ -35,13 +41,19 @@ export { padVisible };
 export const PROSE_BANDS = Object.freeze(['user', 'assistant']);
 
 /**
- * One blessed background colour per side, so "what I asked" and "what the agent
- * answered" never read alike. Both are the *dark* form of a colour, because the band
- * sits under the whole foreground palette (`app/theme.js`) and every row painted on it
- * has to stay legible.
+ * One background colour per side, so "what I asked" and "what the agent answered" never
+ * read alike — the **live** object (`app/band-palette.js#PROSE_BACKGROUNDS`), aliased
+ * here because this module is where a band caller and its spec already reach for it.
  *
- * `red` is the ANSI dark red (`\x1b[41m`). It replaced `yellow` (dark yellow, `\x1b[43m`),
- * which read as muddy; `grey` was the first colour and was simply wrong, resolving to
+ * It is not a frozen constant any more, and that is the fix: the colours used to be fixed
+ * here, so `/skins customize make the model prose green` reported success and left the
+ * band exactly as it was. A skin now mutates the object `setTokens()` owns and every band
+ * follows on the next paint.
+ *
+ * Both shipped values are the *dark* form of their colour, because the band sits under
+ * the whole foreground palette (`app/theme.js`) and every row painted on it has to stay
+ * legible. `red` is the ANSI dark red (`\x1b[41m`); it replaced `yellow` (dark yellow,
+ * `\x1b[43m`), which read as muddy, and `grey`, which was simply wrong — it resolves to
  * bright black (`\x1b[100m`), all but the default background on a dark terminal.
  *
  * A band can never make a colour collision the reader has to resolve: red is also the
@@ -49,29 +61,38 @@ export const PROSE_BANDS = Object.freeze(['user', 'assistant']);
  * of the two sides is never banded (`bandLine()` returns it byte-for-byte), so no red
  * foreground is ever painted on the red band.
  */
-export const BAND_BACKGROUNDS = Object.freeze({
-  user: 'blue',
-  assistant: 'red',
-});
+export const BAND_BACKGROUNDS = PROSE_BACKGROUNDS;
 
 /** True for a role a band is defined for. */
 export function isBandRole(role) {
   return PROSE_BANDS.includes(role);
 }
 
-/** The blessed background colour name for a role, or null for anything else. */
+/**
+ * The background colour name for a role, read from the **live** band palette, or null for
+ * anything else.
+ *
+ * Read live on purpose (`app/band-palette.js#PROSE_BACKGROUNDS`): this is the whole of the
+ * reported bug. The colours used to be a frozen constant here, so a skin could be applied
+ * and reported while the band behind every user message and every prose row stayed exactly
+ * as it was. A skin now moves the bands with the rest of the palette.
+ */
 export function bandColor(role) {
-  return isBandRole(role) ? BAND_BACKGROUNDS[role] : null;
+  return isBandRole(role) ? PROSE_BACKGROUNDS[role] : null;
 }
 
 /**
  * Paint one display line as a full-width band, or return it byte-for-byte when its
  * role has no band (plain text, notices, the payload of a tool result).
+ *
+ * The tag comes from `app/paint-tags.js#bgTag()` — the one place a colour name becomes a
+ * blessed tag — so a band colour the terminal cannot paint is refused there rather than
+ * printed literally, exactly like every foreground.
  */
 export function bandLine(line, role, width = 0) {
   const color = bandColor(role);
   if (!color) return String(line ?? '');
-  return `{${color}-bg}${padVisible(line, width)}{/${color}-bg}`;
+  return bgTag(color, padVisible(line, width));
 }
 
 /** The blank banded row that gives a band its one-line top or bottom margin. */

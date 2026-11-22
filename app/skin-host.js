@@ -1,6 +1,51 @@
-import { readSkin, readActiveName, writeActiveName } from '../utils/skins-store.js';
-import { applySkin, activeSkinName, markSkinBootstrapped, restoreSkinName } from './theme.js';
+import {
+  readSkin, readActiveName, writeActiveName, skinPath, BACKGROUND_KEYS,
+} from '../utils/skins-store.js';
+import {
+  applySkin, activeSkinName, markSkinBootstrapped, restoreSkinName, activePalette, activeTokens,
+} from './theme.js';
+import { readFileIfExists } from '../utils/file-io.js';
+import { isBackgroundColorName } from '../utils/color-names.js';
 import { logEvent } from '../utils/logger.js';
+import { reducedBackgrounds, terminalColorCount } from './terminal-capability.js';
+
+/**
+ * Name the background tokens a **stored file** carries that blessed cannot paint, and the
+ * ones the terminal will show as something other than what was asked for.
+ *
+ * Two different things can happen to a band, and they deserve different sentences:
+ *
+ *  - a name blessed cannot paint **at all** is degraded by the store to the shipped
+ *    colour, so the symptom is silence — the band keeps the colour it already had and
+ *    nothing on screen says why. Reading the raw file is the only place the refused name
+ *    still exists, so it is named here.
+ *  - a name the terminal paints, but **not in the form asked for** — a bright background
+ *    on a terminal with fewer than sixteen colours — is honoured and shown as its base
+ *    colour. That is not a failure, so it is recorded as what it is.
+ */
+function logUnpaintableBands(name, { dir = undefined } = {}) {
+  if (!name) return;
+  let raw = null;
+  try {
+    raw = JSON.parse(readFileIfExists(skinPath(name, { dir })) ?? 'null');
+  } catch {
+    return;
+  }
+  const refused = BACKGROUND_KEYS
+    .filter((key) => raw?.[key] !== undefined && !isBackgroundColorName(raw[key]))
+    .map((key) => ({ key, value: raw[key] }));
+  if (refused.length) {
+    logEvent('warn', 'skins', 'background colour refused; it would be printed literally', {
+      name, refused, kept: { ...activeTokens() },
+    });
+  }
+  const reduced = reducedBackgrounds(activeTokens(), BACKGROUND_KEYS);
+  if (Object.keys(reduced).length) {
+    logEvent('info', 'skins', 'background painted as the terminal allows', {
+      name, terminal: terminalColorCount(), reduced,
+    });
+  }
+}
 
 /**
  * The project's skin, as the host wires it (`docs/interface/skins`).
@@ -36,7 +81,10 @@ export function applyProjectSkin({ dir = undefined } = {}) {
     // A corrupt `active.json` is not worth failing a session over.
     logEvent('warn', 'skins', 'the project skin could not be read; using the default', { error: error?.message });
   }
-  if (skin) applySkin(skin);
+  if (skin) {
+    logUnpaintableBands(skin.name, { dir });
+    applySkin(skin);
+  }
   markSkinBootstrapped();
   logEvent('info', 'skins', 'startup', { skin: skin?.name ?? null });
   return skin;
@@ -65,7 +113,15 @@ export function rememberAppliedSkin(skin, { repaint = null, dir = undefined } = 
       logEvent('warn', 'skins', 'the project skin could not be remembered', { name: skin.name, error: error?.message });
     }
   }
-  logEvent('info', 'skins', 'project skin remembered', { skin: skin?.name ?? null });
+  // The **live** profile is logged beside the name: a look that "saved but did not change"
+  // is only diagnosable if the log says what is now actually in force — the palette, the
+  // bands and the tokens — and not only which skin was chosen. `activeTokens()` carries the
+  // two prose bands, so a request for a background is visible here too.
+  logEvent('info', 'skins', 'project skin remembered', {
+    skin: skin?.name ?? null,
+    live: { palette: activePalette(), ...activeTokens() },
+    repainted: typeof repaint === 'function',
+  });
   if (typeof repaint === 'function') repaint();
 }
 
@@ -97,8 +153,14 @@ export function restoreSessionSkin(name, { repaint = null, dir = undefined } = {
   // `restoreSkinName()` is the guard: it refuses before the startup bootstrap, so a resume
   // cannot be painted over by the project's skin.
   if (!restoreSkinName(name)) return false;
+  logUnpaintableBands(name, { dir });
   applySkin(skin);
-  logEvent('info', 'skins', 'session skin restored', { name, applied: true });
+  logEvent('info', 'skins', 'session skin restored', {
+    name,
+    applied: true,
+    repainted: typeof repaint === 'function',
+    live: { palette: activePalette(), ...activeTokens() },
+  });
   if (typeof repaint === 'function') repaint();
   return true;
 }

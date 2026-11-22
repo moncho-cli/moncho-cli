@@ -4,6 +4,12 @@ import {
   COMPACTION_SUMMARY_PREFIX
 } from '../config/constants.js';
 import { estimateMessageTokens, estimateMessagesTokens, exceedsTokenBudget } from './tokens.js';
+import {
+  chunkToText,
+  describeCompactionSplit,
+  lastUserChunk,
+  serializeChunks,
+} from './compaction-render.js';
 
 /**
  * Context-window compaction (task.md item 8).
@@ -31,7 +37,16 @@ import { estimateMessageTokens, estimateMessagesTokens, exceedsTokenBudget } fro
  * The split and the assembly are pure functions so they can be unit-tested
  * without a model; only the summary text needs a model call, which is injected
  * as `callModel` to keep this module provider-agnostic.
+ *
+ * The module is split in two along the same line the rest of the harness uses:
+ * this file owns the *decision* (where the window is cut, what becomes the
+ * window), and `utils/compaction-render.js` owns the *words* (how a chunk is
+ * written for the summariser, how the split is named). The rendering half is
+ * re-exported here, because these are the symbols the specs and the call sites
+ * name.
  */
+
+export { chunkToText, describeCompactionSplit, lastUserChunk, serializeChunks };
 
 export const SUMMARIZER_SYSTEM_PROMPT = [
   'You are the context-compaction component of a coding agent.',
@@ -46,83 +61,72 @@ export const SUMMARIZER_SYSTEM_PROMPT = [
   'Do not add preamble, apologies or meta commentary. Output only the summary.'
 ].join('\n');
 
-/** Render one chunk as text for the summariser prompt. */
-export function chunkToText(chunk) {
-  if (chunk === null || chunk === undefined) return '';
-  if (typeof chunk === 'string') return chunk;
-
-  const role = chunk.role || 'chunk';
-  const parts = [];
-  if (typeof chunk.content === 'string' && chunk.content.length > 0) {
-    parts.push(chunk.content);
-  } else if (chunk.content !== undefined && chunk.content !== null) {
-    parts.push(JSON.stringify(chunk.content));
-  }
-  if (typeof chunk.thinking === 'string' && chunk.thinking.length > 0) {
-    parts.push(`[thinking]\n${chunk.thinking}`);
-  }
-  if (Array.isArray(chunk.tool_calls) && chunk.tool_calls.length > 0) {
-    parts.push(`[tool_calls]\n${JSON.stringify(chunk.tool_calls)}`);
-  }
-  if (chunk.tool_call_id) parts.push(`[tool_call_id] ${chunk.tool_call_id}`);
-  return `[${role}]\n${parts.join('\n')}`.trimEnd();
-}
-
-/** Serialise a list of chunks into the single text block sent to the summariser. */
-export function serializeChunks(chunks) {
-  return chunks.map(chunkToText).filter(Boolean).join('\n\n---\n\n');
-}
-
 /**
- * The newest chunk the *user* wrote in a list, or `null` when it holds none.
+ * The index a split boundary may not fall on.
  *
- * This picks the message a compaction carries verbatim out of the block it is
- * about to summarise: a summary paraphrases, and the prompt the user actually
- * typed is the thing that must not drift. The chunk comes back by reference, so
- * it is re-inserted unchanged — no marker added, no field rewritten.
+ * A provider that speaks the OpenAI chat schema pairs every assistant message that
+ * carries `tool_calls` with one `tool` message per call id. A window whose kept tail
+ * begins with such a `tool` message — its assistant message having been summarised
+ * away — is refused with a 400, and keeps being refused because the history is carried
+ * from call to call: the session is stuck while a new one works. So the boundary must
+ * never land *inside* a batch.
  *
- * @param {any[]} chunks
- * @returns {any|null}
+ * There is exactly one unsafe boundary: the one **between an assistant message
+ * carrying `tool_calls` and the `tool` messages that answer it**. Everything else is
+ * safe, because a batch's results always follow its call.
+ *
+ * When the boundary lands there, the whole batch is **kept**: the boundary moves up
+ * to where the batch starts, so the batch and its results stay together in the kept tail.
+ *
+ * Keeping the batch (rather than summarising it) is the safe direction: the kept tail
+ * is never empty and never starts with a result. Summarising the batch instead would
+ * evict the *last* chunk of the window along with it, leaving nothing to send — and a
+ * window with nothing in it makes the provider answer a request it cannot answer, over
+ * and over. The cost of keeping the batch is that the window may stay over budget for
+ * one turn; the cost of the other choice is a session that never works again.
+ *
+ * @param {any[]} chunks the whole window
+ * @param {number} startIndex the boundary the token budget chose
+ * @returns {number} the nearest boundary that does not cut a batch
  */
-export function lastUserChunk(chunks = []) {
-  if (!Array.isArray(chunks)) return null;
-  for (let i = chunks.length - 1; i >= 0; i -= 1) {
-    if (chunks[i]?.role === 'user') return chunks[i];
-  }
-  return null;
-}
+export function alignSplitToToolBatches(chunks = [], startIndex = 0) {
+  const list = Array.isArray(chunks) ? chunks : [];
+  const index = Math.max(0, Math.min(list.length, Number(startIndex) || 0));
+  if (index === 0 || index >= list.length) return index;
 
-/**
- * The split, in whole percentages, derived from the configured ratios.
- *
- * Every message that names the split — the CLI budget line, the
- * `compact_context` description and results, the TUI notice — reads it from here
- * rather than repeating a number. The factors come from `config/constants.js`, so
- * an operator who overrides `COMPACTION_OLD_RATIO` sees the same figure the code
- * actually uses, and no message can drift from the code again. The two
- * percentages always sum to 100.
- */
-export function describeCompactionSplit({
-  oldRatio = COMPACTION_OLD_RATIO,
-  keepRatio = COMPACTION_KEEP_RATIO
-} = {}) {
-  const oldPercent = Math.round(oldRatio * 100);
-  const keepPercent = 100 - oldPercent;
-  return {
-    oldRatio,
-    keepRatio,
-    oldPercent,
-    keepPercent,
-    oldLabel: `${oldPercent}%`,
-    keepLabel: `${keepPercent}%`,
-    label: `${oldPercent}/${keepPercent}`
-  };
+  // The chunk just below the boundary is a result whose call is above it.
+  if (list[index]?.role === 'tool') {
+    // Walk up to the assistant message that owns this result.
+    let owner = index - 1;
+    while (owner > 0 && list[owner]?.role === 'tool') owner -= 1;
+    const call = list[owner];
+    if (call?.role === 'assistant' && Array.isArray(call.tool_calls) && call.tool_calls.length > 0) {
+      // The batch is cut: it is kept whole, so the boundary moves up to where the
+      // batch starts.
+      return owner;
+    }
+  }
+
+  // The chunk just above the boundary is a call whose results are below it: the same
+  // cut, seen from the other side.
+  const previous = list[index - 1];
+  if (previous?.role === 'assistant' && Array.isArray(previous.tool_calls) && previous.tool_calls.length > 0) {
+    // The same cut from the other side: the call is kept and so are its results.
+    return index;
+  }
+
+  return index;
 }
 
 /**
  * Split an ordered chunk list into the older block to summarise and the newer
  * block to keep, using token mass rather than chunk count so a couple of huge
  * chunks cannot skew the configured split.
+ *
+ * The boundary is then moved so it never cuts a tool batch in half
+ * (`alignSplitToToolBatches`): a window whose kept tail starts with a `tool` message
+ * is refused by the provider with a 400, and keeps being refused, because the history
+ * is carried from call to call — the session is stuck while a new one works.
  *
  * @returns {{older: any[], kept: any[], olderTokens: number, keptTokens: number, totalTokens: number}}
  */
@@ -152,14 +156,20 @@ export function splitByTokenBudget(
   // Never evict everything: at least the newest chunk always survives.
   if (startIndex <= 0) startIndex = Math.max(1, chunks.length - 1);
   if (chunks.length - startIndex < 1) startIndex = chunks.length - 1;
+  // Never cut a tool batch in half: the boundary moves to the nearest safe one.
+  startIndex = alignSplitToToolBatches(chunks, startIndex);
 
   const older = chunks.slice(0, startIndex);
   const kept = chunks.slice(startIndex);
+  // The accounting follows the boundary that was actually used: the alignment may have
+  // moved it, and a report that named the old split would be a lie.
+  const olderTokens = counts.slice(0, startIndex).reduce((sum, value) => sum + value, 0);
+  const keptTokensNow = counts.slice(startIndex).reduce((sum, value) => sum + value, 0);
   return {
     older,
     kept,
-    olderTokens: totalTokens - keptTokens,
-    keptTokens,
+    olderTokens,
+    keptTokens: keptTokensNow,
     totalTokens,
     oldRatio,
     keepRatio

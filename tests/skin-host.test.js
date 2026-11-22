@@ -7,6 +7,8 @@ import {
 } from '../app/skin-host.js';
 import { activePalette, activeSkinName, resetTheme, isSkinBootstrapped } from '../app/theme.js';
 import { saveSkin, writeActiveName, readSkin } from '../utils/skins-store.js';
+import { createLogger } from '../utils/logger.js';
+import { registerLogger, clearLogger } from '../utils/host.js';
 
 /**
  * The project's look as the host wires it (`docs/interface/skins`).
@@ -103,6 +105,42 @@ test('restoreSessionSkin() is refused before the bootstrap and applies the file 
     assert.equal(restoreSessionSkin('deleted-skin', { dir: DIR }), false, 'a missing file restores nothing');
     assert.equal(activeSkinName(), 'matrix', 'the look stayed where it was');
   } finally {
+    cleanup();
+  }
+});
+
+test('a stored skin whose band blessed cannot paint is named in the log when it is applied', () => {
+  // The only place a refused name still exists: the store degrades a colour blessed cannot
+  // paint to the shipped one, so the band quietly keeps its old colour and the screen looks
+  // unchanged. Reading the raw file is what lets the log say why.
+  //
+  // The name is `orange`, not `bright-blue`: blessed paints a bright background as well as
+  // a bright foreground, so a stored `bright-blue` band is honoured rather than refused
+  // (`tests/skins-colors.test.js` proves it through a real widget).
+  cleanup();
+  const file = `${DIR}/moncho.log`;
+  const logger = createLogger({ file, level: 'info' });
+  registerLogger(logger);
+  try {
+    saveSkin({ name: 'rainbowish', palette: { intent: 'bright-red' } }, { dir: DIR });
+    // Write the raw file by hand: `saveSkin()` normalizes, and this is the older-run shape.
+    const raw = JSON.parse(fs.readFileSync(`${DIR}/rainbowish.json`, 'utf-8'));
+    raw.selected = 'orange';
+    raw.userBg = 'chartreuse';
+    fs.writeFileSync(`${DIR}/rainbowish.json`, JSON.stringify(raw));
+    writeActiveName('rainbowish', { dir: DIR });
+
+    const applied = applyProjectSkin({ dir: DIR });
+    assert.equal(applied?.name, 'rainbowish', 'the stored skin is still applied');
+    assert.equal(applied?.selected, 'blue', 'but its band degrades to a paintable name');
+
+    const text = fs.readFileSync(file, 'utf-8');
+    assert.match(text, /background colour refused/, 'the log says why the band did not move');
+    assert.match(text, /"key":"selected"/, 'and names the token');
+    assert.match(text, /"value":"orange"/, 'and the value it refused');
+    assert.match(text, /"key":"userBg"/, 'both refused bands, not only the first');
+  } finally {
+    clearLogger();
     cleanup();
   }
 });

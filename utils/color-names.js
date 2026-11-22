@@ -43,6 +43,31 @@ export const BLESSED_COLORS = Object.freeze([
 const PAINTABLE = new Set(BLESSED_COLORS);
 
 /**
+ * The colour names blessed can paint as a **background**.
+ *
+ * The **same** closed set as `BLESSED_COLORS`, and that equality is the whole point:
+ * blessed's `_attr()` (`program.js`) has a case for every base *and* every bright/light
+ * background (`blue bg` → `\x1b[44m`, `bright blue bg` → `\x1b[104m`), so a tag such as
+ * `{bright-blue-bg}` resolves to a real escape instead of being printed as text.
+ *
+ * What makes it work is the **tag parser**, not the switch alone:
+ * `lib/widgets/element.js#_parseTags` rewrites every `-` of a tag to a space
+ * (`param = cap[2].replace(/-/g, ' ')`) before it asks for the escape, so `{bright-blue-bg}`
+ * reaches `_attr()` as `bright blue bg` — the spelling the switch has a case for. Ask
+ * `_attr()` for the hyphenated `bright-blue bg` instead and it answers `null`, which is how
+ * a background can look unpaintable while painting perfectly well. The mistake this set was
+ * built on cost the skins module its bright backgrounds.
+ *
+ * The two lists are kept apart on purpose: `BLESSED_BACKGROUNDS` is the door a **background**
+ * token goes through, and `tests/skins-colors.test.js` proves it against the real library, so
+ * a name the switch has no case for cannot slip into it.
+ */
+export const BLESSED_BACKGROUNDS = Object.freeze([...BLESSED_COLORS]);
+
+/** Membership is O(1) and the set is the frozen list above, spelled lowercase. */
+const PAINTABLE_BACKGROUND = new Set(BLESSED_BACKGROUNDS);
+
+/**
  * True when `value` is a colour name this terminal can really paint.
  *
  * Strict on purpose: the name must already be canonical (lowercase, hyphenated), because
@@ -51,4 +76,17 @@ const PAINTABLE = new Set(BLESSED_COLORS);
  */
 export function isColorName(value) {
   return typeof value === 'string' && PAINTABLE.has(value.trim());
+}
+
+/**
+ * True when `value` is a colour name blessed can paint as a **background**.
+ *
+ * Today that is every paintable name (`BLESSED_BACKGROUNDS` above), so the answer is the
+ * same as `isColorName()` — but it is kept as its own door because a background is a
+ * different thing to ask about: this is the vocabulary a band may be named with, and a name
+ * the switch has no case for would be printed literally on the row the band was meant to
+ * fill.
+ */
+export function isBackgroundColorName(value) {
+  return typeof value === 'string' && PAINTABLE_BACKGROUND.has(value.trim());
 }

@@ -13,7 +13,7 @@ import {
 // re-exported here because this is the path every colour consumer and every spec already
 // uses, so a skin repaints the transcript without an import changing anywhere.
 export {
-  CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS,
+  CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS, PROSE_BACKGROUNDS,
   USER_ECHO_HEADER, INTENT_COLOR, INTENT_BOLD, TRACKING_COLOR, TRACKING_BOLD,
   STAMP_COLOR, REFUSAL_COLOR, REFUSAL_BOLD,
   DEFAULT_CONVERSATION_COLORS, isColorName,

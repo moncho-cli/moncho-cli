@@ -23,7 +23,9 @@ summary: >
   padding and its two declared rows, so the block-click row math is unchanged.
 code:
   - path: app/prose-band.js
-    symbols: [PROSE_BANDS, BAND_BACKGROUNDS, isBandRole, bandColor, bandLine, bandMargin, takeBandOptions, isBlankBand, bandWidthOf, composeBanded]
+    symbols: [PROSE_BANDS, BAND_BACKGROUNDS, BAND_TOKEN_OF, isBandRole, bandColor, bandLine, bandMargin, takeBandOptions, isBlankBand, bandWidthOf, composeBanded]
+  - path: app/band-palette.js
+    symbols: [PROSE_BACKGROUNDS, BAND_TOKEN_OF, ROLE_OF_BAND_TOKEN]
   - path: app/tagged-text.js
     symbols: [untag, visibleWidth, padVisible]
   - path: app/transcript-append.js

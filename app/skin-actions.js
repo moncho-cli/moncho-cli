@@ -63,6 +63,21 @@ export function moveIndex(index, delta, length) {
 }
 
 /**
+ * Clamp a cursor to the actions actually offered right now.
+ *
+ * The list shrinks under the cursor: emptying the name field takes the two apply
+ * actions off it (`availableActions`), so a cursor left on Cancel pointed past the end
+ * of a one-row list — no row was painted as selected and the next arrow jumped. Every
+ * paint settles the cursor through here, so the highlight can never go missing.
+ */
+export function clampIndex(index, length) {
+  const size = Number.isInteger(length) && length > 0 ? length : 0;
+  if (!size) return 0;
+  const from = Number.isInteger(index) ? index : 0;
+  return Math.min(Math.max(from, 0), size - 1);
+}
+
+/**
  * What one keypress means in the modal.
  *
  * The answer is an intent the modal acts on — the modal never inspects the key itself,
@@ -121,6 +136,12 @@ export function decideKey({
   if (focus === 'name') {
     if (name === 'enter' || name === 'return') return { type: 'focus', to: 'actions' };
     if (name === 'backspace') return { type: 'backspace' };
+    // The **arrow keys** move the action cursor from the name field too, without a Tab
+    // first: the modal puts the focus in the field the moment the proposal lands, so a
+    // reader who reaches for the arrows found them dead. `j`/`k` are deliberately *not*
+    // treated as movement here — in a text field they are letters a name may contain.
+    if (name === 'up') return { type: 'move', delta: -1 };
+    if (name === 'down') return { type: 'move', delta: 1 };
     if (name === 'space') return { type: 'edit', text: ' ' };
     // A single printable character, and nothing a modifier turned into a command.
     if (full.length === 1 && !key?.ctrl && !key?.meta) return { type: 'edit', text: full };

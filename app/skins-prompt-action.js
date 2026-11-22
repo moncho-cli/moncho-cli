@@ -1,5 +1,5 @@
 import {
-  DEFAULT_SKIN, DEFAULT_SKIN_NAME, readSkin, saveSkin, writeActiveName, slugName,
+  DEFAULT_SKIN, DEFAULT_SKIN_NAME, readSkin, saveSkin, writeActiveName, slugName, normalizeSkin,
 } from '../utils/skins-store.js';
 import { activePalette, activeTokens, applySkin } from './theme.js';
 import { logEvent } from '../utils/logger.js';
@@ -20,6 +20,29 @@ import { logEvent } from '../utils/logger.js';
  * in RAM cannot be re-read, listed, edited or restored. What `save` decides is narrower and
  * separate: whether the *project* adopts the skin as its default (`active.json`).
  */
+
+/**
+ * The look **on screen right now**, as the floor a model request is answered from.
+ *
+ * The file on disk is not enough: `/skins <name> intent=green` (no `save`) moves the screen
+ * without writing anything, and `/skins customize` is meant to adjust *what the user is
+ * looking at*. Sending the file's colours instead would let the model reason about a look
+ * that is not the one in force — it could "keep everything it did not mention" by keeping
+ * colours the user already changed away from. So the identity (the name) comes from the
+ * active skin and every colour comes from the live palette and tokens, which is exactly the
+ * pair `activePalette()`/`activeTokens()` read.
+ *
+ * @param {object|null} active the active skin read from its file, or null
+ * @returns {object} a canonical skin wearing the live colours and the active name
+ */
+export function liveProfile(active = null) {
+  const identity = active || { ...DEFAULT_SKIN };
+  return normalizeSkin({
+    ...identity,
+    palette: { ...identity.palette, ...activePalette() },
+    ...activeTokens(),
+  });
+}
 
 /**
  * Run the prompt action.
@@ -47,8 +70,10 @@ export async function runSkinPrompt(ctx, parsed, dir, activeName) {
   }
 
   // The proposal is *built on* the skin in force, so "make it warmer" keeps the rest of
-  // the look instead of resetting every colour the request did not mention.
-  const base = readSkin(activeName(ctx), { dir }) || { ...DEFAULT_SKIN };
+  // the look instead of resetting every colour the request did not mention. "The skin in
+  // force" is the live profile, not the file: an unsaved `/skins <name> token=…` moved the
+  // screen, and the model has to be told what is really there.
+  const base = liveProfile(readSkin(activeName(ctx), { dir }));
   logEvent('info', 'skins', 'proposal requested', { request: parsed.request, base: base.name });
 
   // The subchat answers a **choice** — `{ skin, save }` — because the modal offers
@@ -158,13 +183,21 @@ export async function runSkinCustomize(ctx, parsed, dir, activeName) {
     };
   }
 
-  logEvent('info', 'skins', 'customize requested', { request: parsed.request, name: active.name });
+  logEvent('info', 'skins', 'customize requested', {
+    request: parsed.request, name: active.name, base: { palette: activePalette(), ...activeTokens() },
+  });
+
+  // The base the model is asked to adjust is the **live profile** — the colours on screen
+  // right now — not the file. An unsaved `/skins <name> token=…` moved the screen, and a
+  // request like "change the model prose to green" has to be answered from the look the user
+  // is actually looking at, so the model changes only what was asked and keeps the rest.
+  const base = liveProfile(active);
 
   // The choice shape is the same one the prompt path uses, so the modal stays one widget.
   // `editable: false` is what tells it the name is settled; `customize: true` swaps the
   // action list for the update-only one.
   const choice = await ctx.skinSubchat(parsed.request, {
-    base: active, dir, palette: activePalette(), tokens: activeTokens(), customize: true, editable: false,
+    base, dir, palette: activePalette(), tokens: activeTokens(), customize: true, editable: false,
   });
   const updated = choice?.skin ?? choice ?? null;
   if (!updated) {

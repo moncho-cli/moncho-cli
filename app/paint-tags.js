@@ -1,4 +1,4 @@
-import { isColorName } from '../utils/color-names.js';
+import { isColorName, isBackgroundColorName } from '../utils/color-names.js';
 
 /**
  * **The** layer between a colour name and a blessed tag (`docs/interface/skins`).
@@ -43,6 +43,32 @@ export function fgTag(color, body = '') {
   // the shipped palette leaves to the terminal, so the body comes back untouched.
   if (name === 'default') return text;
   return `{${name}-fg}${text}{/${name}-fg}`;
+}
+
+/**
+ * A real blessed **background** tag around `body`, or `body` alone.
+ *
+ * The same rule as `fgTag()`, for the other half of a cell: a name the terminal cannot
+ * paint is refused rather than emitted (blessed would print `{orange-bg}` literally), and
+ * `default` — the absence of a background — wraps nothing. It exists because the prose
+ * bands (`app/prose-band.js`) are backgrounds, and routing them through `fgTag()` would
+ * have painted a foreground the band never asked for.
+ */
+export function bgTag(color, body = '') {
+  const text = String(body ?? '');
+  if (!text) return '';
+  // A background takes the same vocabulary as a foreground: blessed's `_attr()` has a case for
+  // every bright/light background as well (`bright blue bg` → `\x1b[104m`), and the tag
+  // parser reaches it because it rewrites `-` to a space before asking
+  // (`element.js#_parseTags`). A name the switch has **no** case for is refused here, at the
+  // one place a colour becomes a `-bg` tag, so a literal tag can never reach the screen.
+  // A leaf module stays a leaf: the caller with a log records the refusal
+  // (`app/skins-command.js`), because importing the logger here would pull the whole config
+  // into the render path and bind the provider URL at import time.
+  if (!isBackgroundColorName(color)) return text;
+  const name = String(color).trim();
+  if (name === 'default') return text;
+  return `{${name}-bg}${text}{/${name}-bg}`;
 }
 
 /** A real blessed tag pair (open, close) for callers wrapping content themselves. */

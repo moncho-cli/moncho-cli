@@ -1,10 +1,22 @@
 import {
-  SKINS_DIR, DEFAULT_SKIN_NAME, DEFAULT_SKIN, PALETTE_KEYS, PRESENTATION_KEYS,
-  listSkins, readSkin, saveSkin, deleteSkin, readActiveName, writeActiveName, slugName, isColorName,
+  SKINS_DIR, DEFAULT_SKIN_NAME, DEFAULT_SKIN, BACKGROUND_KEYS,
+  listSkins, readSkin, saveSkin, deleteSkin, writeActiveName, slugName,
 } from '../utils/skins-store.js';
 import { applySkin, activePalette, activeTokens, resetTheme, setPalette, setTokens } from './theme.js';
 import { runSkinPrompt, runSkinCustomize } from './skins-prompt-action.js';
+import {
+  activeName, parseTokens, badValueMessage, parseSkinsArgs, formatSkinLines,
+} from './skin-tokens.js';
 import { logEvent } from '../utils/logger.js';
+import { reducedBackgrounds, terminalColorCount } from './terminal-capability.js';
+
+// The grammar, the token table and the listing live in `app/skin-tokens.js` (this module was
+// over its line budget once it had to own the whole shape of a skin); re-exported here
+// because this is the path every caller and every spec already uses.
+export {
+  activeName, parseTokens, badValueMessage, parseSkinsArgs, formatSkinLines,
+  COLOR_TOKEN_KEYS, BOOLEAN_TOKEN_KEYS, SUGGESTED_COLORS,
+} from './skin-tokens.js';
 
 /**
  * `/skins` — manage the project's look: the conversation palette and the hand-picked
@@ -37,106 +49,6 @@ import { logEvent } from '../utils/logger.js';
  * Like every command it returns a plain result object instead of printing, so the TUI
  * and the line CLI report it identically (`docs/interface/commands`).
  */
-
-/** Where a skin's own name goes when it is not given: the persisted active skin. */
-function activeName(ctx) {
-  return slugName(ctx.activeName) || readActiveName({ dir: ctx.skinsDir });
-}
-
-/** The `tokens=` arguments of the command, or a refusal naming the bad one. */
-function parseTokens(pairs = {}) {
-  const palette = {};
-  const tokens = {};
-  for (const [key, value] of Object.entries(pairs)) {
-    const raw = String(value ?? '').trim();
-    if (PALETTE_KEYS.includes(key)) {
-      if (!isColorName(raw)) return { error: raw, key };
-      palette[key] = raw;
-      continue;
-    }
-    if (['border', 'brand', 'hint', 'selected', 'selectedFg'].includes(key)) {
-      if (!isColorName(raw)) return { error: raw, key };
-      tokens[key] = raw;
-      continue;
-    }
-    if (['boldIntent', 'boldTracking'].includes(key)) {
-      if (raw !== 'true' && raw !== 'false') return { error: raw, key, boolean: true };
-      tokens[key] = raw === 'true';
-      continue;
-    }
-    return { error: key, key, unknown: true };
-  }
-  return { palette, tokens };
-}
-
-/**
- * The refusal for a `key=value` the command could not take, naming the **value** first.
- *
- * Three different mistakes reach here and they deserve three different sentences: a colour
- * the terminal cannot paint (`orange` — a blessed tag it does not know is printed
- * literally, so it must be refused rather than saved), a boolean that is not `true`/`false`,
- * and a key no skin has. Naming the key alone left the user guessing which of their
- * arguments was wrong.
- */
-function badValueMessage({ error, key, boolean, unknown }) {
-  if (unknown) return `"${error}" is not a skin token. The colours are user, tool, intent, context, error, notice, tracking, refusal; the look is border, brand, hint, selected, selectedFg, boldIntent, boldTracking.`;
-  if (boolean) return `"${key}=${error}" needs true or false.`;
-  return `"${error}" is not a colour this terminal can paint (${key}=${error}). Use a name like ${SUGGESTED_COLORS.join(', ')}.`;
-}
-
-/** A few names from each end of the vocabulary, short enough to read in one line. */
-const SUGGESTED_COLORS = ['bright-blue', 'cyan', 'grey', 'bright-red', 'white'];
-
-/**
- * Split a `/skins` argument into a subcommand.
- *
- * The grammar is small on purpose: a leading verb wins (`list`, `save`, `reset`,
- * `prompt`), otherwise the first bare word is a skin name and any `key=value` after it
- * are tokens, and a bare `name` with nothing after it is an apply. `save` may follow
- * the token list, which is what lets a look be built and written in one line.
- */
-export function parseSkinsArgs(arg = '') {
-  const parts = String(arg ?? '').trim().split(/\s+/).filter(Boolean);
-  const verb = parts[0]?.toLowerCase();
-  if (!verb) return { action: 'list' };
-  if (verb === 'list') return { action: 'list' };
-  if (verb === 'reset') return { action: 'reset' };
-  if (verb === 'prompt') return { action: 'prompt', request: parts.slice(1).join(' ') };
-  if (verb === 'customize') return { action: 'customize', request: parts.slice(1).join(' ') };
-  if (verb === 'save') return { action: 'save', name: parts[1] || '' };
-
-  const name = parts[0];
-  const pairs = {};
-  let save = false;
-  let saveAs = name;
-  const rest = parts.slice(1);
-  for (let i = 0; i < rest.length; i += 1) {
-    const token = rest[i];
-    if (token.toLowerCase() === 'save') {
-      save = true;
-      // A bare word right after `save` names the skin to write; without one the
-      // look is saved over the skin it was built from.
-      const next = rest[i + 1];
-      if (next && next.indexOf('=') < 0) { saveAs = next; i += 1; }
-      continue;
-    }
-    const eq = token.indexOf('=');
-    if (eq < 0) return { action: 'unknown', token };
-    const key = token.slice(0, eq).trim();
-    const value = token.slice(eq + 1).trim();
-    if (key === 'name') { saveAs = value; continue; }
-    pairs[key] = value;
-  }
-  return { action: save ? 'apply-save' : 'apply', name, saveAs, pairs };
-}
-
-/** One line per palette/token for a listing, so a skin is readable at a glance. */
-export function formatSkinLines(skin, { active = false } = {}) {
-  const flag = active ? ' (active)' : '';
-  const palette = PALETTE_KEYS.map((key) => `${key}=${skin.palette?.[key] ?? '?'}`).join(' ');
-  const tokens = PRESENTATION_KEYS.map((key) => `${key}=${skin[key] ?? '?'}`).join(' ');
-  return [`${skin.name}${flag}`, `  palette: ${palette}`, `  tokens:  ${tokens}`];
-}
 
 /** `/skins [list|reset|<name>|save <name>|prompt <request>]` — the project's look. */
 export function skinsCommand() {
@@ -201,7 +113,14 @@ export function skinsCommand() {
           applySkin(saved.skin);
           writeActiveName(saved.skin.name, { dir });
           ctx.onApply?.(saved.skin);
-          logEvent('info', 'skins', 'saved the look on screen', { name: saved.skin.name, path: saved.path });
+          logEvent('info', 'skins', 'saved the look on screen', {
+            name: saved.skin.name,
+            path: saved.path,
+            // The live profile, bands included: a look that saved but did not seem to change
+            // is diagnosable from the log alone, which is the whole point of logging the
+            // palette AND the tokens here rather than only the name.
+            live: { palette: activePalette(), ...activeTokens() },
+          });
           return { ok: true, code: 'SAVED', path: saved.path, skin: saved.skin, message: `Saved "${saved.skin.name}" to ${saved.path} and put it on.` };
         } catch (error) {
           return { ok: false, code: 'SAVE_FAILED', message: error.message };
@@ -216,8 +135,17 @@ export function skinsCommand() {
       const name = slugName(parsed.name);
       if (!name) return { ok: false, code: 'BAD_NAME', message: 'Name the skin: /skins <name>, /skins save <name> or /skins list.' };
 
-      const { palette, tokens, error, key, boolean, unknown } = parseTokens(parsed.pairs);
-      if (error) return { ok: false, code: 'BAD_VALUE', message: badValueMessage({ error, key, boolean, unknown }) };
+      const { palette, tokens, error, key, boolean, unknown, background } = parseTokens(parsed.pairs);
+      if (error) {
+        // A refused background is logged too: "I set userBg=orange and the band did not
+        // move" is exactly the report the log has to be able to answer.
+        if (background) {
+          logEvent('warn', 'skins', 'background colour refused; it would be printed literally', {
+            key, value: error, paintable: false,
+          });
+        }
+        return { ok: false, code: 'BAD_VALUE', message: badValueMessage({ error, key, boolean, unknown, background }) };
+      }
 
       const known = readSkin(name, { dir });
       const edits = Object.keys(palette).length + Object.keys(tokens).length;
@@ -234,7 +162,24 @@ export function skinsCommand() {
       if (Object.keys(palette).length) setPalette(palette);
       if (Object.keys(tokens).length) setTokens(tokens);
       const live = { name, palette: activePalette(), ...activeTokens() };
-      logEvent('info', 'skins', `applied the skin "${name}"`, { palette: live.palette, tokens: activeTokens() });
+      // A background the terminal cannot show in the form it was asked for is named in the
+      // log with **both** names: the request is honoured, but a terminal with fewer than
+      // sixteen colours paints a bright background as its base colour. Saying so is the
+      // difference between "the band did not move" and "the band moved, and your terminal
+      // shows it as the base colour" (`app/terminal-capability.js`).
+      const reduced = reducedBackgrounds(activeTokens(), BACKGROUND_KEYS);
+      if (Object.keys(reduced).length) {
+        logEvent('info', 'skins', 'background painted as the terminal allows', {
+          terminal: terminalColorCount(),
+          reduced,
+        });
+      }
+      // `activeTokens()` carries the two prose bands (`userBg`/`assistantBg`), so the log
+      // shows the backgrounds a request for one really set — the case that used to report
+      // success while the band stayed as it was.
+      logEvent('info', 'skins', `applied the skin "${name}"`, {
+        palette: live.palette, tokens: activeTokens(), userBg: live.userBg, assistantBg: live.assistantBg,
+      });
       ctx.onApply?.(live);
 
       if (parsed.action === 'apply-save') {
@@ -244,6 +189,15 @@ export function skinsCommand() {
         try {
           const saved = saveSkin({ ...live, name: target }, { dir });
           writeActiveName(saved.skin.name, { dir });
+          // The write is recorded like the `/skins save` path's, with the live profile
+          // (bands included): an `apply-save` that reported success while the screen stayed
+          // put has to be diagnosable from the log, and the log would otherwise miss the
+          // half of the command that touched the disk.
+          logEvent('info', 'skins', 'saved the look on screen', {
+            name: saved.skin.name,
+            path: saved.path,
+            live: { palette: activePalette(), ...activeTokens() },
+          });
           return { ok: true, code: 'SAVED', path: saved.path, skin: saved.skin, message: `Saved "${saved.skin.name}" to ${saved.path} and put it on.` };
         } catch (error) {
           return { ok: false, code: 'SAVE_FAILED', message: error.message };

@@ -11,6 +11,9 @@ The entire conversation history is divided by token mass: the newest portion is 
 - The split is driven by **token mass**, not chunk count: the newest chunks are accumulated until they hold at least the keep ratio of the window's tokens; everything older is the block to summarise. Token mass prevents two huge chunks from skewing the split.
 - **Every message that names the split derives it from the config** through `describeCompactionSplit()` (`utils/compaction.js`), which reports the two shares as whole percentages: the CLI budget line (`main.js`), the `compact_context` description and result messages (`tools/compact_context.js`). A message therefore cannot drift from the code again, and an operator who overrides the ratio sees the figure the code actually uses.
 - The tail is always non-empty: the newest chunk is never evicted, and a window of two or more chunks is compactable, but a single-chunk window remains untouched.
+- **The boundary never cuts a tool batch in half.** A provider that speaks the OpenAI chat schema pairs every assistant message carrying `tool_calls` with one `tool` message per call id. A window whose kept tail begins with such a `tool` message — its assistant message having been summarised away — is refused with a 400, and keeps being refused because the history is carried from call to call: the session is stuck while a new one works. So the one unsafe boundary (between a call and its results) is moved: the **whole batch is kept**, and the boundary moves up to where the batch starts.
+  - Keeping the batch is the safe direction: the kept tail is never empty and never starts with a result. Summarising the batch instead would evict the *last* chunk of the window along with it, leaving nothing to send — and a window with nothing in it makes the provider answer a request it cannot answer, over and over. The cost of keeping the batch is that the window may stay over budget for one turn; the cost of the other choice is a session that never works again.
+  - The rule is `alignSplitToToolBatches()` (`utils/compaction.js`).
 
 ## The summary contract
 
@@ -61,4 +64,4 @@ A summary paraphrases, and the prompt the user actually typed is the one thing t
 
 ## Implementation
 
-- `utils/compaction.js`, `app/context-window.js`, `tools/compact_context.js`, `utils/host.js`, `app/conversation-manager.js`
+- `utils/compaction.js`, `utils/compaction-render.js`, `app/context-window.js`, `tools/compact_context.js`, `utils/host.js`, `app/conversation-manager.js`
