@@ -28,6 +28,11 @@ function resolveThinkingPath() {
 
 const THINKING_FILE = resolveThinkingPath();
 
+export function projectLanguageGuidance(value) {
+  const language = typeof value === 'string' ? value.trim() : '';
+  return language ? `\n\nProject artifact language preference: ${JSON.stringify(language)}. Follow project rules and existing conventions when applying it.` : '';
+}
+
 async function loadSystemPrompt() {
   // config/prompt.md, not the module root: the prompt is agent *data*, and keeping
   // every shipped asset inside a directory means the image copies it with the rest
@@ -46,7 +51,7 @@ async function loadSystemPrompt() {
         placeholders: unresolved,
       });
     }
-    return prompt;
+    return prompt + projectLanguageGuidance(process.env.PROJECT_LANGUAGE);
   } catch (error) {
     // The agent answers without its prompt from here on, which is exactly the kind
     // of silent degradation this log exists to make findable.

@@ -37,6 +37,7 @@ tests:
   - path: tests/harness-tools.test.js
     cases:
       - write_file reports verified success and rejects unsafe paths
+      - write schema exposes path and stale-read acceptance criteria
       - read_file wraps output in <file relative_path=...> tags
       - read_file reports the paged line range and total
       - read_file keeps line numbers on by default

@@ -24,7 +24,7 @@ const { definition, execute } = defineTool({
     properties: {
       path: {
         type: 'string',
-        description: 'The path to the file to write'
+        description: 'A relative path inside the project. A previously read file must not have changed since that read (STALE_READ), except tool-owned tracking files; host-executable paths are refused.'
       },
       content: {
         type: 'string',

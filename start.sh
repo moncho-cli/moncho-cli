@@ -20,7 +20,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-# Only forward the three provider variables, and only when they are set.
+# Forward supported settings only when they are set.
 ENV_FLAGS=()
 [ -n "${OPENAI_BASE_URL:-}" ] && ENV_FLAGS+=(-e "OPENAI_BASE_URL=$OPENAI_BASE_URL")
 [ -n "${OPENAI_API_KEY:-}" ]  && ENV_FLAGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY")
@@ -28,6 +28,8 @@ ENV_FLAGS=()
 [ -n "${MODEL_TEMPERATURE:-}" ] && ENV_FLAGS+=(-e "MODEL_TEMPERATURE=$MODEL_TEMPERATURE")
 [ -n "${CONTEXT_MAX_LENGTH:-}" ] && ENV_FLAGS+=(-e "CONTEXT_MAX_LENGTH=$CONTEXT_MAX_LENGTH")
 [ -n "${COMPACTION_OLD_RATIO:-}" ] && ENV_FLAGS+=(-e "COMPACTION_OLD_RATIO=$COMPACTION_OLD_RATIO")
+[ -n "${FILE_LINE_LIMIT:-}" ] && ENV_FLAGS+=(-e "FILE_LINE_LIMIT=$FILE_LINE_LIMIT")
+[ -n "${PROJECT_LANGUAGE:-}" ] && ENV_FLAGS+=(-e "PROJECT_LANGUAGE=$PROJECT_LANGUAGE")
 [ -n "${PULSE_LIMIT:-}" ]     && ENV_FLAGS+=(-e "PULSE_LIMIT=$PULSE_LIMIT")
 [ -n "${LOG_LEVEL:-}" ]       && ENV_FLAGS+=(-e "LOG_LEVEL=$LOG_LEVEL")
 [ -n "${LOG_FILE:-}" ]        && ENV_FLAGS+=(-e "LOG_FILE=$LOG_FILE")

@@ -14,6 +14,11 @@ implementation is linked below.
   cached, then prepended as the first `system` message. Internal calls pass
   `{ systemPrompt: false }` so they do not answer as the agent — the context
   summariser is the caller that relies on this.
+- The agent can converse in the user's language while tasks, documentation, comments
+  and source code follow the project's language and conventions. Optional
+  `PROJECT_LANGUAGE` supplies a preference for artifacts; blank or unset adds no
+  preference, and repository rules and conventions still take precedence. The
+  preference is part of the cached agent prompt, not internal calls.
 - Streaming is opt-in via the flag; the Ollama-only `think` flag is sent only when
   the base URL looks like Ollama, so an OpenAI-compatible endpoint never receives
   an unknown field.

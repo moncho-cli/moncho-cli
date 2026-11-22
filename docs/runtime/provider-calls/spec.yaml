@@ -13,7 +13,7 @@ summary: >
   identity from the base URL.
 code:
   - path: api/ollama.js
-    symbols: [callOllama]
+    symbols: [callOllama, projectLanguageGuidance]
   - path: api/provider-response.js
     symbols: [normalizeUsage, normalizeResponse]
   - path: config/constants.js
@@ -24,6 +24,7 @@ tests:
       - detectProvider maps common base URLs (task.md item 5)
       - describeModel reports the configured provider and model
       - a default call injects the agent system prompt and normalises the response
+      - project language guides artifacts without dictating conversation language
       - a configured MODEL_TEMPERATURE reaches the request body
       - systemPrompt:false omits the agent prompt (used by the context summariser)
       - the abort signal is honoured

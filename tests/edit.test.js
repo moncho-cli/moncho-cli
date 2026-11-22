@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { execute as editFile } from '../tools/edit_file.js';
+import { definition as editDefinition, execute as editFile } from '../tools/edit_file.js';
 import { clearReads, recordRead } from '../utils/read-tracker.js';
 
 /**
@@ -35,6 +35,21 @@ function writeFile(name, content) {
 function readFile(name) {
   return fs.readFileSync(name, 'utf-8');
 }
+
+test('model-facing edit criteria match no-change refusals', async () => {
+  const params = editDefinition.function.parameters.properties;
+  assert.match(params.replace.description, /must differ from "search"/);
+  assert.match(params.edits.description, /non-empty and differ from replace/);
+  assert.match(params.edits.description, /final result must change/);
+  writeFile('no-change.txt', 'one');
+  const same = body(await editFile({ path: 'no-change.txt', search: 'one', replace: 'one' }));
+  assert.equal(same.code, 'NO_CHANGES');
+  const reversed = body(await editFile({ path: 'no-change.txt', edits: [
+    { search: 'one', replace: 'two' }, { search: 'two', replace: 'one' },
+  ] }));
+  assert.equal(reversed.code, 'NO_CHANGES');
+  assert.equal(readFile('no-change.txt'), 'one');
+});
 
 test('an edit replaces exactly the searched text and leaves the rest alone', async () => {
   writeFile('simple.js', 'const a = 1;\nconst b = 2;\nconst c = 3;\n');

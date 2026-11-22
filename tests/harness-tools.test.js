@@ -9,7 +9,7 @@ import { registerSession, clearSession } from '../utils/host.js';
 import { ensureTrackingFiles } from '../utils/tracking-store.js';
 import { hasIntentParameter, parseToolArgs, getIntent, withIntentParameter } from '../utils/tool-schema.js';
 import { execute as readFileExecute, wrapFileContent } from '../tools/read_file.js';
-import { execute as writeFileExecute } from '../tools/write_file.js';
+import { definition as writeDefinition, execute as writeFileExecute } from '../tools/write_file.js';
 import { execute as updateTaskExecute, parseTaskItems, markItemDone, renderPlan } from '../tools/update_task.js';
 import { execute as editFileExecute } from '../tools/edit_file.js';
 
@@ -75,6 +75,14 @@ test('every auto-loaded tool declares the required intent parameter', async () =
   for (const expected of ['read_file', 'hint_file', 'write_file', 'edit_file', 'run_bash', 'run_npm', 'compact_context', 'update_task', 'grep', 'blob']) {
     assert.ok(names.includes(expected), `missing tool ${expected}`);
   }
+});
+
+test('write schema exposes path and stale-read acceptance criteria', () => {
+  const description = writeDefinition.function.parameters.properties.path.description;
+  assert.match(description, /relative path inside the project/);
+  assert.match(description, /STALE_READ/);
+  assert.match(description, /except tool-owned tracking files/);
+  assert.match(description, /host-executable paths are refused/);
 });
 
 test('withIntentParameter keeps the original parameters and required list', () => {

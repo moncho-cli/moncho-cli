@@ -130,7 +130,7 @@ const { definition, execute } = defineTool({
       },
       replace: {
         type: 'string',
-        description: 'The text to put in place of "search". Use "" to delete it.',
+        description: 'The text to put in place of "search". It must differ from "search" (NO_CHANGES otherwise); use "" to delete it.',
       },
       all: {
         type: 'boolean',
@@ -138,7 +138,7 @@ const { definition, execute } = defineTool({
       },
       edits: {
         type: 'array',
-        description: `Several edits applied in order, all-or-nothing (at most ${MAX_EDITS}). Each item is { "search", "replace", "all"? }. An alternative to a top-level "search"/"replace" pair, never both.`,
+        description: `Several edits applied in order, all-or-nothing (at most ${MAX_EDITS}). Each item is { "search", "replace", "all"? }: search must be non-empty and differ from replace. The final result must change the file. An alternative to a top-level "search"/"replace" pair, never both.`,
         items: {
           type: 'object',
           properties: {

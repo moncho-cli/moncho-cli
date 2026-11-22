@@ -58,8 +58,9 @@ process.env.OPENAI_MODEL = 'stub-model';
 // own process with the variable absent (backlog: "add an environment variable to
 // configure the temperature parameter of the model call").
 process.env.MODEL_TEMPERATURE = '0.3';
+process.env.PROJECT_LANGUAGE = ' English ';
 
-const { callOllama } = await import('../api/ollama.js');
+const { callOllama, projectLanguageGuidance } = await import('../api/ollama.js');
 const { describeModel, detectProvider } = await import('../config/constants.js');
 
 test('detectProvider maps common base URLs (task.md item 5)', () => {
@@ -89,6 +90,17 @@ test('a default call injects the agent system prompt and normalises the response
   assert.equal(sent.stream, false);
 });
 
+test('project language guides artifacts without dictating conversation language', async () => {
+  assert.equal(projectLanguageGuidance(undefined), '');
+  assert.equal(projectLanguageGuidance('  '), '');
+  assert.match(projectLanguageGuidance('English\nOther'), /English\\nOther/);
+  await callOllama([{ role: 'user', content: 'Hola' }], [], false, null);
+  const prompt = requests.at(-1).messages[0].content;
+  assert.match(prompt, /Respond in the user's language/);
+  assert.match(prompt, /Project artifact language preference: "English"/);
+  assert.match(prompt, /Follow project rules and existing conventions/);
+});
+
 test('a configured MODEL_TEMPERATURE reaches the request body', async () => {
   await callOllama([{ role: 'user', content: 'hello' }], [], false, null);
   assert.equal(requests.at(-1).temperature, 0.3);
@@ -104,7 +116,7 @@ test('systemPrompt:false omits the agent prompt (used by the context summariser)
 
   const sent = requests.at(-1);
   assert.equal(sent.messages.length, 2);
-  assert.ok(!sent.messages.some((m) => /MONCHO-CLI/.test(m.content)), 'must not leak the agent prompt');
+  assert.ok(!sent.messages.some((m) => /MONCHO-CLI|Project artifact language preference/.test(m.content)), 'must not leak the agent prompt');
   assert.match(sent.messages[0].content, /context-compaction/);
   assert.deepEqual(sent.tools, undefined);
 });

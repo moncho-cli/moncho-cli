@@ -48,6 +48,7 @@ tests:
       - a replacement is literal, so a dollar sign is never a backreference
   - path: tests/edit.test.js
     cases:
+      - model-facing edit criteria match no-change refusals
       - an edit replaces exactly the searched text and leaves the rest alone
       - a search that does not appear is refused with the nearest candidates and the source
       - a search matching several times is refused with every line

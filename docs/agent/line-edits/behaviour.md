@@ -23,7 +23,8 @@ input. Never reach for it to express your own change.
 - An empty `search` is `EMPTY_SEARCH`; a `search` equal to its `replace` is `NO_CHANGES`
   (the edit would do nothing); a missing file is `FILE_NOT_FOUND`.
 - At most 50 edits per call (`TOO_MANY_EDITS`), because a larger batch is a rewrite and
-  `write_file` says so in one place.
+  `write_file` says so in one place. The model-facing parameter descriptions state the
+  non-empty, different-replacement and changed-final-result criteria before a call.
 
 ## Guarantees
 

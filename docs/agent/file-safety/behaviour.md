@@ -36,7 +36,9 @@ Implementations are linked at the bottom.
   debris.
 - Creating a file creates its parent directories; overwriting a file follows the
   real path so a symlinked target is not replaced by a plain file.
-- `content` must be a string; anything else is `INVALID_CONTENT`.
+- `content` must be a string; anything else is `INVALID_CONTENT`. The model-facing
+  path description also states the sandbox, stale-read exception for tracking files,
+  and host-executable path refusal before a call.
 - `readFileIfExists()` returns `null` for a missing file rather than throwing,
   which callers use for optional reads (e.g. the task/plan bookkeeping).
 
