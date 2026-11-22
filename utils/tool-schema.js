@@ -75,7 +75,7 @@ export function withIntentParameter(parameters = {}) {
  * @param {string} config.name
  * @param {string} config.description
  * @param {object} [config.parameters] JSON schema for the tool's own parameters.
- * @param {(args: object, ctx: {intent: string}) => Promise<any>|any} config.execute
+ * @param {(args: object, ctx: {intent: string, signal?: AbortSignal|null}) => Promise<any>|any} config.execute
  */
 export function defineTool({ name, description, parameters = {}, execute }) {
   if (!name) throw new Error('defineTool requires a name.');
@@ -90,10 +90,14 @@ export function defineTool({ name, description, parameters = {}, execute }) {
     }
   };
 
-  const wrapped = async (args) => {
+  // `ctx` carries what the *dispatcher* knows and the tool needs: the intent, and the
+  // running task's AbortSignal. A tool that spawns a child (run_bash, run_npm) uses the
+  // signal to kill it when the user cancels, so cancellation reaches the process and not
+  // merely the promise waiting on it.
+  const wrapped = async (args, ctx = {}) => {
     const parsedArgs = parseToolArgs(args);
     const intent = getIntent(parsedArgs);
-    return execute(parsedArgs, { intent });
+    return execute(parsedArgs, { intent, ...ctx });
   };
 
   return { definition, execute: wrapped };

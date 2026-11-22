@@ -73,7 +73,13 @@ const check = (name, condition, detail = '') => {
 
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf-8');
 
-/** Run git and return its stdout, or null when it fails (no repo, no network). */
+/**
+ * Run git and return its stdout, or null when it fails (no repo, no network).
+ *
+ * The environment forbids a terminal prompt (`GIT_TERMINAL_PROMPT=0`): stdin is already
+ * `/dev/null` here, but git can open `/dev/tty` directly, and a credential ask that
+ * waits for a person would hang the release instead of reporting the failure it is.
+ */
 const git = (...argv) => {
   try {
     return execFileSync('git', argv, {
@@ -81,6 +87,7 @@ const git = (...argv) => {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 20_000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo', GIT_PAGER: 'cat', PAGER: 'cat' },
     }).trim();
   } catch {
     return null;

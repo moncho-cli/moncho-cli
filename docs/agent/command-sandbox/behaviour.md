@@ -6,10 +6,10 @@ results are reported.
 
 ## run_bash
 
-- **No shell.** The command line is tokenised in-process and executed with
-  `execFileSync`, so `;`, `|`, `&&`, `>`, backticks, `$(…)`, braces, brackets,
-  backslashes, `!`, newlines, tabs and unquoted glob characters are rejected with
-  `SHELL_METACHARACTER`. Quoted segments are exempted from that scan, which keeps
+- **No shell.** The command line is tokenised in-process and executed with `spawn`
+  (`utils/command-runner.js`), so `;`, `|`, `&&`, `>`, backticks, `$(…)`, braces,
+  brackets, backslashes, `!`, newlines, tabs and unquoted glob characters are rejected
+  with `SHELL_METACHARACTER`. Quoted segments are exempted from that scan, which keeps
   quoted glob patterns usable (`ls "tests/**/*.test.js"`).
 - **Only the first token is checked** against the allow-list. A binary outside it
   is `COMMAND_NOT_ALLOWED`; the approved list is echoed in the message.
@@ -18,6 +18,36 @@ results are reported.
 - `cwd` is resolved through the same path sandbox as every other file operation,
   so a command cannot be pointed outside the project.
 - The default timeout is 60s; `timeoutMs` overrides it.
+
+## A command can never freeze the UI
+
+A command runs **asynchronously, with no terminal and no prompt**: the run is a promise,
+so the event loop keeps turning while the child does.
+
+This is the whole reason `utils/command-runner.js` exists instead of `execFileSync`. The
+synchronous call did not return until the child exited, so a child that opened a prompt —
+a `git` credential ask, an `ssh` password, a pager waiting for keys — stopped the event
+loop dead. No key handler can run without the loop, so **Ctrl+C never reached the abort
+manager and the UI froze**, escapable only by killing the process. Three properties make
+that impossible by construction, and they are the contract, not an implementation note:
+
+- **the call is a promise.** Key handling, repaints and cancellation keep working while a
+  command runs. A long command is slow, never stuck.
+- **the child is given no terminal.** stdin is `/dev/null`, so a child that reads gets
+  end-of-file at once: a prompt becomes an immediate result, never a wait for a person who
+  cannot be reached. The environment makes the well-known offenders fail fast on top of
+  that (`GIT_TERMINAL_PROMPT=0`, an askpass that only echoes, `ssh -o BatchMode=yes`,
+  `PAGER=cat`, `npm_config_yes`) — `childEnvironment()` is that set, and a command that
+  needs a human is a command the harness cannot run.
+- **cancellation kills the child.** The tool receives the running task's `AbortSignal`
+  (`utils/tool-schema.js#defineTool` forwards it, `app/tool-batch.js` supplies it) and the
+  runner uses it to `SIGTERM` the child, then `SIGKILL` it after `KILL_GRACE_MS`. Without
+  the signal, cancelling would stop only the *wait*, leaving the process running.
+
+A run that cannot proceed is a structured result, never a hang: `CANCELLED` when the task
+was cancelled, `TIMEOUT` when it exceeded `timeoutMs`, and `COMMAND_FAILED` with the reason
+when the binary could not be started at all. The runner itself never rejects — every
+outcome resolves to the same result shape, so no spawn failure is swallowed.
 
 ## The output document
 
@@ -73,7 +103,9 @@ failing output is still readable end-first.
 
 ## See also
 
-- Implementation: `tools/run_bash.js`, `tools/run_npm.js`, `utils/command-output.js`,
-  `config/constants.js`
+- Implementation: `tools/run_bash.js`, `tools/run_npm.js`, `utils/command-runner.js`,
+  `utils/command-output.js`, `config/constants.js`
 - Where the rest of a windowed output goes: `docs/agent/command-capture`
-- Proof: `tests/harness-tools.test.js`, `tests/command-output-window.test.js`
+- How a tool receives the signal that kills its child: `docs/agent/tool-call-contract`
+- Proof: `tests/harness-tools.test.js`, `tests/command-output-window.test.js`,
+  `tests/command-runner.test.js`

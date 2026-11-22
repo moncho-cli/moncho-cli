@@ -45,11 +45,13 @@ export async function loadTools(onToolResult) {
     tools.push(toolModule.definition);
 
     const originalExecute = toolModule.execute;
-    toolFunctions[name] = async (args) => {
+    // `ctx` (the running task's AbortSignal) is forwarded, never dropped: a tool that
+    // spawns a child uses it to kill the process on cancel (utils/command-runner.js).
+    toolFunctions[name] = async (args, ctx = {}) => {
       const intent = extractIntent(args);
       let result;
       try {
-        result = await originalExecute(args);
+        result = await originalExecute(args, ctx);
       } catch (error) {
         // A handler that throws is a failed call too, and the row must say so: the
         // hook is told before the error is re-thrown for the batch to record as an

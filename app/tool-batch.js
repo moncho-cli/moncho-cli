@@ -97,7 +97,10 @@ export async function dispatchToolCalls(entries = [], toolFunctions = {}, { sign
     }
 
     try {
-      outcome.result = await run(rawArgs);
+      // The signal rides along so a tool that spawns a child can kill it on cancel
+      // (utils/tool-schema.js#defineTool): without it, cancelling only stops *waiting*,
+      // never the process, and a child that holds the terminal would keep the UI dead.
+      outcome.result = await run(rawArgs, { signal });
       outcome.succeeded = true;
     } catch (error) {
       // The failure becomes an `[error]` chunk so the model can react to it; the

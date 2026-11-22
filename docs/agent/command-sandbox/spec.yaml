@@ -3,9 +3,13 @@ domain: agent
 title: Shell-free, allow-listed command and npm execution
 status: active
 summary: >
-  run_bash tokenises a single command line and executes it with execFileSync
-  (no shell), rejecting shell metacharacters and any binary outside the
-  allow-list, while keeping quoted globs usable. A successful command answers a
+  run_bash tokenises a single command line and executes it with spawn
+  (utils/command-runner.js, no shell), rejecting shell metacharacters and any
+  binary outside the allow-list, while keeping quoted globs usable. A command
+  runs asynchronously with no terminal and an environment that makes prompts
+  fail fast, so a git credential ask or an ssh password becomes an immediate
+  result instead of freezing the event loop; the tool receives the task's
+  AbortSignal, so cancelling kills the child. A successful command answers a
   YAML header, a --- delimiter and then the stdout, which head/tail can window
   from either end without a pipe; a failing command keeps a structured JSON
   envelope with a windowed stdout. run_npm allows only a fixed set of npm
@@ -14,6 +18,8 @@ summary: >
 code:
   - path: tools/run_bash.js
     symbols: [CommandError, tokenizeCommand, validateCommand, displayCwd, shownRange, definition, execute]
+  - path: utils/command-runner.js
+    symbols: [DEFAULT_MAX_BUFFER, KILL_GRACE_MS, childEnvironment, runCommand]
   - path: utils/command-output.js
     symbols: [OutputRangeError, resolveWindow, splitOutputLines, windowLines, windowCaptured, DEFAULT_WINDOW_LINES, CAPTURE_HINT, yamlScalar, renderYamlHeader, renderCommandOutput, OUTPUT_DELIMITER, EMPTY_OUTPUT]
   - path: tools/run_npm.js
@@ -50,3 +56,15 @@ tests:
       - a truncated command document hands back a capture that reaches the whole stream
       - a failing npm run keeps its envelope and hands back the capture of the whole output
       - a success document without a capture never grows a capture field
+  - path: tests/command-runner.test.js
+    cases:
+      - the runner is asynchronous so the event loop keeps turning while a child runs
+      - the runner hands the child no terminal, so a prompt fails fast instead of hanging
+      - the environment makes the interactive prompts fail fast
+      - an abort kills the child rather than merely stopping the wait
+      - an already-aborted signal never starts the child at all
+      - a timeout stops the child and names the reason
+      - a binary that does not exist resolves a spawn error instead of rejecting
+      - a child over the buffer cap is stopped rather than grown without limit
+      - run_bash answers CANCELLED when the task it belongs to is cancelled
+      - run_bash runs a command to completion and reports its exit code as before

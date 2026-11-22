@@ -99,7 +99,13 @@ export function applyBump({ dir = root, to } = {}) {
   return { from, to, distance, files: [MANIFEST, LOCKFILE] };
 }
 
-/** Run git in `dir` and return its stdout, or null when it fails. */
+/**
+ * Run git in `dir` and return its stdout, or null when it fails.
+ *
+ * The environment forbids a terminal prompt (`GIT_TERMINAL_PROMPT=0`), the same rule
+ * `utils/command-runner.js` applies to the tools: a command that needs a person must
+ * fail fast rather than wait on a prompt nobody can answer.
+ */
 export function gitIn(dir, ...argv) {
   try {
     return execFileSync('git', argv, {
@@ -107,6 +113,7 @@ export function gitIn(dir, ...argv) {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 20_000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo', GIT_PAGER: 'cat', PAGER: 'cat' },
     }).trim();
   } catch {
     return null;

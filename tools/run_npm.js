@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { runCommand, childEnvironment } from '../utils/command-runner.js';
 import {
   NPM_ALLOWED_SUBCOMMANDS,
   NPM_DEFAULT_TIMEOUT_MS,
@@ -95,7 +95,7 @@ const { definition, execute } = defineTool({
     },
     required: ['args']
   },
-  async execute(args) {
+  async execute(args, ctx = {}) {
     let argv;
     try {
       argv = validateNpmArgs(args.args);
@@ -109,46 +109,59 @@ const { definition, execute } = defineTool({
 
     const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-    return await new Promise((resolve) => {
-      execFile(
-        npmBin,
-        ['--no-audit', '--no-fund', ...argv],
-        { cwd, timeout, maxBuffer: 20 * 1024 * 1024, env: process.env },
-        (error, stdout, stderr) => {
-          const out = String(stdout ?? '').trimEnd();
-          const err = String(stderr ?? '').trimEnd();
-          const command = `npm ${argv.join(' ')}`;
-          if (error) {
-            resolve(JSON.stringify(npmFailure({
-              command,
-              cwd,
-              out,
-              err,
-              code: error.killed || error.signal === 'SIGTERM' ? 'TIMEOUT' : 'NPM_FAILED',
-              exitCode: error.code ?? 'unknown',
-              timeout
-            })));
-            return;
-          }
-          // A success is the same document run_bash answers with: a bounded window, and
-          // the whole stream behind a capture handle when it did not fit.
-          const selected = windowCaptured(out, {});
-          const capture = selected.truncated ? putCapture({ command, text: out }) : null;
-          const tail = windowCaptured(err, {});
-          resolve(renderCommandOutput({
-            command,
-            cwd: cwd === process.cwd() ? '.' : cwd,
-            exitCode: 0,
-            stdout: selected.text,
-            total: selected.total,
-            shown: selected.shown,
-            truncated: selected.truncated,
-            mode: selected.mode,
-            ...(capture ? { capture: capture.id, hint: CAPTURE_HINT } : {}),
-            ...(tail.shown > 0 ? { stderr_lines: tail.total, stderr_shown: tail.shown } : {})
-          }));
-        }
-      );
+    // The runner, not `execFile`: an npm subcommand must never be able to freeze the
+    // event loop, and npm asks questions too (a registry login, a version prompt). The
+    // child gets no terminal and `npm_config_yes`, so a prompt fails fast instead of
+    // waiting for a person who cannot be reached while the UI is blocked.
+    const result = await runCommand(
+      [npmBin, '--no-audit', '--no-fund', ...argv],
+      {
+        cwd,
+        timeoutMs: timeout,
+        signal: ctx?.signal ?? null,
+        maxBuffer: 20 * 1024 * 1024,
+        env: childEnvironment(),
+      },
+    );
+
+    const out = String(result.stdout ?? '').trimEnd();
+    const err = String(result.stderr ?? '').trimEnd();
+    const command = `npm ${argv.join(' ')}`;
+
+    if (result.cancelled) {
+      return JSON.stringify({ status: 'error', code: 'CANCELLED', message: `Command cancelled: ${command}`, cwd });
+    }
+    if (result.spawnError) {
+      return JSON.stringify({ status: 'error', code: 'NPM_FAILED', message: `npm could not start: ${result.spawnError.message}`, cwd });
+    }
+    if (result.exitCode !== 0) {
+      return JSON.stringify(npmFailure({
+        command,
+        cwd,
+        out,
+        err,
+        code: result.timedOut ? 'TIMEOUT' : 'NPM_FAILED',
+        exitCode: result.exitCode ?? 'unknown',
+        timeout
+      }));
+    }
+
+    // A success is the same document run_bash answers with: a bounded window, and the
+    // whole stream behind a capture handle when it did not fit.
+    const selected = windowCaptured(out, {});
+    const capture = selected.truncated ? putCapture({ command, text: out }) : null;
+    const tail = windowCaptured(err, {});
+    return renderCommandOutput({
+      command,
+      cwd: cwd === process.cwd() ? '.' : cwd,
+      exitCode: 0,
+      stdout: selected.text,
+      total: selected.total,
+      shown: selected.shown,
+      truncated: selected.truncated,
+      mode: selected.mode,
+      ...(capture ? { capture: capture.id, hint: CAPTURE_HINT } : {}),
+      ...(tail.shown > 0 ? { stderr_lines: tail.total, stderr_shown: tail.shown } : {})
     });
   }
 });

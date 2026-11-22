@@ -1,5 +1,5 @@
-import { execFileSync } from 'child_process';
 import { ALLOWED_COMMANDS } from '../config/constants.js';
+import { runCommand } from '../utils/command-runner.js';
 import { defineTool } from '../utils/tool-schema.js';
 import {
   windowLines,
@@ -14,11 +14,19 @@ import { putCapture } from '../utils/capture-store.js';
  * Execute an allow-listed command from a small CLI palette.
  *
  * Hardened relative to the naive `execSync(command)` version: the command line is
- * tokenised in-process and run with execFileSync, so there is no shell. Shell
- * metacharacters (`;`, `|`, `&&`, backticks, `$(`, redirections, newlines) are
- * rejected outright, and only the first token is checked against the allow-list.
+ * tokenised in-process and run with `spawn` (utils/command-runner.js), so there is no
+ * shell. Shell metacharacters (`;`, `|`, `&&`, backticks, `$(`, redirections, newlines)
+ * are rejected outright, and only the first token is checked against the allow-list.
  * That combination is what makes the previous "ls; rm -rf /" style bypass
  * impossible while keeping normal exploration commands working.
+ *
+ * **The run never blocks.** `execFileSync` stopped the event loop until the child
+ * exited, so a child that opened a terminal prompt (a `git` credential ask, an `ssh`
+ * password) froze the whole UI — not even Ctrl+C could run, because the handler needs
+ * the loop the call had taken. The runner spawns instead, hands the child no terminal
+ * and an environment that makes the prompts fail fast, and takes an AbortSignal so
+ * cancellation kills the process. A blocked command is now a structured failure with a
+ * reason, never a hang.
  *
  * A **successful** command answers as a document (utils/command-output.js): a YAML
  * header, a `---` delimiter, then the stdout. `head`/`tail` window that stdout, so
@@ -149,7 +157,7 @@ const { definition, execute } = defineTool({
     },
     required: ['command']
   },
-  async execute(args) {
+  async execute(args, ctx = {}) {
     const { resolveProjectPath } = await import('../utils/path-safety.js');
 
     let argv;
@@ -172,19 +180,27 @@ const { definition, execute } = defineTool({
     const cwd = args.cwd ? resolveProjectPath(args.cwd) : process.cwd();
     const timeout = Number.isInteger(args.timeoutMs) && args.timeoutMs > 0 ? args.timeoutMs : 60000;
 
-    try {
-      const stdout = execFileSync(argv[0], argv.slice(1), {
-        cwd,
-        timeout,
-        encoding: 'utf-8',
-        maxBuffer: 10 * 1024 * 1024,
-        stdio: ['ignore', 'pipe', 'pipe']
+    const result = await runCommand(argv, { cwd, timeoutMs: timeout, signal: ctx?.signal ?? null });
+    if (result.cancelled) {
+      return JSON.stringify({
+        status: 'error',
+        code: 'CANCELLED',
+        message: `Command cancelled: ${args.command}`,
+        cwd: displayCwd(cwd)
       });
-      const output = typeof stdout === 'string' ? stdout : String(stdout ?? '');
-      return renderSuccess({ command: args.command, cwd, output, window });
-    } catch (error) {
-      return renderFailure({ error, cwd, window, timeout });
     }
+    if (result.spawnError) {
+      return JSON.stringify({
+        status: 'error',
+        code: 'COMMAND_FAILED',
+        message: `Command could not start: ${result.spawnError.message}`,
+        cwd: displayCwd(cwd)
+      });
+    }
+    if (result.exitCode === 0) {
+      return renderSuccess({ command: args.command, cwd, output: result.stdout, window });
+    }
+    return renderFailure({ result, cwd, window, timeout });
   }
 });
 
@@ -224,12 +240,15 @@ export function shownRange(selected) {
  * A failing command: the structured envelope the harness relies on, with its stdout
  * windowed so a long failing output is still readable end-first.
  */
-function renderFailure({ error, cwd, window, timeout }) {
-  const stdout = error.stdout ? String(error.stdout).trimEnd() : '';
-  const stderr = windowCaptured(error.stderr ? String(error.stderr).trimEnd() : '', window);
+function renderFailure({ result, cwd, window, timeout }) {
+  const stdout = result.stdout ? String(result.stdout).trimEnd() : '';
+  const stderrText = [result.stderr ? String(result.stderr).trimEnd() : '']
+    .filter(Boolean)
+    .join('\n');
+  const stderr = windowCaptured(stderrText, window);
   const selected = windowCaptured(stdout, window);
 
-  if (error.code === 'ETIMEDOUT' || error.signal === 'SIGTERM') {
+  if (result.timedOut) {
     return JSON.stringify({
       status: 'error',
       code: 'TIMEOUT',
@@ -246,7 +265,7 @@ function renderFailure({ error, cwd, window, timeout }) {
   return JSON.stringify({
     status: 'error',
     code: 'COMMAND_FAILED',
-    message: `Command failed with exit code ${error.status ?? 'unknown'}.`,
+    message: `Command failed with exit code ${result.exitCode ?? 'unknown'}.`,
     cwd: displayCwd(cwd),
     stdout: selected.text,
     stderr: stderr.text,
