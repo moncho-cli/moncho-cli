@@ -63,8 +63,13 @@ tolerates it by seeing through it:
 - `app/theme.js#splitStamp` splits a line into its mark and its content, so a
   stamped `You:` row is still the user's echo and a stamped tool header is still a
   tool row (`classifyLine`);
-- the mark itself is painted in the low-key chrome colour (`STAMP_COLOR`), never in
-  the colour of the row it introduces, so it can never be mistaken for content.
+- the mark itself is painted in its own palette key (`STAMP_COLOR`), never in the
+  colour of the row it introduces, so it can never be mistaken for content. The key
+  ships as `default` — the terminal's own foreground — rather than the `notice` grey,
+  because blessed's `grey` is *bright black*, which all but vanishes on a dark
+  terminal (task-backlog: "timestamps are invisible"). `default` is not a colour but
+  "leave the foreground alone", so the mark reads on a dark and a light theme alike,
+  and a skin may still move it (`docs/interface/skins`).
 
 ## See also
 

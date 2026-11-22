@@ -19,7 +19,7 @@ chunks back into the display the live loop produced for them
 | ----- | ------------------------- |
 | `user` | the `You:` echo and its quoted lines, as a **`prose`** op (`docs/interface/user-messages`) |
 | `assistant` with `tool_calls` | one `-> Calling <name>(<args>)` line plus its `intent:` line per call; prose next to the calls is a **`prose`** op |
-| `tool` | a collapsible block headed `[<tool> Output] (intent: …)` (`docs/interface/transcript-blocks`) |
+| `tool` | a collapsible block headed `[<tool> Output] (intent: …) ✓|✗` (`docs/interface/transcript-blocks`) |
 | `assistant` with prose | the reply as a **`prose`** op, bracketed by the `--- AI Response ---` delimiters the loop prints |
 | `system` + `compacted: true` | a `[Context]` notice that earlier context was summarised |
 
@@ -40,7 +40,9 @@ has no band, prints it as the plain line it always was.
   each call next to the result it answers. An empty assistant turn, an unknown
   role and a `null` entry are skipped instead of crashing the replay.
 - A tool result that failed keeps its `[error]` marker out of the body: the block
-  shows the error text, the intent stays in the header.
+  shows the error text, the intent stays in the header, and the header ends with the
+  `✗` the failure earned (a successful row ends with `✓`), so a reloaded conversation
+  marks a row exactly as the live one did.
 - A result stored by a **batch** arrives inside the `<tool-multicall result>`
   envelope (`docs/agent/tool-multicall`); `parseToolChunk()` unwraps it, so the
   block shows the tool's own output and the signature never reaches the

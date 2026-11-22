@@ -48,10 +48,14 @@ test('the store names the skin shape and keeps the shipped palette as the defaul
   // families: every colour the screen shows is a palette key, so a skin can move all of
   // them (`app/paint-tags.js`, `docs/interface/skins`).
   assert.deepEqual(PALETTE_KEYS, [
-    'user', 'tool', 'intent', 'context', 'error', 'notice', 'tracking', 'refusal',
+    'user', 'tool', 'intent', 'context', 'error', 'notice', 'stamp', 'tracking', 'refusal',
     'frame', 'table', 'code', 'quote', 'bullet', 'heading',
     'toolRead', 'toolWrite', 'toolBash',
   ]);
+  // The timestamp is its own key: `default` is the terminal's own foreground, so the mark
+  // is legible on a black terminal instead of the near-invisible ANSI grey it used to borrow.
+  assert.equal(DEFAULT_PALETTE.stamp, 'default', 'the stamp is readable on a default terminal');
+  assert.equal(DEFAULT_SKIN.palette.stamp, 'default');
   assert.equal(DEFAULT_SKIN.name, 'default');
   assert.equal(DEFAULT_SKIN.palette.intent, 'bright-blue');
   assert.equal(DEFAULT_SKIN.palette.user, 'cyan');

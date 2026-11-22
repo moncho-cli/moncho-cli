@@ -31,6 +31,13 @@ Seven regions, laid out relatively so blessed relayouts them on resize:
   that follow it — is re-fitted at the new width as well, and the teardown releases
   the regions in reverse construction order exactly once; both sequences live in
   `app/tui-teardown.js`, so `app/tui.js` stays the wiring.
+- The resize listener **paints the screen once more after the re-fit**, because blessed
+  renders the screen and only then emits `resize` (`screen.js`: `alloc()`, `render()`,
+  then the event). A listener that only re-fits leaves its work unpainted until the next
+  frame, and the frame in between is the all-black flash the backlog reports
+  ("resizing the window makes the tui be all black for a moment"). Painting closes that
+  gap; the closed-screen latch (`app/tui-screen.js`) keeps a destroyed screen from being
+  rendered.
 - The region layout lives in `createLayout()` (`app/tui-layout.js`), so the
   orchestration in `app/tui.js` stays about keys, questions and the public surface.
 - The input box is **armed by `question()` alone**. The region is created without

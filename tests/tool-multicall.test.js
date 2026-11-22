@@ -175,7 +175,7 @@ test('an enveloped tool chunk replays as the plain body it wrapped', () => {
   assert.equal(blocks, 1);
   // the two `-> Calling …` lines come first, then the restored result
   assert.deepEqual(ops.map((op) => op.kind), ['log', 'log', 'block']);
-  assert.equal(ops[2].header, '\n  [read_file Output] (intent: load the fixture)');
+  assert.equal(ops[2].header, '\n  [read_file Output] (intent: load the fixture) ✓');
   assert.equal(ops[2].body, 'line one\nline two', 'the envelope is unwrapped, not shown');
   assert.doesNotMatch(ops[2].body, /tool-multicall|tool-call name=/, 'no envelope syntax reaches the transcript');
 });

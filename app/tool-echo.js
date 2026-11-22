@@ -1,4 +1,5 @@
 import { prettyPrintJson } from './json-display.js';
+import { formatToolHeader, toolResultFailed } from './tool-call-format.js';
 
 /**
  * How a tool result reaches the screen.
@@ -8,6 +9,9 @@ import { prettyPrintJson } from './json-display.js';
  * widget, so it prints the header and the payload plainly. The result is the same either
  * way — the model receives the raw bytes and the session file keeps them verbatim; only
  * the display is re-indented.
+ *
+ * The row's header ends with the ✓/✗ marker the call earned, so a glance tells a call
+ * that went as expected from one that has to be retried (`toolResultFailed()`).
  *
  * Pure wiring: the sink is injected, so the shape is unit tested without a terminal.
  *
@@ -19,7 +23,7 @@ import { prettyPrintJson } from './json-display.js';
 export function createToolEcho({ tui = null, log = () => {} } = {}) {
   return function echoToolResult(toolName, result, intent) {
     const body = prettyPrintJson(result);
-    const header = `\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''}`;
+    const header = formatToolHeader(toolName, intent, { failed: toolResultFailed(result) });
     if (tui) {
       tui.logBlock({ header, body });
       return;

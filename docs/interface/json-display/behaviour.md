@@ -17,6 +17,19 @@ a session file keeps the exact bytes (`docs/runtime/session-store`).
 - A payload that does not parse is returned unchanged, so a broken tool result
   stays visible instead of being dropped.
 
+## The result row's marker
+
+The header a tool result is shown under ends with `✓` or `✗`, so a glance tells a
+call that went as expected from one that has to be retried. The marker is decided by
+`toolResultFailed()` (`app/tool-call-format.js`), which reads the three shapes a
+result arrives in: an `[error] …` string (what the batch stores when a handler
+throws or a call is refused), a JSON string carrying `status: "error"` (the
+convention across `tools/`, `docs/agent/tool-call-contract`), and an object with the
+same `status`. Anything else is a success. The marker is presentation only: the
+model's context and the session file keep the raw result, and the `[error]` prefix
+in the chunk is what tells the model a call failed. A replayed conversation marks
+the row the same way (`docs/interface/session-replay`).
+
 ## Command results
 
 Commands return a plain object (`{ ok, code, lines?, message?, ... }`). The host

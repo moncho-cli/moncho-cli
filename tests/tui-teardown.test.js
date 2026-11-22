@@ -32,6 +32,7 @@ test('createResizeRepaint() re-fits every row measured at the old width', () => 
     // brand line owns the first row and the notices and the copy toast hang below it,
     // so fitting one without the others would stack them wrong.
     overlays: region('overlays', ['paint'], calls),
+    refresh: () => calls.push('refresh'),
   };
 
   const repaint = createResizeRepaint(regions);
@@ -46,12 +47,31 @@ test('createResizeRepaint() re-fits every row measured at the old width', () => 
     'statusRow.render',
     'queue.paint',
     'overlays.paint',
-  ], 'the newest line is kept in view and every width-fitted row is re-fitted');
+    'refresh',
+  ], 'the newest line is kept in view, every width-fitted row is re-fitted, and the re-fit is painted');
 });
 
 test('createResizeRepaint() survives a half-built screen', () => {
   assert.doesNotThrow(() => createResizeRepaint()());
   assert.doesNotThrow(() => createResizeRepaint({ screen: {} })());
+});
+
+test('the resize listener paints after the re-fit, so the frame it leaves is not blank', () => {
+  // blessed renders the screen and only then emits 'resize' (screen.js: alloc(),
+  // render(), event), so a listener that only re-fits leaves the new frame unpainted —
+  // the all-black flash. The repaint therefore ends by painting the screen.
+  const calls = [];
+  const screen = { on: () => {} };
+  const repaint = createResizeRepaint({
+    screen,
+    transcript: region('transcript', ['setScrollPerc'], calls),
+    statusRow: region('statusRow', ['render'], calls),
+    queue: region('queue', ['paint'], calls),
+    refresh: () => calls.push('refresh'),
+  });
+
+  repaint();
+  assert.equal(calls.at(-1), 'refresh', 'the re-fit is painted last, after every row moved');
 });
 
 test('createTeardown() closes in construction-reverse order and only once', () => {

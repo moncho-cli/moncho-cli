@@ -21,9 +21,15 @@ the implementation is linked below.
 | `refusal` | a `✖ Refused …` row: a call the mode or the batch cap stopped (`docs/agent/tool-refusal`) | bright red, bold |
 | `error` | `Error …`, `[error] …`, a warning marker | red |
 | `notice` | `[Info]`, `[Session]`, `[pasted …]`, horizontal rules | grey |
+| `stamp` | the `HH:MM:SS` mark in front of a transcript row (`docs/interface/conversation-timestamps`) | the terminal's own foreground |
 
 - The colours are **distinct**: the parts of a turn never share one, so a glance at
   the colour is enough to tell "what I asked" from "what the agent did".
+- The stamp has its own key rather than borrowing `notice`: `grey` is blessed's *bright
+  black*, which all but vanishes on a dark terminal — the reported bug ("timestamps are
+  invisible"). `default` is not a colour but the terminal's own foreground, so the mark
+  stays legible on a dark *and* a light theme without a skin, and a skin may still move
+  it (`app/theme-colors.js#colorizeStamp`).
 - Ordinary prose gets **no foreground** colour. It is the majority of the screen and
   the terminal default reads best; the markdown renderer already colours the parts of a
   reply that carry structure, and the two sides of the dialogue are told apart by a

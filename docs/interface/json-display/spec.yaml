@@ -13,6 +13,8 @@ code:
     symbols: [looksLikeJson, prettyPrintJson, payloadOf, formatCommandResult]
   - path: app/tool-echo.js
     symbols: [createToolEcho]
+  - path: app/tool-call-format.js
+    symbols: [TOOL_OK_MARK, TOOL_FAIL_MARK, toolResultFailed, formatToolHeader]
   - path: main.js
     symbols: [main]
 tests:
@@ -20,6 +22,7 @@ tests:
     cases:
       - "createToolEcho() paints a tool result in the pane, or as plain lines without a screen"
       - "a result that is not JSON is passed through the same way"
+      - "a failed call ends its row with a cross, so a glance tells it needs a retry"
   - path: tests/json-display.test.js
     cases:
       - "prettyPrintJson() re-indents a JSON object and leaves prose alone"

@@ -2,6 +2,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { hasIntentParameter } from './tool-schema.js';
+import { toolResultFailed } from '../app/tool-call-format.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,8 +14,9 @@ const __dirname = dirname(__filename);
  * required `intent` parameter is rejected at load time rather than silently
  * breaking task.md item 6 at runtime.
  *
- * The result hook receives `(name, result, intent)` so the host loop can print
- * the intent next to the tool output (and keep it in the model context).
+ * The result hook receives `(name, result, intent, { failed })` so the host loop can
+ * print the intent next to the tool output, keep it in the model context, and mark the
+ * row with the ✓/✗ the call earned (`app/tool-call-format.js#toolResultFailed`).
  */
 export async function loadTools(onToolResult) {
   const toolsDir = join(__dirname, '..', 'tools');
@@ -45,8 +47,22 @@ export async function loadTools(onToolResult) {
     const originalExecute = toolModule.execute;
     toolFunctions[name] = async (args) => {
       const intent = extractIntent(args);
-      const result = await originalExecute(args);
-      if (onToolResult) onToolResult(name, result, intent);
+      let result;
+      try {
+        result = await originalExecute(args);
+      } catch (error) {
+        // A handler that throws is a failed call too, and the row must say so: the
+        // hook is told before the error is re-thrown for the batch to record as an
+        // `[error]` chunk. The hook is a display route, so a throwing one never
+        // changes the failure the caller sees.
+        if (onToolResult) {
+          try {
+            onToolResult(name, error?.message ?? String(error), intent, { failed: true });
+          } catch { /* a display hook must not mask the tool's own failure */ }
+        }
+        throw error;
+      }
+      if (onToolResult) onToolResult(name, result, intent, { failed: toolResultFailed(result) });
       return result;
     };
   }

@@ -26,9 +26,14 @@ at the bottom of this document.
     contract is caught at startup rather than mid-task;
   - two tools declaring the same name throw, so a later file cannot shadow an
     earlier one.
-- After each successful call the loader invokes the result hook with
-  `(name, result, intent)`, so the host loop can print the intent next to the
-  output and keep it in the model context.
+- After each call the loader invokes the result hook with
+  `(name, result, intent, { failed })`, so the host loop can print the intent next to
+  the output, keep it in the model context, and mark the row with the ✓/✗ the call
+  earned (`app/tool-call-format.js#toolResultFailed`).
+- A handler that **throws** is a failed call: the hook is told `failed: true` before
+  the error is re-thrown, so the row still carries its `✗` and the batch records the
+  `[error]` chunk as before. The flag is a display hint only — the model's context and
+  the session file keep the raw result.
 
 ## Intents
 

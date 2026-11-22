@@ -101,6 +101,7 @@ tests:
     cases:
       - "createResizeRepaint() re-fits every row measured at the old width"
       - "createResizeRepaint() survives a half-built screen"
+      - "the resize listener paints after the re-fit, so the frame it leaves is not blank"
       - "createTeardown() closes in construction-reverse order and only once"
       - "createTeardown() without a latch still tears down, and skips unknown steps"
   - path: tests/tui-status.test.js

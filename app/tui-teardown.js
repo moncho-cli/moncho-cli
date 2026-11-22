@@ -25,6 +25,7 @@
  * the conversation, and the notices and the copy toast that hang below it).
  *
  * @param {object} regions the row-based regions and the repaint of the screen
+ * @param {Function} [regions.refresh] paints the screen; required for the re-fit to show
  * @returns {() => void} the listener, so a caller can detach it
  */
 export function createResizeRepaint({
@@ -34,6 +35,7 @@ export function createResizeRepaint({
   workRow = null,
   queue,
   overlays = null,
+  refresh = null,
 } = {}) {
   const repaint = () => {
     // Regions are laid out relatively, so the newest line has to be put back in
@@ -49,6 +51,12 @@ export function createResizeRepaint({
     // of them without the others would stack them wrong. `overlays.paint()` does all
     // three in that order, which also re-reads the brand row after a resize.
     overlays?.paint?.();
+    // blessed paints the screen *before* it emits 'resize' (`screen.js`: alloc(),
+    // render(), then the event), so without this second paint the re-fit above would
+    // only reach the next frame — and the frame in between is the all-black flash the
+    // backlog reports. Rendering here closes that gap, and a closed screen is guarded
+    // by the refresh latch (`app/tui-screen.js`).
+    refresh?.();
   };
   screen?.on?.('resize', repaint);
   return repaint;

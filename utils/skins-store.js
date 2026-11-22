@@ -42,7 +42,7 @@ export const ACTIVE_FILE = `${SKINS_DIR}/active.json`;
  * A skin must name a colour for every one of these; it may name none of the others.
  */
 export const PALETTE_KEYS = Object.freeze([
-  'user', 'tool', 'intent', 'context', 'error', 'notice', 'tracking', 'refusal',
+  'user', 'tool', 'intent', 'context', 'error', 'notice', 'stamp', 'tracking', 'refusal',
   // the chrome the renderer paints: a fence, a table frame, inline code, a quote, a
   // list bullet, a heading. They are palette keys so a skin moves them too
   // (`app/paint-tags.js`, `docs/interface/skins`).
@@ -93,6 +93,10 @@ export const DEFAULT_PALETTE = Object.freeze({
   context: 'magenta',
   error: 'red',
   notice: 'grey',
+  // the `HH:MM:SS` mark in front of a transcript row. The terminal's own foreground, so a
+  // timestamp is legible on a default (black) terminal; `grey` is ANSI bright black and all
+  // but vanishes there. A skin may still move it (`app/theme-colors.js#colorizeStamp`).
+  stamp: 'default',
   tracking: 'bright-green',
   refusal: 'bright-red',
   // the chrome the markdown renderer and the tool delimiters paint; these are the exact

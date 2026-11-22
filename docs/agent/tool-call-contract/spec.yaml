@@ -7,7 +7,9 @@ summary: >
   mandatory intent parameter; loadTools() auto-discovers tools/ and refuses to
   start when a tool breaks the contract (missing intent, duplicate name). The
   intent is normalised, never empty, and is passed to the result hook so it can be
-  printed and stored in the model context.
+  printed and stored in the model context. The hook also learns whether the call
+  failed, so the result row ends with a ✓ or a ✗; a handler that throws is reported
+  as a failure before the error is re-thrown.
 code:
   - path: utils/tool-schema.js
     symbols: [defineTool, withIntentParameter, hasIntentParameter, getIntent, getIntentFromRaw, parseToolArgs, normalizeIntent]
@@ -21,4 +23,5 @@ tests:
       - every auto-loaded tool declares the required intent parameter
       - withIntentParameter keeps the original parameters and required list
       - the loader passes the intent to the result hook
+      - the hook is told whether the call failed, so the row can be marked
       - missing intents are surfaced instead of silently dropped

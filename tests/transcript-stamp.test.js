@@ -6,7 +6,7 @@ import {
 } from '../app/transcript-stamp.js';
 import { TranscriptModel } from '../app/transcript.js';
 import { createTranscriptView } from '../app/transcript-view.js';
-import { classifyLine, colorizeLine, splitStamp } from '../app/theme.js';
+import { classifyLine, colorizeLine, resetTheme, setPalette, splitStamp } from '../app/theme.js';
 import { createTui } from '../app/tui.js';
 import { fakeTty, plainText, visible } from './support/tui-harness.js';
 
@@ -141,10 +141,26 @@ test('the palette sees through a stamp and paints it as chrome', () => {
   assert.equal(classifyLine('09:05:07 prose'), null);
   assert.deepEqual(splitStamp('09:05:07 prose'), { stamp: '09:05:07', rest: 'prose' });
   assert.deepEqual(splitStamp('prose'), { stamp: '', rest: 'prose' });
-  // The mark is painted in the chrome (grey) colour and the row keeps its own colour.
+  // The mark is painted in the stamp colour and the row keeps its own colour. The shipped
+  // stamp colour is `default` — the terminal's own foreground — so the mark carries no tag
+  // and stays legible on a black background; a skin may still move it.
   const painted = colorizeLine('09:05:07 [read_file Output]');
-  assert.match(painted, /\{grey-fg\}09:05:07\{\/grey-fg\} /);
-  assert.match(painted, /\{bright-cyan-fg\}\[read_file Output\]\{\/bright-cyan-fg\}/);
+  assert.match(painted, /^09:05:07 \{bright-cyan-fg\}\[read_file Output\]\{\/bright-cyan-fg\}/);
+  assert.doesNotMatch(painted, /\{grey-fg\}09:05:07/, 'the mark never borrows the near-invisible grey');
+});
+
+test('a skin may still move the stamp, and the mark follows the live palette', () => {
+  try {
+    setPalette({ stamp: 'bright-cyan' });
+    assert.match(
+      colorizeLine('09:05:07 prose'),
+      /^\{bright-cyan-fg\}09:05:07\{\/bright-cyan-fg\} /,
+      'the stamp is its own palette key, so a skin can move it',
+    );
+  } finally {
+    resetTheme();
+  }
+  assert.match(colorizeLine('09:05:07 prose'), /^09:05:07 prose/, 'the shipped stamp is untagged');
 });
 
 test('the real TUI stamps each block and the reload marks nothing', async () => {

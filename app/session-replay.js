@@ -142,7 +142,10 @@ export function replayChunks(chunks = [], { stamps = [] } = {}) {
     const parsed = parseToolChunk(chunk.content);
     const mark = markOfChunk(chunk);
     pushDivider(mark.divider);
-    ops.push(blockOp(formatToolHeader(toolName, parsed.intent), parsed.body, mark.stamp));
+    // The chunk's `[error]` prefix is the failure the ✓/✗ marker reports, so a resumed
+    // conversation marks a row exactly as the live one did.
+    const header = formatToolHeader(toolName, parsed.intent, { failed: parsed.isError });
+    ops.push(blockOp(header, parsed.body, mark.stamp));
     blocks += 1;
   };
 

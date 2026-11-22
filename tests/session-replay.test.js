@@ -70,7 +70,7 @@ test('replayChunks() rebuilds the dialogue the live loop had written', () => {
     { kind: 'prose', role: 'user', text: 'You:\n> read the fixture' },
     { kind: 'log', text: '\n  -> Calling read_file(path: fixture.txt, intent: load the fixture)' },
     { kind: 'log', text: '     intent: load the fixture' },
-    { kind: 'block', header: '\n  [read_file Output] (intent: load the fixture)', body: 'line one\nline two\nline three' },
+    { kind: 'block', header: '\n  [read_file Output] (intent: load the fixture) ✓', body: 'line one\nline two\nline three' },
     { kind: 'log', text: REPLAY_REPLY_HEADER },
     { kind: 'prose', role: 'assistant', text: 'All done: the file holds one line.' },
     { kind: 'log', text: REPLAY_REPLY_FOOTER },
@@ -130,8 +130,8 @@ test('the tool name is recovered from the call the result answers', () => {
   ];
   const headers = replayChunks(outOfOrder).ops.filter((op) => op.kind === 'block').map((op) => op.header);
   assert.deepEqual(headers, [
-    '\n  [grep Output] (intent: search)',
-    '\n  [blob Output] (intent: read)',
+    '\n  [grep Output] (intent: search) ✓',
+    '\n  [blob Output] (intent: read) ✓',
   ], 'each block sits next to the call it answers, in call order');
 });
 
@@ -148,7 +148,7 @@ test('a chunk list that does not match a live session still replays', () => {
 
   assert.deepEqual(ops[0], {
     kind: 'block',
-    header: `\n  [${UNKNOWN_TOOL_NAME} Output] (intent: orphan)`,
+    header: `\n  [${UNKNOWN_TOOL_NAME} Output] (intent: orphan) ✓`,
     body: 'orphan body',
   }, 'an unmatched result renders under a generic name');
   assert.equal(ops[1].text, formatCompactedNotice({ summarized_chunks: 7 }));
@@ -210,7 +210,7 @@ test('renderReplay() drives a block-aware front end and a plain one', () => {
     'prose', 'log', 'log', 'block', 'log', 'prose', 'log',
   ]);
   assert.deepEqual(tuiCalls[0], ['prose', 'user', 'You:\n> read the fixture']);
-  assert.deepEqual(tuiCalls[3], ['block', '\n  [read_file Output] (intent: load the fixture)', 'line one\nline two\nline three']);
+  assert.deepEqual(tuiCalls[3], ['block', '\n  [read_file Output] (intent: load the fixture) ✓', 'line one\nline two\nline three']);
   assert.deepEqual(tuiCalls[5], ['prose', 'assistant', 'All done: the file holds one line.']);
 
   // A front end with no band route (the line CLI) prints a prose op as a plain line,
@@ -227,7 +227,7 @@ test('renderReplay() drives a block-aware front end and a plain one', () => {
   const cliCalls = [];
   renderReplay(ops, { log: (...args) => cliCalls.push(args.join(' ')) });
   assert.deepEqual(cliCalls.slice(3, 6), [
-    '\n  [read_file Output] (intent: load the fixture)',
+    '\n  [read_file Output] (intent: load the fixture) ✓',
     'line one\nline two\nline three',
     '',
   ]);

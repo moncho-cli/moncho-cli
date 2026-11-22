@@ -25,7 +25,9 @@ summary: >
   and the session file never see a tag and the line CLI never renders one.
   A leading HH:MM:SS stamp is seen through (splitStamp): a stamped `You:` row is
   still the user's echo and a stamped tool header is still a tool row, while the
-  mark itself is painted in the low-key chrome colour (STAMP_COLOR, colorizeStamp).
+  mark itself is painted in its own palette key (STAMP_COLOR, colorizeStamp), which
+  ships as `default` — the terminal's own foreground — rather than the `notice` grey,
+  because blessed's grey is bright black and all but vanishes on a dark terminal.
 code:
   - path: app/theme.js
     symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, INTENT_COLOR, INTENT_BOLD, REFUSAL_COLOR, REFUSAL_BOLD, STAMP_COLOR, colorizeIntent, colorizeRefusal, colorizeStamp, highlightIntentSpans, splitStamp, isTagged, classifyLine, colorizeLine, colorizeLines]

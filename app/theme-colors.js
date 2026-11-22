@@ -50,10 +50,15 @@ export function colorizeRefusal(text) {
   return fgTag(color, `{bold}${body}{/bold}`);
 }
 
-/** One timestamp, painted as chrome: the live low-key colour, and never bold. */
+/**
+ * One timestamp, painted as chrome: the live `stamp` colour, and never bold. It is its own
+ * palette key rather than `notice` so a timestamp stays legible on a default terminal — the
+ * default `stamp` is the terminal's own foreground, not the near-invisible ANSI grey — and a
+ * skin can still move it without also moving every `[Info]` notice.
+ */
 export function colorizeStamp(stamp) {
   const body = String(stamp ?? '');
   if (!body) return '';
-  const color = CONVERSATION_COLORS.notice;
+  const color = CONVERSATION_COLORS.stamp;
   return `${fgTag(color, body)} `;
 }

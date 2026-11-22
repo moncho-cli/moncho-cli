@@ -31,7 +31,7 @@ const fullSkin = {
   name: 'sunset',
   palette: {
     user: 'bright-cyan', tool: 'yellow', intent: 'bright-blue', context: 'magenta',
-    error: 'red', notice: 'grey', tracking: 'bright-green', refusal: 'bright-red',
+    error: 'red', notice: 'grey', stamp: 'default', tracking: 'bright-green', refusal: 'bright-red',
     frame: 'cyan', table: 'cyan', code: 'bright-cyan', quote: 'bright-white',
     bullet: 'green', heading: 'default', toolRead: 'bright-cyan', toolWrite: 'green',
     toolBash: 'yellow',

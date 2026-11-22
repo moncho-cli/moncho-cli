@@ -45,7 +45,7 @@ test('the palette names one colour per kind of conversation row', () => {
   // (`app/paint-tags.js`, `docs/interface/skins`) — they are asserted separately below.
   assert.deepEqual(Object.keys(CONVERSATION_COLORS).sort(), [
     'bullet', 'code', 'context', 'error', 'frame', 'heading', 'intent', 'notice',
-    'quote', 'refusal', 'table', 'tool', 'toolBash', 'toolRead', 'toolWrite',
+    'quote', 'refusal', 'stamp', 'table', 'tool', 'toolBash', 'toolRead', 'toolWrite',
     'tracking', 'user',
   ]);
   for (const [kind, color] of Object.entries(CONVERSATION_COLORS)) {

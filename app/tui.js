@@ -237,7 +237,7 @@ export function createTui(options = {}) {
   // A resize re-fits every row measured at the old width and puts the newest line
   // back in view (app/tui-teardown.js).
   createResizeRepaint({
-    screen, transcript, statusRow, workRow: statusRows.workRow, queue, overlays,
+    screen, transcript, statusRow, workRow: statusRows.workRow, queue, overlays, refresh,
   });
 
   // The teardown is the reverse of construction, and happens once: the input box

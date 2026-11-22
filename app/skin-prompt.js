@@ -65,7 +65,8 @@ function shapeExample() {
 function keyGuide() {
   return [
     'The palette keys, and what each one paints:',
-    '  user, tool, intent, context, error, notice, tracking, refusal — one colour per kind of conversation row.',
+    '  user, tool, intent, context, error, notice, stamp, tracking, refusal — one colour per kind of conversation row',
+    '  (stamp is the HH:MM:SS mark in front of a transcript row; it ships as "default", the terminal\'s own foreground).',
     '  frame, table, code, quote, bullet, heading — the chrome the renderer paints (a fence and tool delimiter, a table frame, inline code, a quote, a list bullet, a heading).',
     '  toolRead, toolWrite, toolBash — the three tool families (looking, changing, running a command).',
     'The tokens beside the palette:',

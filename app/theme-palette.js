@@ -66,6 +66,13 @@ export const CONVERSATION_COLORS = {
   error: 'red',
   /** low-key chrome: `[Info]`, `[Session]`, `[pasted …]`, horizontal rules */
   notice: 'grey',
+  /**
+   * the `HH:MM:SS` mark in front of a transcript row. It is the terminal's own
+   * foreground (`default`), not `grey`: `grey` is ANSI bright black, which all but
+   * vanishes on a black background — the reported bug — while `default` follows the
+   * terminal, so the mark is readable on a dark *and* a light theme without a skin.
+   */
+  stamp: 'default',
   /** a `[Tracking]` row: a task.md / implementation_plan.md update */
   tracking: 'bright-green',
   /**
@@ -123,7 +130,7 @@ export const TRACKING_COLOR = CONVERSATION_COLORS.tracking;
 export const TRACKING_BOLD = true;
 
 /** The colour a timestamp is painted in: chrome, never the row it introduces. */
-export const STAMP_COLOR = CONVERSATION_COLORS.notice;
+export const STAMP_COLOR = CONVERSATION_COLORS.stamp;
 
 /** The colour a refused call is painted in: impossible to mistake for prose. */
 export const REFUSAL_COLOR = CONVERSATION_COLORS.refusal;

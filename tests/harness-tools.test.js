@@ -106,6 +106,24 @@ test('the loader passes the intent to the result hook', async () => {
   assert.ok(result.includes('hello'));
 });
 
+test('the hook is told whether the call failed, so the row can be marked', async () => {
+  // A tool that answers a JSON failure keeps its own convention (`status: "error"`),
+  // so the hook's flag is what lets the row end with a cross instead of a check.
+  const seen = [];
+  const { toolFunctions } = await loadTools((name, result, intent, info) => seen.push({ name, info }));
+
+  // A handler that throws never returns a result, so the hook is told the failure
+  // before the error travels on to the batch.
+  await assert.rejects(() => toolFunctions.read_file(JSON.stringify({ path: 'missing.txt', intent: 'read a missing file' })));
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].info.failed, true, 'a throwing call is a failed call');
+  assert.match(seen[0].name, /read_file/);
+
+  writeFile('present.txt', 'hello');
+  await toolFunctions.read_file(JSON.stringify({ path: 'present.txt', intent: 'read a present file' }));
+  assert.equal(seen[1].info.failed, false, 'a file that exists is a successful call');
+});
+
 test('missing intents are surfaced instead of silently dropped', () => {
   assert.equal(getIntent(parseToolArgs('{}')), '(no intent provided)');
   assert.equal(getIntent({ intent: '  spaced   out  ' }), 'spaced out');

@@ -79,9 +79,50 @@ export function formatCallLines({ name, args, intent } = {}) {
   ];
 }
 
+/**
+ * The marker a tool-result row ends with, so a glance tells a call that went as
+ * expected from one that has to be retried: `✓` on success, `✗` on failure.
+ *
+ * Display only, like the intent beside it: the chunk the model reads and the session
+ * file keep the raw result, and the `[error]` prefix in the chunk is what tells the
+ * model a call failed.
+ */
+export const TOOL_OK_MARK = '✓';
+export const TOOL_FAIL_MARK = '✗';
+
+/**
+ * Whether a tool result reports a failure.
+ *
+ * Three shapes reach here: a tool's own result (the convention across `tools/` is a
+ * JSON string carrying `status: "error"` plus a stable `code`,
+ * `docs/agent/tool-call-contract`), the `[error] …` string the batch stores when a
+ * handler throws or a call is refused, and a plain object with the same `status`.
+ * A result that is none of those is a success.
+ */
+export function toolResultFailed(result) {
+  if (typeof result === 'string') {
+    const text = result.trimStart();
+    if (/^\[error\]/.test(text)) return true;
+    // A handler answers its own failure as JSON, so the shape has to be read, not
+    // guessed from the text: only a parsed object with `status: "error"` counts.
+    if (!text.startsWith('{')) return false;
+    try {
+      const parsed = JSON.parse(text);
+      return Boolean(parsed && typeof parsed === 'object' && parsed.status === 'error');
+    } catch {
+      return false;
+    }
+  }
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    return result.status === 'error';
+  }
+  return false;
+}
+
 /** The header of a tool-result block (main.js builds exactly this). */
-export function formatToolHeader(toolName, intent = '') {
-  return `\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''}`;
+export function formatToolHeader(toolName, intent = '', { failed = false } = {}) {
+  const mark = failed ? TOOL_FAIL_MARK : TOOL_OK_MARK;
+  return `\n  [${toolName} Output]${intent ? ` (intent: ${intent})` : ''} ${mark}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -71,7 +71,7 @@ export function parseTokens(pairs = {}) {
 /** The one-line list of every colour token a skin takes, for the unknown-key refusal. */
 export function colorTalkLabel() {
   return [
-    'The row colours are user, tool, intent, context, error, notice, tracking, refusal',
+    'The row colours are user, tool, intent, context, error, notice, stamp, tracking, refusal',
     'the chrome is frame, table, code, quote, bullet, heading',
     'the tool families are toolRead, toolWrite, toolBash',
     `the look is ${[...COLOR_TOKEN_KEYS, ...BOOLEAN_TOKEN_KEYS].join(', ')}`,
