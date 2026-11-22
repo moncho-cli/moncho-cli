@@ -20,6 +20,10 @@ set -euo pipefail
 
 REPO="${MONCHO_REPO:-moncho-cli/moncho-cli}"
 REF="${MONCHO_REF:-main}"
+# Where the archives are fetched from. GitHub is the real answer; a test (or a mirror)
+# points this at a local directory served over file:// instead, which is how the
+# installer is proved without the repository being published.
+ARCHIVE_BASE="${MONCHO_ARCHIVE_BASE:-https://github.com}"
 INSTALL_DIR="${MONCHO_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/moncho-cli}"
 BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 FORCE="0"
@@ -45,6 +49,7 @@ Environment:
   MONCHO_REPO        repository to download from (default: moncho-cli/moncho-cli)
   MONCHO_REF         same as --ref
   MONCHO_HOME        same as --dir
+  MONCHO_ARCHIVE_BASE  where the archives are fetched from (default: https://github.com)
 EOF
 }
 
@@ -74,12 +79,13 @@ require_host() {
 }
 
 # The published tarball. `main` is served by GitHub's archive endpoint; a release tag
-# uses the release asset path, which is what a pinned REF is for.
+# uses the release asset path, which is what a pinned REF is for. ARCHIVE_BASE is the
+# host: GitHub in every real install, a file:// fixture under test.
 tarball_url() {
   if [ "$REF" = "main" ] || [ "$REF" = "master" ]; then
-    printf 'https://github.com/%s/archive/refs/heads/%s.tar.gz' "$REPO" "$REF"
+    printf '%s/%s/archive/refs/heads/%s.tar.gz' "$ARCHIVE_BASE" "$REPO" "$REF"
   else
-    printf 'https://github.com/%s/archive/refs/tags/%s.tar.gz' "$REPO" "$REF"
+    printf '%s/%s/archive/refs/tags/%s.tar.gz' "$ARCHIVE_BASE" "$REPO" "$REF"
   fi
 }
 

@@ -19,9 +19,68 @@ RUN apk add --no-cache \
       diffutils \
       patch \
       git \
+      curl \
  && git --version \
  && patch --version \
- && diff --version
+ && diff --version \
+ && curl --version
+
+# ---------------------------------------------------------------------------
+# Docker: the client always, the daemon for a privileged run
+# ---------------------------------------------------------------------------
+# The packaging work in this repository is about installing and building the
+# agent through docker, so the tooling that exercises it has to exist here.
+#
+# `docker-cli` (+ buildx, compose) is what actually works in this image, and it
+# is the half that matters: pointed at a socket from outside, `docker build` and
+# `docker run` are ordinary client calls.
+#
+#   -v /var/run/docker.sock:/var/run/docker.sock
+#
+# `docker-engine` (dockerd) is installed too, so the image *can* serve as its own
+# daemon — but only when it is started privileged. That is a runtime property,
+# not a property of this file: the default runtime drops CAP_SYS_ADMIN, and
+# dockerd needs it to mount filesystems and create the namespaces containers
+# live in. Measured in this very image: CapEff is 0000000000000000 and
+# `unshare -Ur` / `unshare -m` both fail with EPERM, so no daemon can start
+# without one of
+#
+#   docker run --privileged ...
+#   docker run --cap-add SYS_ADMIN --device /dev/fuse ...
+#
+# The version checks make the build fail loudly if a package name is ever renamed
+# or dropped from the Alpine repos — the same guard the block above uses.
+RUN apk add --no-cache \
+      docker-cli \
+      docker-cli-buildx \
+      docker-cli-compose \
+ && docker --version \
+ && docker buildx version \
+ && docker compose version
+
+# The daemon, and the helpers a daemon needs when it cannot be root. Kept apart from
+# the client above so this heavier layer is visible for what it is.
+#
+# `shadow-subids` (v3.22 community) is what supplies /usr/bin/newuidmap and
+# /usr/bin/newgidmap: a rootless daemon maps a subuid range for the uid it runs as,
+# which is 1001 here and never root. `docker-rootless-extras` brings rootlesskit,
+# slirp4netns and fuse-overlayfs — and, being packaged on top of the `docker`
+# metapackage, it makes this layer carry docker-engine too, so do not read the split
+# above as the client ever living without the engine in the final image.
+#
+# `--no-scripts` keeps the openrc service from being wired up: nothing here boots an
+# init system, and the daemon is started by whoever runs the container.
+#
+# The daemon is deliberately *not* started at image build: a RUN step could not start
+# it under the default runtime and the build would fail for a reason that has nothing
+# to do with this project's code. tests/install-build.test.js gates its build case on
+# `docker info` succeeding and says so when it does not.
+RUN apk add --no-cache --no-scripts \
+      docker-engine \
+      shadow-subids \
+      docker-rootless-extras \
+ && dockerd --version \
+ && test -x /usr/bin/newuidmap
 
 WORKDIR /app
 

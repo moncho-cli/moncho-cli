@@ -37,8 +37,14 @@ test('the install knob the fork guide names is one the installer really reads', 
   );
   assert.match(installer, /REF="\$\{MONCHO_REF:-/, 'scripts/install.sh must read MONCHO_REF');
 
-  // The URL a fork is fetched from is built from those two, and from nothing hard-coded.
-  assert.match(installer, /github\.com\/%s\/archive/, 'the tarball URL must come from REPO');
+  // The URL a fork is fetched from is built from those two, and from nothing hard-coded:
+  // the host is named as its own variable so a test or a mirror can point it elsewhere.
+  assert.match(installer, /%s\/%s\/archive\/refs\//, 'the tarball URL must come from the base and REPO');
+  assert.match(
+    installer,
+    /ARCHIVE_BASE="\$\{MONCHO_ARCHIVE_BASE:-https:\/\/github\.com\}"/,
+    'the archive base must default to GitHub, so a real install reaches the real repository'
+  );
 });
 
 test('the commands the fork guide gives are the ones the manifest declares', { skip }, () => {

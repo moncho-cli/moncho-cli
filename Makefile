@@ -9,6 +9,8 @@
 #   make probe         the docker-free half of the runner's behaviour
 #   make payload       stage the distribution payload into build/ and prove that
 #                      docs/ and tests/ did not come along
+#   make install       install from a local archive and build the base image (the
+#                      daemon-dependent half of tests/install-build.test.js)
 #   make bump          move the version a session owes (default: a patch step)
 #   make release       check the next release and print the URLs the install uses
 #   make base          bake moncho-agent:$(VERSION) from this checkout, and nothing else
@@ -16,7 +18,8 @@
 #
 # `make payload` is the one to run before a release: it applies the installer's own
 # allow-list locally, so a packaging mistake shows up here rather than in a user's
-# ~/.config. Nothing here needs a network or a Docker daemon except `base` and `dev`.
+# ~/.config. Nothing here needs a network or a Docker daemon except `base`, `dev`
+# and `install` — whose daemon-dependent case reports why it skipped.
 #
 # Two flows, two entry points, never mixed:
 #   * a *user* never clones this repository; the installer puts `moncho-cli` on their
@@ -29,13 +32,14 @@ SHELL := /bin/bash
 VERSION ?= dev
 BUMP ?= patch
 
-.PHONY: help test check-shell probe payload bump release base dev clean
+.PHONY: help test check-shell probe payload install bump release base dev clean
 
 help:
 	@echo "make test         run the test suite"
 	@echo "make check-shell  bash -n every shipped script, set the exec bits"
 	@echo "make probe        docker-free checks of the runner's logic"
 	@echo "make payload      stage the distribution payload into build/payload"
+	@echo "make install      install from a local archive and build the base image"
 	@echo "make bump         move the version (BUMP=minor|major|patch)"
 	@echo "make release      check the next release, print the install URLs"
 	@echo "make base         build moncho-agent:$(VERSION) from this checkout"
@@ -53,6 +57,12 @@ probe:
 
 payload:
 	node agent/utils/probe-payload.mjs $(VERSION)
+
+# The install path proved against a local archive, and — when a daemon is reachable —
+# a dedicated container that installs and builds the agent. Without a daemon the suite
+# reports why it skipped instead of failing, so this target is safe to run anywhere.
+install:
+	node --test tests/install-build.test.js
 
 # One step is enough even when a session changed many things
 # (docs/maintainer/version-bump): this rewrites the manifest and both lockfile
