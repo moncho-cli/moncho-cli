@@ -1,4 +1,4 @@
-import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, THINKING_FILE as THINKING_TARGET, FILE_LINE_LIMIT } from '../config/constants.js';
+import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, OLLAMA_MAX_TOKENS, THINKING_FILE as THINKING_TARGET, FILE_LINE_LIMIT } from '../config/constants.js';
 import { logEvent } from '../utils/logger.js';
 import { resolveProjectPath } from '../utils/path-safety.js';
 import { recordProviderFailure } from './provider-diagnostics.js';
@@ -76,8 +76,23 @@ function sleep(ms) {
 
 let systemPromptCache = null;
 
-function isOllamaProvider() {
-  return /:11434\b|\/api\/chat/.test(BASE_URL);
+/**
+ * Whether a provider is Ollama, judged from its base URL: its default port or its
+ * native chat path. The parameter is the URL to test, defaulting to the configured
+ * one, so the decision is a pure function of a URL and can be exercised without a
+ * live provider.
+ */
+export function isOllamaProvider(baseUrl = BASE_URL) {
+  return /:11434\b|\/api\/chat/.test(baseUrl);
+}
+
+/**
+ * Whether the base URL is an OpenAI-compatible surface (a `…/v1/…` path). Ollama
+ * serves one next to its native API, and the two read a response cap differently —
+ * `max_tokens` here, `options.num_predict` there.
+ */
+function isOpenAiCompatibleSurface(baseUrl = BASE_URL) {
+  return /\/v1\//.test(baseUrl);
 }
 
 function buildHeaders() {
@@ -86,7 +101,7 @@ function buildHeaders() {
   return headers;
 }
 
-function buildBody(messages, tools, stream) {
+export function buildBody(messages, tools, stream, baseUrl = BASE_URL) {
   const body = { model: MODEL, messages, stream };
   const toolList = Array.isArray(tools) ? tools : [];
   if (toolList.length > 0) body.tools = toolList;
@@ -95,7 +110,17 @@ function buildBody(messages, tools, stream) {
   // Sending an explicit `undefined` would serialise away in JSON, but omitting the key
   // outright keeps the request byte-identical to what it was before the knob existed.
   if (MODEL_TEMPERATURE !== null) body.temperature = MODEL_TEMPERATURE;
-  if (stream && isOllamaProvider()) body.think = true; // Ollama-only flag
+  // A cap on generated tokens, so a thinking model settles on an answer instead of
+  // generating until the request dies. Only Ollama gets one — it is the provider this
+  // knob exists for — and it is placed where that surface reads it: `max_tokens` for
+  // Ollama's OpenAI-compatible API, `options.num_predict` for its native /api/chat.
+  // `null` means no cap is sent and the provider's own default applies.
+  if (OLLAMA_MAX_TOKENS !== null && isOllamaProvider(baseUrl)) {
+    if (isOpenAiCompatibleSurface(baseUrl)) body.max_tokens = OLLAMA_MAX_TOKENS;
+    else body.options = { ...body.options, num_predict: OLLAMA_MAX_TOKENS };
+  }
+  
+  if (stream && isOllamaProvider(baseUrl)) body.think = true; // Ollama-only flag
   return body;
 }
 

@@ -29,6 +29,15 @@ implementation is linked below.
   it did before the knob existed. A value outside the range, or one that does not parse,
   reads as **unset** rather than being sent: a typo must never silently change how the
   model answers.
+- A **cap on generated tokens is sent to Ollama only**, so a local thinking model
+  settles on a decision instead of generating until the request dies.
+  `OLLAMA_MAX_TOKENS` (`config/constants.js#OLLAMA_MAX_TOKENS`) defaults to a finite
+  number and accepts `0`, `off`, `none` or `unlimited` to send **no** cap; an
+  unparseable value falls back to the default rather than removing the cap. The cap is
+  placed where the surface being called reads it — `max_tokens` for Ollama's
+  OpenAI-compatible API (`…/v1/…`), `options.num_predict` for its native `/api/chat` —
+  and a provider that is not Ollama (`api/ollama.js#isOllamaProvider`) receives no cap,
+  so its own default applies.
 
 ## Responses
 
@@ -106,4 +115,5 @@ implementation is linked below.
 - Implementation: `api/ollama.js`, `api/stream-reader.js`, `config/constants.js`,
   `api/provider-response.js`
 - Proof: `tests/ollama-provider.test.js`, `tests/stream-reader.test.js`,
-  `tests/model-temperature.test.js`, `tests/provider-diagnostics.test.js`
+  `tests/model-temperature.test.js`, `tests/ollama-token-cap.test.js`,
+  `tests/provider-diagnostics.test.js`

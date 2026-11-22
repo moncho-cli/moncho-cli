@@ -13,13 +13,13 @@ summary: >
   identity from the base URL.
 code:
   - path: api/ollama.js
-    symbols: [callOllama, projectLanguageGuidance]
+    symbols: [callOllama, projectLanguageGuidance, buildBody, isOllamaProvider]
   - path: api/stream-reader.js
     symbols: [createLineSplitter, parseStreamLine, readStream]
   - path: api/provider-response.js
     symbols: [normalizeUsage, normalizeResponse]
   - path: config/constants.js
-    symbols: [BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, THINKING_FILE, detectProvider, describeModel, PROVIDER]
+    symbols: [BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, OLLAMA_MAX_TOKENS, OLLAMA_MAX_TOKENS_DEFAULT, THINKING_FILE, detectProvider, describeModel, PROVIDER]
 tests:
   - path: tests/ollama-provider.test.js
     cases:
@@ -49,3 +49,9 @@ tests:
       - an out-of-range or unparseable MODEL_TEMPERATURE reads as unset
       - a usable MODEL_TEMPERATURE is kept as a number, boundary values included
       - an unset MODEL_TEMPERATURE leaves the key out of the request body
+  - path: tests/ollama-token-cap.test.js
+    cases:
+      - OLLAMA_MAX_TOKENS defaults to a finite cap and can be turned off
+      - an unparseable OLLAMA_MAX_TOKENS falls back to the default
+      - the token cap is placed where each Ollama surface reads it
+      - no token cap is sent to an OpenAI-compatible provider

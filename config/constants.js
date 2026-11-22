@@ -47,6 +47,35 @@ function toTemperature(value) {
  */
 export const MODEL_TEMPERATURE = toTemperature(process.env.MODEL_TEMPERATURE);
 
+/**
+ * The default cap on tokens Ollama may generate in one response.
+ *
+ * A local thinking model otherwise generates into the thousands of tokens and the
+ * request dies before it answers; a cap forces it to settle on a decision. The value
+ * is a **default**, not a constant: `OLLAMA_MAX_TOKENS` overrides it.
+ */
+export const OLLAMA_MAX_TOKENS_DEFAULT = 512;
+
+/**
+ * A token cap, or `null` for "send no cap".
+ *
+ * Unset falls back to the default; `0`, `off`, `none` and `unlimited` turn the cap
+ * **off** so the provider's own default applies; anything unparseable falls back to
+ * the default rather than silently removing the cap.
+ */
+function toTokenCap(value, fallback) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "") return fallback;
+  if (["0", "off", "none", "unlimited"].includes(raw)) return null;
+  return toPositiveInt(raw, fallback);
+}
+
+/**
+ * How many tokens a model call may generate, or `null` for "send no cap".
+ * Configurable through `OLLAMA_MAX_TOKENS`; see `api/ollama.js#buildBody`.
+ */
+export const OLLAMA_MAX_TOKENS = toTokenCap(process.env.OLLAMA_MAX_TOKENS, OLLAMA_MAX_TOKENS_DEFAULT);
+
 // Alias kept for the live smoke test (agent/utils/stream-smoke-test.js).
 export const OLLAMA_URL = BASE_URL;
 
