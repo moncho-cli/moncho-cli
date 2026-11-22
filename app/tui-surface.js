@@ -1,4 +1,5 @@
 import { createChooser } from './tui-modal.js';
+import { openContentModal } from './content-modal.js';
 import { activePalette, activeTokens } from './theme.js';
 import { logEvent } from '../utils/logger.js';
 import { reloadConversation } from './session-replay.js';
@@ -163,6 +164,35 @@ export function createTuiSurface({
      * the command registry's `choose(labels, { title })` expects.
      */
     choose: createChooser({ screen, inputBox, render: refresh }),
+    /**
+     * Show documents read-only, in a modal (`app/content-modal.js`).
+     *
+     * `/task` is the one command that needs it: the tracking pair is shown exactly as
+     * it is on disk, with nothing to press but the keys that close it. Resolves with
+     * `{ closed, document }`, or null when there was nothing to show.
+     */
+    /**
+     * Ask a yes/no question in the picker modal.
+     *
+     * Resolves `true` only for the first choice: a cancelled modal is a no. The same
+     * contract as the line CLI's `confirm()`, so a command asks the same question on
+     * either front end and gets the same answer shape.
+     */
+    confirm: async (question, { title = 'Confirm' } = {}) => {
+      const choice = await tui.choose([`Yes — ${question}`, 'No'], { title });
+      return choice === 0;
+    },
+    contentView: ({ documents = [], title = 'Content' } = {}) => openContentModal({
+      screen,
+      documents,
+      title,
+      refresh,
+      // The focus comes back to the box when the modal closes, like every other modal:
+      // the box is the single arming point, so the host's next read finds it focused.
+      onOpenChange: (open) => {
+        if (!open && inputBox) inputBox.focus();
+      },
+    }),
     collapsePaste: (text) => pastes.collapse(text).text,
     expandPastes: (text) => pastes.expand(text),
     get pastes() {

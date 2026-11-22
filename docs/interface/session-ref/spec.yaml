@@ -1,0 +1,40 @@
+id: interface/session-ref
+domain: interface
+title: The /ref cross-session tracking port
+status: active
+summary: >
+  /ref carries a previous session's task.md and implementation_plan.md into the current
+  session without carrying its conversation. The source pair is read from the session
+  record, canonicalised and validated, then written through the same tracking store the
+  tools use. A bare /ref opens the picker; a port without --force asks first, because the
+  current pair always exists. A cancelled picker or confirmation writes nothing, and each
+  refusal has its own code.
+code:
+  - path: app/ref-command.js
+    symbols: [refCommand, parseRefArg, findSource, sourcePair, FORCE_FLAG]
+  - path: app/commands.js
+    symbols: [createDefaultCommands]
+  - path: app/session-loop.js
+    symbols: [handleCommand]
+  - path: app/cli.js
+    symbols: [createCLI]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: utils/tracking-store.js
+    symbols: [writeTaskContent, writePlanContent, trackingPaths]
+  - path: utils/tracking-format.js
+    symbols: [canonicalizeTrackingFile, validateTrackingFile]
+tests:
+  - path: tests/ref-command.test.js
+    cases:
+      - "/ref ships in the default registry, with refer as an alias"
+      - "parseRefArg() reads the id and the force flag in either order"
+      - "sourcePair() canonicalises what the record holds"
+      - "findSource() resolves an id, a prefix, and refuses what it cannot read"
+      - "/ref ports the pair into the current session and leaves the source alone"
+      - "/ref asks before replacing the current pair, and a no changes nothing"
+      - "/ref --force replaces without asking"
+      - "/ref with no id opens the picker and ports the chosen session"
+      - "/ref refuses a cancelled picker and a front end with no picker"
+      - "/ref refuses an unknown session and an empty source"
+      - "/ref reports NO_SESSIONS when nothing is stored"

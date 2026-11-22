@@ -5,6 +5,8 @@ import { workCommand } from './work-command.js';
 import { compactCommand } from './compact-command.js';
 import { skinsCommand } from './skins-command.js';
 import { newCommand } from './new-command.js';
+import { taskCommand } from './task-command.js';
+import { refCommand } from './ref-command.js';
 
 /**
  * Slash commands: the iterable registry behind `/sessions` (task.md item 4).
@@ -72,6 +74,8 @@ export function createDefaultCommands() {
   const registry = createCommandRegistry();
   registry.register(workCommand());
   registry.register(newCommand());
+  registry.register(taskCommand());
+  registry.register(refCommand());
   registry.register(sessionsCommand());
   registry.register(usageCommand());
   registry.register(compactCommand());

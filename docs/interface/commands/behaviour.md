@@ -87,6 +87,14 @@ registry and the commands that ship with it; the implementation is linked below.
     so the counter goes back to 0 and the result reports `pulseReset: true`.
   - a **failure is its own refusal**, `COMPACTION_FAILED`, naming the reason the window
     was left unchanged — a compaction must never silently discard history.
+- **`/task [task|plan]`** — show the conversation's own tracking pair, read-only
+  (`docs/interface/task-viewer`). A bare `/task` opens both documents in one modal; a named
+  one opens a single document. It reads through the same store the tracking tools use and
+  never creates a file: a session with no pair answers `NO_TRACKING`. A front end without a
+  screen gets the documents as plain lines.
+- **`/ref [<id>] [--force]`** (alias `/refer`) — carry a previous session's tracking pair
+  into this one (`docs/interface/session-ref`). A bare `/ref` opens the session picker; a
+  port without `--force` asks first, because the current pair always exists.
 - **`/help`** — the command list, derived from the registry itself.
 
 The host branch that answers a `NEW_SESSION` result lives in `app/session-loop.js`

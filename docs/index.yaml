@@ -58,6 +58,8 @@ specs:
   - interface/session-replay
   - interface/session-stamps
   - interface/commands
+  - interface/task-viewer
+  - interface/session-ref
   - interface/line-cli
   - interface/input-focus
   - interface/prompt-editor

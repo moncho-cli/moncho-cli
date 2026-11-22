@@ -269,6 +269,9 @@ async function main() {
         }),
       })
       : null,
+    // `/task` opens the read-only viewer when there is a screen; without one the command
+    // returns the documents as lines and the host prints them.
+    contentView: tui ? (view) => tui.contentView(view) : null,
     abortManager,
     saveSession,
     autosave,

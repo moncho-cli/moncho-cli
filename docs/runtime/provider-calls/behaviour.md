@@ -69,6 +69,20 @@ implementation is linked below.
 - Streaming decodes SSE/data lines, ignores non-JSON keep-alive framing, writes
   thinking text to the capture file instead of the transcript, and returns the full
   response text.
+- **The partial line is kept between reads** (`api/stream-reader.js`). A streaming
+  response arrives as bytes, and one read routinely cuts a JSON payload in half; splitting
+  each read on its own threw the incomplete line away and left the next read's tail
+  unparseable, so the deltas inside both fragments were silently dropped. That is the
+  reported "the prose is missing space characters, usually at the end" — a space is a
+  delta, and a delta split across a read boundary is a delta lost. `createLineSplitter()`
+  owns the remainder, `readStream()` appends each read to it and releases only lines that
+  really ended, and a final flush releases a last line with no trailing newline. The
+  decoder runs with `stream: true` for the same reason at the byte level: a multi-byte
+  character is kept whole across a read boundary too.
+- `parseStreamLine()` treats `thinking` as a **flag**, not text: a delta marked with it
+  carries reasoning in its `content`, and that text goes to the capture file, never to the
+  prose. Framing, keep-alives and an unparseable payload answer `null` — a streaming
+  response carries all of them and none is a failure.
 - **The thinking capture lives in the state tree, not at the project root.** Its path
   is `THINKING_FILE` (`config/constants.js`), defaulting to `agent/thinking.md` — next
   to the sessions and the log — and it is resolved through
@@ -89,6 +103,7 @@ implementation is linked below.
 
 ## See also
 
-- Implementation: `api/ollama.js`, `config/constants.js`, `api/provider-response.js`
-- Proof: `tests/ollama-provider.test.js`, `tests/model-temperature.test.js`,
-  `tests/provider-diagnostics.test.js`
+- Implementation: `api/ollama.js`, `api/stream-reader.js`, `config/constants.js`,
+  `api/provider-response.js`
+- Proof: `tests/ollama-provider.test.js`, `tests/stream-reader.test.js`,
+  `tests/model-temperature.test.js`, `tests/provider-diagnostics.test.js`

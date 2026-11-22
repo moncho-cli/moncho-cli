@@ -81,6 +81,9 @@ export async function handleCommand(input, {
   // The `/skins prompt` modal subchat (`docs/interface/skins`): the host supplies the
   // function, so a front end without one (the line CLI) refuses with its own code.
   skinSubchat = null,
+  // The read-only viewer `/task` opens (`docs/interface/task-viewer`): the host supplies
+  // the screen-bound function, so a front end without one prints the documents instead.
+  contentView = null,
 } = {}) {
   const parsed = parseCommand(input);
   if (!parsed) return false;
@@ -89,6 +92,9 @@ export async function handleCommand(input, {
     arg: parsed.arg,
     log,
     choose: typeof cli?.choose === 'function' ? (labels, options) => cli.choose(labels, options) : null,
+    // A yes/no question, for the commands that replace something (`/ref`). The same
+    // contract on both front ends: `true` only for an explicit yes.
+    confirm: typeof cli?.confirm === 'function' ? (question, options) => cli.confirm(question, options) : null,
     manager,
     dir: sessions?.dir,
     // The live mode (`app/session-mode.js`), so `/work on|off` moves the very state
@@ -97,6 +103,9 @@ export async function handleCommand(input, {
     // `/skins` reads the project's skins from its own store and, for `prompt`, opens
     // the modal subchat the host built (`app/skin-modal.js`).
     skinSubchat,
+    // `/task` shows the tracking pair in a read-only modal; without one the command
+    // returns the documents as lines and the host prints them.
+    contentView,
     // After `/skins` moved the palette the chrome has to be re-read: the TUI repaints
     // the border, the brand mark and the live rows in place; the line CLI has no
     // colours to repaint, so it has nothing to do. The applied skin is also remembered
@@ -217,6 +226,7 @@ export async function runSessionLoop({
   mode = null,
   drive = null,
   skinSubchat = null,
+  contentView = null,
   abortManager = null,
   saveSession = () => null,
   autosave = null,
@@ -254,7 +264,7 @@ export async function runSessionLoop({
     if (!String(userInput ?? '').trim()) continue;
 
     // A slash command is answered here and never sent to the model.
-    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions, mode, skinSubchat });
+    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions, mode, skinSubchat, contentView });
     if (consumed) continue;
 
     abortManager?.startTask();

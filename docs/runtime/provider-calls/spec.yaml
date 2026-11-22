@@ -14,6 +14,8 @@ summary: >
 code:
   - path: api/ollama.js
     symbols: [callOllama, projectLanguageGuidance]
+  - path: api/stream-reader.js
+    symbols: [createLineSplitter, parseStreamLine, readStream]
   - path: api/provider-response.js
     symbols: [normalizeUsage, normalizeResponse]
   - path: config/constants.js
@@ -31,6 +33,16 @@ tests:
       - a retried attempt is reported through onRetry, not the console
       - a throwing onRetry hook never costs the retry
       - the thinking capture resolves inside the project, and refuses to leave it
+  - path: tests/stream-reader.test.js
+    cases:
+      - "the splitter keeps a partial line between reads"
+      - "the splitter releases a last line that never ended with a newline"
+      - "parseStreamLine() reads content, thinking, done and ignores framing"
+      - "readStream() reassembles the whole response from a stream split at every byte"
+      - "readStream() reports thinking without adding it to the content"
+      - "readStream() keeps a final delta that has no trailing newline"
+      - "readStream() fires the done hook once and tolerates a silent stream"
+      - "readStream() keeps a multi-byte character whole across a read boundary"
   - path: tests/model-temperature.test.js
     cases:
       - MODEL_TEMPERATURE is unset unless the user configures one

@@ -3,6 +3,7 @@ import { logEvent } from '../utils/logger.js';
 import { resolveProjectPath } from '../utils/path-safety.js';
 import { recordProviderFailure } from './provider-diagnostics.js';
 import { normalizeResponse } from './provider-response.js';
+import { readStream } from './stream-reader.js';
 import { renderFileLineLimit, unresolvedPlaceholders } from '../utils/file-size-budget.js';
 import fs from 'fs';
 import path from 'path';
@@ -196,49 +197,20 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
         }
 
         const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullResponse = '';
-        
+
         // Clear the thinking file at the start of streaming
         await clearThinkingFile();
 
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) {
-            break;
-          }
-          
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line) continue;
-            if (line === 'data: [DONE]' || line === '[DONE]') {
-              console.log("\n\n[Streaming complete]");
-              continue;
-            }
-            const payload = line.startsWith('data:') ? line.slice(5).trim() : line;
-            try {
-              const parsed = JSON.parse(payload);
-              const delta = parsed.message || parsed.choices?.[0]?.delta || {};
-              if (delta.content) {
-                if (delta.thinking || (parsed.message && parsed.message.thinking)) {
-                  if (THINKING_FILE) fs.appendFileSync(THINKING_FILE, delta.content, 'utf-8');
-                } else {
-                  fullResponse += delta.content;
-                  process.stdout.write(delta.content);
-                }
-              }
-              if (parsed.done) {
-                console.log("\n\n[Streaming complete]");
-              }
-            } catch (e) {
-              // Ignore non-JSON keep-alive / SSE framing lines.
-            }
-          }
-        }
+        // The line buffering lives in api/stream-reader.js: a read boundary routinely cuts
+        // a JSON payload in half, and splitting each read on its own threw the partial line
+        // away — the dropped delta was the missing space in the prose.
+        const fullResponse = await readStream(reader, {
+          onContent: (text) => process.stdout.write(text),
+          onThinking: (text) => {
+            if (THINKING_FILE) fs.appendFileSync(THINKING_FILE, text, 'utf-8');
+          },
+          onDone: () => console.log("\n\n[Streaming complete]"),
+        });
 
         return fullResponse;
       }

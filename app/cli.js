@@ -49,6 +49,20 @@ export function createCLI() {
       if (!Number.isInteger(index) || index < 0 || index >= items.length) return null;
       return index;
     },
+    /**
+     * Ask a yes/no question.
+     *
+     * Resolves `true` only for an explicit yes: an empty answer, `n`, `q` or anything
+     * else is a no. A destructive confirmation that defaults to yes is not a
+     * confirmation, so the safe answer is the one an empty line gets.
+     *
+     * @param {string} question the prompt
+     * @returns {Promise<boolean>}
+     */
+    async confirm(question) {
+      const answer = String(await ask(`${question} [y/N] `)).trim().toLowerCase();
+      return answer === 'y' || answer === 'yes';
+    },
     close() {
       rl.close();
     }
