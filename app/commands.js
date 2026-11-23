@@ -1,5 +1,5 @@
 import { listSessions, loadSession, describeSession, sessionChunks, sessionStamps, sessionUsage, sessionModeState, sessionSkin, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
-import { readConversationLog } from '../utils/conversation-log-store.js';
+import { readConversationLog, readConversationLogMeta } from '../utils/conversation-log-store.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
 import { compactCommand } from './compact-command.js';
@@ -159,10 +159,14 @@ export function sessionsCommand() {
       // keep the *whole* conversation in its log instead of restarting from the compacted
       // window.
       const journal = readConversationLog(session.id, { dir });
+      // The provenance the log kept beside the journal — the build that wrote each chunk
+      // and what it weighed (utils/chunk-meta.js, docs/runtime/chunk-provenance). Read
+      // with the journal because that is the list it is aligned with.
+      const journalMeta = readConversationLogMeta(session.id, { dir });
       if (!manager || typeof manager.contextWindow?.replace !== 'function') {
         return { ok: false, code: 'NO_WINDOW', message: 'This front end cannot load a session.' };
       }
-      manager.contextWindow.replace(chunks, { journal, stamps });
+      manager.contextWindow.replace(chunks, { journal, stamps, meta: journalMeta });
       // The session file is the accounting record of the conversation, so its
       // per-model table becomes the live one: resuming continues the counts
       // instead of starting them again at zero.

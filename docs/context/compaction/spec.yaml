@@ -6,7 +6,7 @@ summary: >
   An over-budget window is compacted by summarising the older share (by token mass) into one marked summary chunk and keeping the newer share verbatim, never evicting the newest chunk. The split comes from one configured factor, COMPACTION_OLD_RATIO (default 0.7, overridable through the COMPACTION_OLD_RATIO env var), with the keep ratio derived from it, and every message that names the split derives its percentages from that config through describeCompactionSplit(). The last message the user wrote inside the summarised block is carried over verbatim between the summary and the kept tail by code, not by the model, unless that would not still shrink the window. The summariser call is a single self-contained request — its own instruction plus the evicted chunks, with the agent system prompt deliberately absent — and config/prompt.md says nothing about compaction at all. An empty summary or a provider error leaves the window untouched. compact_context reaches the live window via the host registry and defers the real call to the host loop.
 code:
   - path: utils/compaction.js
-    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, lastUserChunk, describeCompactionSplit, alignSplitToToolBatches, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, compactChunks, needsCompaction]
+    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, lastUserChunk, describeCompactionSplit, alignSplitToToolBatches, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, capturePointers, buildCaptureCarry, compactChunks, needsCompaction]
   - path: utils/compaction-render.js
     symbols: [chunkToText, serializeChunks, lastUserChunk, describeCompactionSplit]
   - path: app/context-window.js
@@ -50,3 +50,13 @@ tests:
       - a summariser failure never breaks the task loop
       - the compaction announces itself in the transcript before it runs
       - detectCompactionRequest only fires on deferred compact_context results
+  - path: tests/compaction-capture-carry.test.js
+    cases:
+      - capturePointers reads the ids a window names, and deduplicates them
+      - capturePointers also reads an id out of the summary text
+      - capturePointers ignores anything that names no capture
+      - buildCaptureCarry names every capture, and nothing when there is none
+      - a compaction carries the capture a collapsed summary named
+      - the carry is placed right after the summary, ahead of the kept tail
+      - a compaction with no collapsed section adds no carry line
+      - every capture named in the evicted block is carried, deduplicated

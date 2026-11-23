@@ -5,6 +5,11 @@ import {
   listProjectFiles,
   readTextFile
 } from '../utils/project-scan.js';
+import {
+  BLOB_MAX_BYTES_PER_FILE_CEILING,
+  BLOB_MAX_FILES_CEILING,
+  BLOB_MAX_TOTAL_BYTES_CEILING
+} from '../config/constants.js';
 
 /**
  * Fetch one or more files as raw blobs in a single call.
@@ -17,6 +22,19 @@ import {
 const DEFAULT_MAX_FILES = 8;
 const DEFAULT_MAX_BYTES_PER_FILE = 40 * 1024;
 const DEFAULT_MAX_TOTAL_BYTES = 120 * 1024;
+
+/**
+ * A requested cap, defaulted when absent and clamped to its ceiling.
+ *
+ * The default bounds a bare call; the ceiling bounds the *request*, so a model that
+ * asks for `maxFiles: 10000` is answered the ceiling instead of a gigantic response.
+ * Clamping rather than refusing keeps the call useful — the tag already reports
+ * `truncated=true`, so a caller learns it was capped and can narrow the glob.
+ */
+export function clampCap(value, fallback, ceiling) {
+  const requested = Number.isInteger(value) && value > 0 ? value : fallback;
+  return Math.min(requested, ceiling);
+}
 
 /** True when the argument looks like a glob rather than a literal path. */
 export function isGlobPattern(value) {
@@ -105,7 +123,7 @@ function errorResponse(error, args) {
 const { definition, execute } = defineTool({
   name: 'blob',
   description:
-    'Fetch one or more files as raw blobs in a single call. Accepts a file path, a directory or a glob (e.g. "utils/*.js"), and returns each file wrapped in <blob path="..." bytes=... lines=...> tags. Skips binary files with a marker and truncates oversized ones instead of failing. Use it to read several related files at once; use read_file for a paged single-file read.',
+    `Fetch one or more files as raw blobs in a single call. Accepts a file path, a directory or a glob (e.g. "utils/*.js"), and returns each file wrapped in <blob path="..." bytes=... lines=...> tags. Skips binary files with a marker and truncates oversized ones instead of failing. Narrow the call with include/exclude rather than raising the caps: maxFiles, maxBytesPerFile and maxTotalBytes are clamped to hard ceilings (${BLOB_MAX_FILES_CEILING} files, ${BLOB_MAX_TOTAL_BYTES_CEILING} bytes in total), and a call that hits one reports truncated=true. Use it to read several related files at once; use read_file for a paged single-file read.`,
   parameters: {
     properties: {
       path: {
@@ -137,15 +155,17 @@ const { definition, execute } = defineTool({
   },
   async execute(args) {
     try {
-      const maxFiles = Number.isInteger(args.maxFiles) && args.maxFiles > 0
-        ? args.maxFiles
-        : DEFAULT_MAX_FILES;
-      const maxBytesPerFile = Number.isInteger(args.maxBytesPerFile) && args.maxBytesPerFile > 0
-        ? args.maxBytesPerFile
-        : DEFAULT_MAX_BYTES_PER_FILE;
-      const maxTotalBytes = Number.isInteger(args.maxTotalBytes) && args.maxTotalBytes > 0
-        ? args.maxTotalBytes
-        : DEFAULT_MAX_TOTAL_BYTES;
+      const maxFiles = clampCap(args.maxFiles, DEFAULT_MAX_FILES, BLOB_MAX_FILES_CEILING);
+      const maxBytesPerFile = clampCap(
+        args.maxBytesPerFile,
+        DEFAULT_MAX_BYTES_PER_FILE,
+        BLOB_MAX_BYTES_PER_FILE_CEILING
+      );
+      const maxTotalBytes = clampCap(
+        args.maxTotalBytes,
+        DEFAULT_MAX_TOTAL_BYTES,
+        BLOB_MAX_TOTAL_BYTES_CEILING
+      );
 
       const { files, truncated: walkTruncated } = resolveBlobTargets(args.path, {
         include: args.include,

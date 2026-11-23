@@ -164,6 +164,11 @@ export function createSessionRecorder({
         model,
         cwd,
         chunks: Array.isArray(extra.journal) ? extra.journal : chunks,
+        // The provenance of each journal chunk, index-aligned with it: the build that
+        // wrote it and what it weighed (utils/chunk-meta.js, docs/runtime/chunk-provenance).
+        // It travels with the journal because that is the list it describes, and the list
+        // a compaction never rebuilds.
+        meta: Array.isArray(extra.journalMeta) ? extra.journalMeta : null,
       }, { dir });
       return { ...record, conversationLog };
     },

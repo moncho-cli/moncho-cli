@@ -36,6 +36,30 @@ A summary paraphrases, and the prompt the user actually typed is the one thing t
 - The carry is a fidelity rule, never a licence to grow the window: when re-inserting the message would not still leave the window smaller than before (the user's message *was* the bulk of the evicted block), the carry is dropped and the summary stands alone.
 - A block that holds no user chunk carries nothing. The report says which happened through `carriedChunks` (`0` or `1`), and the transcript line and the TUI marker name the carried message when there is one.
 
+## The capture pointers survive too
+
+The same reasoning reaches one more thing, and it is the one a summary is most likely to
+quietly destroy. A collapsed section's summary names a chunkpaction capture
+(`read_chunkpaction({ capture: N })`, `docs/context/chunkpaction`), and the compaction
+summariser is a *model*: it paraphrases, so that line is exactly the kind of concrete
+detail it drops. A window compacted once would then hold a summary of a summary with no
+pointer left in it, and the raw chunks would still be on disk and unreachable.
+
+So the ids are carried by **code, not by a model answer**, exactly as the user's words are:
+
+- `capturePointers()` reads them out of the evicted chunks — the structured
+  `collapsed_capture` field first, and the summary text as a fallback for a chunk written
+  before that field existed — deduplicated and ascending.
+- `buildCaptureCarry()` renders them into **a chunk of its own** (`role: 'system'`, a
+  `capture_carry` field naming the ids), placed immediately after the summary and ahead of
+  the carried user message and the kept tail.
+- It is a chunk rather than a bare string on purpose: everything in the window is an object
+  with a `role` and `content`, so a string pushed among them would be *in the array and
+  invisible to the model* — the failure this whole mechanism exists to prevent.
+- Nothing to carry means no chunk is added at all. Unlike the user-message carry, this one
+  is **not** dropped when the window would not shrink: it is a line, and losing it costs
+  the whole capture. The report names the ids through `capturedIds`.
+
 ## The announcement
 
 - A compaction is announced **twice** in the conversation thread: once when it starts and once when it is done. The first one is there because the summariser call takes time — the thread must not go quiet while the window is rewritten.

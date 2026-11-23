@@ -1,0 +1,41 @@
+id: context/item-collapse
+domain: context
+title: The item a chunk belongs to, and the collapse of a solved section
+status: active
+summary: >
+  Every chunk is attributed to the task.md item that was open when it entered the
+  window, kept in a parallel array beside the chunks rather than on them (a chunk is
+  sent verbatim). update_task sets the item in flight through the registry, and a chunk
+  added while no item is open is attributed to nothing rather than to a guess. A
+  completed item's contiguous run of chunks is then collapsed into one deterministic
+  summary with no model call, and only when every guard holds: the run is provably one
+  completed item, is long enough to pay for itself, does not cut a tool batch in half,
+  and is smaller once summarised. Everything else is copied through verbatim, and the
+  uncompacted history stays in the journal, so nothing is lost by collapsing.
+code:
+  - path: utils/item-collapse.js
+    symbols: [NO_ITEM, COLLAPSED_ITEM_PREFIX, normalizeItems, alignItems, isToolCallChunk, isToolResultChunk, findItemRuns, cutsToolBatch, summarizeRun, buildCollapsedChunk, collapseCompletedItems]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: utils/host.js
+    symbols: [setCurrentItem]
+  - path: tools/update_task.js
+    symbols: [definition, execute]
+  - path: app/item-collapse-runner.js
+    symbols: [runItemCollapse]
+tests:
+  - path: tests/item-collapse.test.js
+    cases:
+      - an attribution list is forced to the chunk count, junk becoming NO_ITEM
+      - attributions follow their chunks by identity across a rewrite
+      - a run is contiguous chunks of one item, and a gap breaks it
+      - a window with no attribution has no runs at all
+      - a run that would cut a tool batch in half is not collapsed
+      - a completed item collapses into one deterministic chunk
+      - an item that is not completed is never collapsed
+      - a chunk with no attribution is never collapsed
+      - a run too short to be worth it, or that would not shrink, is left alone
+      - the whole window is never collapsed away
+      - a run that would cut a tool batch is skipped, and the rest still collapses
+      - summarizeRun names the item, the size and the tools, and is stable
+      - buildCollapsedChunk marks the chunk as collapsed and names its item

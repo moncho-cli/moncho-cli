@@ -44,6 +44,7 @@ specs:
   - context/model-usage
   - context/call-pulse
   - interface/interrupt-controls
+  - interface/collapse-notice
   - interface/tui
   - interface/message-queue
   - interface/transcript-blocks
@@ -71,8 +72,11 @@ specs:
   - runtime/startup-wiring
   - runtime/session-store
   - runtime/conversation-log
+  - runtime/chunk-provenance
   - runtime/logging
   - context/working-time
+  - context/item-collapse
+  - context/chunkpaction
   - interface/conversation-timestamps
   - interface/prose-bands
   - interface/markdown-tables

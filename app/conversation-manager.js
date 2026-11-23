@@ -2,6 +2,7 @@ import { callOllama } from '../api/ollama.js';
 import { CONTEXT_MAX_LENGTH } from '../config/constants.js';
 import { ContextWindow } from './context-window.js';
 import { registerContextWindow, registerTaskPulse } from '../utils/host.js';
+import { BRAND_VERSION } from './brand.js';
 import { createTaskPulse, formatPulseLimitNotice } from '../utils/task-pulse.js';
 import { createUsageMeter } from '../utils/usage-stats.js';
 import { createWorkingClock } from '../utils/working-time.js';
@@ -101,7 +102,12 @@ export class ConversationManager {
       configuredTokens: options.configuredTokens ?? null,
       realTokens: options.realTokens ?? null,
       source: options.contextSizeSource,
-      tools: () => this.getTools()
+      tools: () => this.getTools(),
+      // **Moncho's** build, stamped onto every chunk (utils/chunk-meta.js), so the record
+      // says which version produced each block of work. Read from the package the agent
+      // ships as — never the version of the project being worked in, which in the user
+      // flow is a different `package.json` entirely.
+      monchoVersion: options.monchoVersion ?? BRAND_VERSION,
     });
     // Expose the live window and the live pulse to stateless tools
     // (compact_context, update_task).

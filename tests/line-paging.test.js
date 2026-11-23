@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { resolveLinePage, totalLines } from '../utils/line-page.js';
+import { resolveReadLimit } from '../tools/read_file.js';
 
 /**
  * The page arithmetic both read tools share (docs/agent/line-paging).
@@ -66,4 +67,25 @@ test('a zero limit and an empty file are both empty pages', () => {
   assert.equal(resolveLinePage(ten, { offset: 1, limit: 0 }).empty, true);
   const empty = resolveLinePage('', {});
   assert.deepEqual([empty.empty, empty.total, empty.lines], [true, 0, 0]);
+});
+
+// ---------------------------------------------------------------------------
+// The default cap (task-backlog item 78)
+// ---------------------------------------------------------------------------
+
+test('a bare read is capped and an explicit limit is never honoured past the cap', () => {
+  // A bare call must not be able to spend the window by itself: the cap is what the
+  // page gets when the model asked for nothing, and `capped` is what the tag reports.
+  assert.deepEqual(resolveReadLimit({ requested: null, cap: 100 }), { limit: 100, capped: true });
+  assert.deepEqual(resolveReadLimit({ requested: 50, cap: 100 }), { limit: 50, capped: false });
+  // An explicit limit larger than the cap is clamped, and that *is* the cap stopping it.
+  assert.deepEqual(resolveReadLimit({ requested: 5000, cap: 100 }), { limit: 100, capped: true });
+  // A limit of 0 is a real request (an empty page), not an absent one.
+  assert.deepEqual(resolveReadLimit({ requested: 0, cap: 100 }), { limit: 0, capped: false });
+});
+
+test('a cap of off restores the read to the end of the file', () => {
+  // `READ_MAX_LINES=off` is the escape hatch: the old behaviour is one variable away.
+  assert.deepEqual(resolveReadLimit({ requested: null, cap: null }), { limit: null, capped: false });
+  assert.deepEqual(resolveReadLimit({ requested: 42, cap: null }), { limit: 42, capped: false });
 });

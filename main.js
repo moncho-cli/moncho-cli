@@ -17,9 +17,10 @@ import { createToolEcho } from './app/tool-echo.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
-import { registerSession, registerTrackingNotifier, registerLogger } from './utils/host.js';
+import { registerSession, registerTrackingNotifier, registerCollapseNotifier, registerLogger } from './utils/host.js';
 import { createLogger, logEvent } from './utils/logger.js';
 import { createTrackingAnnouncer } from './app/tracking-block.js';
+import { createCollapseNotifier } from './app/collapse-notice.js';
 import {
   CONTEXT_MAX_LENGTH_OVERRIDE, BASE_URL, API_KEY, MODEL, describeModel,
   APPROACH_MAX_REFUSALS,
@@ -222,6 +223,13 @@ async function main() {
     log,
     logBlock: tui ? (block) => tui.logBlock(block) : null,
   }));
+
+  // A collapse is announced the way a compaction is — one `[Context]` row — so the window
+  // shrinking when an item is solved is explained rather than mysterious
+  // (app/collapse-notice.js, docs/interface/collapse-notice). One line, not a start/end
+  // pair: the rewrite is synchronous, so there is no gap for a start line to fill. The
+  // runner reports it via utils/host.js, and a bare tool call (no sink) stays silent.
+  registerCollapseNotifier(createCollapseNotifier({ log }));
 
   // The mid-turn throttle (app/session-autosave.js) starts now, once `saveSession`
   // exists: the conversation is written as it happens — the first chunk of a turn at

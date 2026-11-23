@@ -37,6 +37,7 @@ tests:
       - blob returns each file wrapped in <blob> tags
       - blob marks binary files instead of failing
       - blob caps the number of files and the bytes returned
+      - blob clamps a loose request to the hard ceilings
       - blob reports a structured error when nothing matches
       - blob defaults to the project root
   - path: tests/grep-context.test.js

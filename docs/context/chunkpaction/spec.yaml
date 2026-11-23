@@ -1,0 +1,46 @@
+id: context/chunkpaction
+domain: context
+title: The chunkpaction capture
+status: active
+summary: >
+  A collapsed section's raw chunks are kept in the session folder as
+  chunkpaction.json, under a monotonic id that is never reused, and the collapsed summary
+  names that id. read_chunkpaction cashes the pointer: with no capture it lists what the
+  session holds, and with one it pages or scans the original chunks through the same pure
+  reading half read_capture uses. It is read_capture's durable sibling — a command capture
+  lives in memory and expires, while a chunkpaction is the conversation's own record and
+  survives a resume. The write appends and is verified; the read is forgiving, so a
+  missing or unreadable file answers null rather than blocking a resume.
+code:
+  - path: utils/chunkpaction.js
+    symbols: [CHUNKPACTION_VERSION, CHUNKPACTION_FILE, ChunkpactionError, normalizeCaptureId, emptyChunkpaction, serializeChunkpaction, formatChunkpaction, parseChunkpaction, appendCapture, findCapture, captureIndex, captureText, captureChunks]
+  - path: utils/chunkpaction-store.js
+    symbols: [readChunkpaction, hasChunkpaction, writeChunkpactionCapture, writeChunkpaction]
+  - path: utils/session-store.js
+    symbols: [CHUNKPACTION_FILE, chunkpactionPath]
+  - path: tools/read_chunkpaction.js
+    symbols: [definition, execute]
+tests:
+  - path: tests/chunkpaction.test.js
+    cases:
+      - a capture id is a positive whole number, and nothing else
+      - an empty record starts its counter at 1 and holds nothing
+      - a record round-trips through its own text, and junk is refused
+      - an appended capture takes the next id and the counter never goes backwards
+      - the chunks of a capture are copied, so a later mutation cannot rewrite the record
+      - a capture is found by id, and an unknown id is null
+      - the index describes the captures without their chunks
+      - captureText renders the chunks as the record they were, with a header
+      - a capture is written to the session folder and read back
+      - a second capture appends and keeps the first, with a fresh id
+      - a missing or unreadable capture file answers null rather than throwing
+      - read_chunkpaction lists the captures a session holds
+      - read_chunkpaction refuses a capture this session does not hold
+      - read_chunkpaction pages and scans the raw chunks a summary named
+      - read_chunkpaction with no session is refused instead of throwing
+      - a session that never collapsed anything lists nothing, and is not an error
+      - a collapsed summary names the capture that holds its raw chunks
+      - the capture is written before the window is rewritten, and a writer that throws changes nothing
+      - a collapse with no capture writer names no id rather than inventing one
+      - the runner collapses through the live window and writes a capture the reader can open
+      - the runner is a no-op with no window or no session

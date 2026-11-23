@@ -1,0 +1,39 @@
+id: interface/collapse-notice
+domain: interface
+title: The collapse notice
+status: active
+summary: >
+  A collapse shrinks the window when a task.md item is solved, and only the model was
+  told: the report rides back in update_task's JSON reply, which never reaches the
+  transcript. One [Context] line now says so — the item, how many chunks it replaced and
+  the chunkpaction capture the raw chunks went to — printed after the rewrite, through the
+  registry, like the tracking announcements. One line and not a start/end pair: the
+  compaction's "started" line exists because its summariser call takes seconds, while a
+  collapse is a synchronous rewrite with no gap to fill. Presentation only: the line is
+  never a chunk, and it reuses the [Context] prefix so the theme colours it with no new
+  rule.
+code:
+  - path: app/collapse-notice.js
+    symbols: [COLLAPSE_NOTICE_PREFIX, formatCollapseNotice, createCollapseNotifier]
+  - path: app/item-collapse-runner.js
+    symbols: [runItemCollapse]
+  - path: utils/host.js
+    symbols: [registerCollapseNotifier, notifyCollapse, clearCollapseNotifier]
+  - path: app/theme.js
+    symbols: [classifyLine]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/collapse-notice.test.js
+    cases:
+      - a collapse prints one line naming the item, the size and the capture
+      - the line is singular for one chunk, plural for several
+      - a collapse with no capture names no id rather than inventing one
+      - a multi-line item is flattened so the row cannot break
+      - several collapsed items print one line each, in order
+      - nothing collapsed prints nothing, so a no-op shows no row
+      - the line reads as a context event, so the theme colours it with no new rule
+      - a real collapse announces itself once, with the id the summary names
+      - a collapse the guards refuse shows nothing
+      - with no sink registered the collapse is silent, not a throw
+      - the notifier counts what it announced

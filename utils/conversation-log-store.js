@@ -2,6 +2,7 @@ import { readFileIfExists, writeFileVerified } from './file-io.js';
 import { SESSION_DIR, conversationPath } from './session-store.js';
 import {
   conversationLogChunks,
+  conversationLogMeta,
   formatConversationLog,
   serializeConversationLog,
 } from './conversation-log.js';
@@ -38,8 +39,7 @@ import {
  * @returns {{path: string, bytes: number, verified: true, log: object}}
  */
 export function writeConversationLog(parts = {}, { dir = SESSION_DIR } = {}) {
-  const record = serializeConversationLog({ ...parts, updatedAt: parts.updatedAt || new Date() });
-  const relative = conversationPath(record.id, { dir });
+  const record = serializeConversationLog({ ...parts, updatedAt: parts.updatedAt || new Date() });  const relative = conversationPath(record.id, { dir });
   const written = writeFileVerified(relative, formatConversationLog(record));
   return { ...written, log: record };
 }
@@ -58,6 +58,24 @@ export function readConversationLog(id, { dir = SESSION_DIR } = {}) {
     return null;
   }
   return conversationLogChunks(text);
+}
+
+/**
+ * The per-chunk provenance a stored history kept, or `null` when there is none
+ * (`docs/runtime/chunk-provenance`).
+ *
+ * Separate from `readConversationLog()` because the two are wanted at different moments:
+ * replaying a conversation wants the chunks, while an investigation into how a build
+ * behaved wants the provenance and does not need the chunks at all.
+ */
+export function readConversationLogMeta(id, { dir = SESSION_DIR } = {}) {
+  let text = null;
+  try {
+    text = readFileIfExists(conversationPath(id, { dir }));
+  } catch {
+    return null;
+  }
+  return conversationLogMeta(text);
 }
 
 /** True when a session folder owns an uncompacted history file. */

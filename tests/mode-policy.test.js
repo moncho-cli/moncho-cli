@@ -19,6 +19,7 @@ const tool = (name) => ({ type: 'function', function: { name, parameters: {} } }
 
 const ALL = [
   tool('read_file'), tool('hint_file'), tool('blob'), tool('grep'), tool('read_capture'),
+  tool('read_chunkpaction'),
   tool('web_fetch'),
   tool('compact_context'),
   tool('update_task'), tool('write_plan_md'), tool('edit_plan_md'),

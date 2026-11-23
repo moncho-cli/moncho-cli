@@ -355,3 +355,42 @@ export const FILE_LINE_LIMIT = toPositiveInt(process.env.FILE_LINE_LIMIT, FILE_L
 /** The guidance a refused call carries, so the model can correct itself. */
 export const TOO_MANY_TOOL_CALLS_GUIDANCE =
   `Ask for at most ${MAX_PARALLEL_TOOL_CALLS} tools at a time and wait for their results before the next batch.`;
+
+// ---------------------------------------------------------------------------
+// Read tools (task-backlog: "the blob tool when the parameters are too lax gives
+// gigantic responses, the tool should reject losely defined arguments, same with
+// other tools, and read_file should also have some sort of by default truncation,
+// suggesting the model to first run greps and only read files after discovering
+// context")
+// ---------------------------------------------------------------------------
+/**
+ * The page `read_file` returns when the model does not ask for one.
+ *
+ * A bare read used to return the whole file, so one call on a generated bundle or a
+ * data file could spend the window by itself and force a compaction. The number is a
+ * **default**, not a limit on what the tool can do: `READ_MAX_LINES` configures it,
+ * and `off` / `0` / `none` / `unlimited` remove it so the old behaviour is one
+ * variable away. 2000 lines sits well above any file this project's own budget
+ * allows (600 lines, ceiling 900), so a legitimate read is never capped and only the
+ * pathological one is.
+ */
+export const READ_MAX_LINES_DEFAULT = 2000;
+/**
+ * How many lines one `read_file` page may hold unless the model asks for fewer.
+ * Configurable through `READ_MAX_LINES`; a page the cap stopped is marked
+ * `truncated=true` and reports `lines=<returned>/<total>` so the model can page.
+ */
+export const READ_MAX_LINES = toTokenCap(process.env.READ_MAX_LINES, READ_MAX_LINES_DEFAULT);
+
+/**
+ * Hard ceilings on what one `blob` call may return, whatever the model asks for.
+ *
+ * The defaults (8 files, 40 KiB each, 120 KiB total) already bound a bare call; the
+ * ceilings bound the *request*, so a raised `maxFiles` / `maxTotalBytes` cannot turn
+ * a loose call into a gigantic response. They are deliberately generous — several
+ * times the default — because they exist to stop a runaway, not to ration a
+ * deliberate read.
+ */
+export const BLOB_MAX_FILES_CEILING = 40;
+export const BLOB_MAX_BYTES_PER_FILE_CEILING = 256 * 1024;
+export const BLOB_MAX_TOTAL_BYTES_CEILING = 512 * 1024;

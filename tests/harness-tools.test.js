@@ -9,6 +9,7 @@ import { registerSession, clearSession } from '../utils/host.js';
 import { ensureTrackingFiles } from '../utils/tracking-store.js';
 import { hasIntentParameter, parseToolArgs, getIntent, withIntentParameter } from '../utils/tool-schema.js';
 import { execute as readFileExecute, wrapFileContent } from '../tools/read_file.js';
+import { READ_MAX_LINES } from '../config/constants.js';
 import { definition as writeDefinition, execute as writeFileExecute } from '../tools/write_file.js';
 import { execute as updateTaskExecute, parseTaskItems, markItemDone, renderPlan } from '../tools/update_task.js';
 import { execute as editFileExecute } from '../tools/edit_file.js';
@@ -200,6 +201,42 @@ test('wrapFileContent is a pure, testable formatter', () => {
     wrapFileContent({ relativePath: 'x.js', content: 'hi', from: 1, to: 1, lines: '1' }),
     '<file relative_path="x.js" from=1 to=1 lines=1>\nhi\n</file>'
   );
+});
+
+test('a bare read_file is capped and says so, and an explicit limit is never honoured past it', async () => {
+  // The cap is the tool's own default, not a fixture: a file under it returns everything
+  // and carries no `truncated`.
+  writeFile('small.txt', 'only line');
+  const small = await readFileExecute({ path: 'small.txt', lineNumbers: false });
+  assert.match(small, /^<file relative_path="small\.txt" from=1 to=1 lines=1>\n/);
+  assert.ok(!small.includes('truncated=true'), 'a file under the cap is not marked');
+
+  // A file past the cap comes back as one page, marked, with the total still reported so
+  // the model can page with offset instead of guessing at the size.
+  const total = READ_MAX_LINES + 25;
+  writeFile('huge.txt', Array.from({ length: total }, (_, i) => `line ${i + 1}`).join('\n'));
+
+  const capped = await readFileExecute({ path: 'huge.txt', lineNumbers: false });
+  assert.match(
+    capped,
+    new RegExp(`^<file relative_path="huge\\.txt" from=1 to=${READ_MAX_LINES} lines=${READ_MAX_LINES}/${total} truncated=true>`),
+    'a bare read is one capped page, marked, with the total in the tag'
+  );
+  assert.ok(capped.includes('line 1\n'), 'the page starts at line 1');
+  assert.ok(!capped.includes(`line ${READ_MAX_LINES + 1}\n`), 'the page stops at the cap');
+
+  // An explicit limit past the cap is clamped to it — the cap is a ceiling, not a default.
+  const greedy = await readFileExecute({ path: 'huge.txt', limit: READ_MAX_LINES + 500, lineNumbers: false });
+  assert.match(greedy, new RegExp(`lines=${READ_MAX_LINES}/${total} truncated=true`));
+
+  // A limit under the cap is honoured exactly, and it is the caller's page, not the cap's.
+  const modest = await readFileExecute({ path: 'huge.txt', limit: 5, lineNumbers: false });
+  assert.match(modest, new RegExp(`^<file relative_path="huge\\.txt" from=1 to=5 lines=5/${total}>`));
+  assert.ok(!modest.includes('truncated=true'), 'an explicit limit is not the cap stopping the page');
+
+  // The page continues where the cap stopped, so the model can read the rest.
+  const rest = await readFileExecute({ path: 'huge.txt', offset: READ_MAX_LINES + 1, lineNumbers: false });
+  assert.match(rest, new RegExp(`^<file relative_path="huge\\.txt" from=${READ_MAX_LINES + 1} to=${total} lines=25/${total}>`));
 });
 
 // ---------------------------------------------------------------------------

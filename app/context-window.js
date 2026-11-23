@@ -7,6 +7,8 @@ import { compactChunks, needsCompaction } from '../utils/compaction.js';
 import { estimateRequestTokens, formatUsage } from '../utils/tokens.js';
 import { formatContextLimit, CONTEXT_SIZE_SOURCE } from '../utils/context-size.js';
 import { alignStamps, normalizeStamps, stampRepeated } from '../utils/chunk-stamps.js';
+import { alignItems, collapseCompletedItems, normalizeItems, NO_ITEM } from '../utils/item-collapse.js';
+import { buildChunkMeta, metaRepeated, normalizeMeta } from '../utils/chunk-meta.js';
 
 /**
  * The conversation context modelled as an ordered array of chunks (task.md items
@@ -37,6 +39,20 @@ export class ContextWindow {
   // itself (utils/chunk-stamps.js): the chunks are what the provider is sent verbatim,
   // so the bookkeeping cannot ride on them. Presentation only — see `stamps`.
   #stamps = [];
+  // The provenance of each chunk in `#journal`, index-aligned with it and never on a
+  // chunk (utils/chunk-meta.js): the journal holds the *same objects* the window does,
+  // and a chunk is sent to the provider verbatim, so a bookkeeping field would be sent
+  // and stored. Aligned with the journal rather than the window because the journal is
+  // append-only — a compaction never rebuilds it, so an entry is never re-aligned.
+  #journalMeta = [];
+  // The `task.md` item each chunk in `#chunks` belongs to, index-aligned and never on
+  // the chunk itself (utils/item-collapse.js), for the same reason the marks are not:
+  // a chunk is sent verbatim. Set by `update_task`, so nothing here guesses.
+  #items = [];
+  // The item a chunk appended *now* would belong to. Set by `update_task` through the
+  // registry (`utils/host.js#setCurrentItem`); `NO_ITEM` means "no item in flight",
+  // which is what every chunk added while no item is open is attributed to.
+  #currentItem = NO_ITEM;
 
   constructor({
     maxTokens = CONTEXT_MAX_LENGTH,
@@ -45,10 +61,18 @@ export class ContextWindow {
     realTokens = null,
     source = CONTEXT_SIZE_SOURCE.DEFAULT,
     now = () => new Date(),
+    monchoVersion = null,
   } = {}) {
     // The clock the marks are taken from. Injected, so a test names the exact time and
     // the TUI is not the only front end that can produce marks.
     this.now = typeof now === 'function' ? now : () => new Date();
+    // **Moncho's** version — the build every chunk appended from now on is stamped with
+    // (utils/chunk-meta.js). Never the version of the project being worked in: the name
+    // says whose it is, and the value is resolved module-relative by the caller
+    // (`app/brand.js`), so it cannot be confused with a user's `package.json`.
+    this.monchoVersion = typeof monchoVersion === 'string' && monchoVersion.trim() !== ''
+      ? monchoVersion.trim()
+      : null;
     this.maxTokens = maxTokens;
     this.getTools = typeof tools === 'function' ? tools : () => tools || [];
     // Where the limit came from (task.md item 3): a config override may differ
@@ -78,6 +102,20 @@ export class ContextWindow {
     return this.#journal;
   }
 
+  /**
+   * The provenance of each journal chunk, index-aligned with `journal`
+   * (`utils/chunk-meta.js`, `docs/runtime/chunk-provenance`).
+   *
+   * One entry per journal chunk, always — a chunk with nothing known is `null`, never a
+   * shorter array that would shift every later entry onto the wrong row. Aligned with the
+   * journal rather than the window because the journal is append-only: a compaction never
+   * rebuilds it, so an entry is written once and never re-aligned. Never sent to the
+   * provider, and never on a chunk.
+   */
+  get journalMeta() {
+    return this.#journalMeta;
+  }
+
   get length() {
     return this.#chunks.length;
   }
@@ -95,6 +133,34 @@ export class ContextWindow {
     return this.#stamps;
   }
 
+  /**
+   * The `task.md` item each chunk belongs to, index-aligned with `chunks`.
+   *
+   * `null` (`NO_ITEM`) means "not provably part of any item", which is the answer for
+   * every chunk added while no item was open — and the reason the collapse refuses to
+   * touch it. Host state, never a chunk: it is set by `update_task` through the registry
+   * (`utils/host.js#setCurrentItem`) and never sent to the provider.
+   */
+  get items() {
+    return this.#items;
+  }
+
+  /**
+   * The item the next chunk appended will belong to.
+   *
+   * Set by `update_task` (`start` opens an item, `complete` moves to the next one) and
+   * cleared when the checklist finishes. `null` means "no item in flight", and a chunk
+   * added then is attributed to nothing rather than to a guess.
+   */
+  get currentItem() {
+    return this.#currentItem;
+  }
+
+  setCurrentItem(item) {
+    this.#currentItem = typeof item === 'string' && item.trim() !== '' ? item.trim() : NO_ITEM;
+    return this.#currentItem;
+  }
+
   /** The one mark a chunk appended *now* would carry, or `null` for an unreadable clock. */
   #nowStamp() {
     const at = this.now();
@@ -105,6 +171,10 @@ export class ContextWindow {
     this.#chunks.push(chunk);
     this.#journal.push(chunk);
     this.#stamps.push(this.#nowStamp());
+    this.#items.push(this.#currentItem);
+    // The provenance is taken *once*, as the chunk enters: the version that produced it
+    // and what it weighed are facts about this moment, and neither can be recovered later.
+    this.#journalMeta.push(buildChunkMeta(chunk, { moncho: this.monchoVersion }));
     return chunk;
   }
 
@@ -114,6 +184,9 @@ export class ContextWindow {
     this.#journal.push(...list);
     // One clock reading for the batch: a tool batch's chunks are one moment, not several.
     this.#stamps.push(...stampRepeated(this.now(), list.length));
+    // One attribution for the batch: a tool batch is one stretch of work on one item.
+    this.#items.push(...list.map(() => this.#currentItem));
+    this.#journalMeta.push(...metaRepeated(list, { moncho: this.monchoVersion }));
     return this.#chunks.length;
   }
 
@@ -127,11 +200,19 @@ export class ContextWindow {
    * `stamps` carries the append times the record kept beside the same chunks; a record
    * written before they existed (or a caller that only knows the chunks) yields no
    * marks, which is what a stored conversation shows when its times were never written.
+   *
+   * `meta` carries the provenance the record kept beside the *journal* (`utils/chunk-meta.js`),
+   * so a resumed conversation goes on saying which build wrote each chunk. A record written
+   * before the field existed yields no entries, which is honest rather than wrong.
    */
-  replace(chunks, { journal = null, stamps = null } = {}) {
+  replace(chunks, { journal = null, stamps = null, items = null, meta = null } = {}) {
     this.#chunks = [...chunks];
     this.#journal = Array.isArray(journal) ? [...journal] : [...chunks];
     this.#stamps = normalizeStamps(Array.isArray(stamps) ? stamps : [], this.#chunks.length);
+    this.#items = normalizeItems(Array.isArray(items) ? items : [], this.#chunks.length);
+    // Aligned with the journal, not the window: that is the list the entries describe, and
+    // the one a compaction never rebuilds.
+    this.#journalMeta = normalizeMeta(Array.isArray(meta) ? meta : [], this.#journal.length);
     return this.#chunks.length;
   }
 
@@ -139,6 +220,9 @@ export class ContextWindow {
     this.#chunks = [];
     this.#journal = [];
     this.#stamps = [];
+    this.#items = [];
+    this.#journalMeta = [];
+    this.#currentItem = NO_ITEM;
     this.compactions = [];
   }
 
@@ -225,6 +309,15 @@ export class ContextWindow {
         nextChunks: result.chunks,
         fallback: this.#nowStamp(),
       });
+      // The attributions follow their chunks the same way: the summary is new and
+      // belongs to no item, while the carried user message and the kept tail keep the
+      // item they were written under (utils/item-collapse.js#alignItems).
+      this.#items = alignItems({
+        previousChunks: this.#chunks,
+        previousItems: this.#items,
+        nextChunks: result.chunks,
+        fallback: NO_ITEM,
+      });
       this.#chunks = result.chunks;
       const report = {
         at: new Date().toISOString(),
@@ -243,6 +336,28 @@ export class ContextWindow {
       usage: this.usage(),
       ...result.stats
     };
+  }
+
+  /**
+   * Collapse every completed item's section into one deterministic chunk.
+   *
+   * The window shrinks without a model call: the runs come from the attributions
+   * `update_task` set, and only a run that is provably one *completed* item, long enough
+   * to be worth it, safe around tool batches and smaller once summarised is replaced
+   * (`utils/item-collapse.js`). Everything else stays verbatim, and the uncompacted
+   * history is the journal, so nothing is lost by collapsing.
+   *
+   * @param {object} [options]
+   * @param {Iterable<string>} [options.completed] the items known to be done
+   * @param {(run: object) => (number|object|null)} [options.writeCapture] persists a run
+   * @returns {{collapsed: object[], chunks: number}} what was collapsed and the new size
+   */
+  collapseCompleted({ completed = [], writeCapture = null } = {}) {
+    const result = collapseCompletedItems(this.#chunks, this.#items, { completed, writeCapture });
+    if (result.collapsed.length === 0) return { collapsed: [], chunks: this.#chunks.length };
+    this.#chunks = result.chunks;
+    this.#items = result.items;
+    return { collapsed: result.collapsed, chunks: this.#chunks.length };
   }
 
   /** Snapshot used by the status bar and the compact_context tool. */

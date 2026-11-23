@@ -26,7 +26,7 @@ const library = path.join(root, 'bin/lib/container.sh');
 const envLibrary = path.join(root, 'bin/lib/env.sh');
 
 /** Run a bash snippet that sources the real library and prints the args it built. */
-function runArgs(snippet, { workspace, files = {} } = {}) {
+function runArgs(snippet, { workspace, files = {}, home } = {}) {
   const dir = workspace ?? fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-mount-'));
   for (const [name, content] of Object.entries(files)) {
     const target = path.join(dir, name);
@@ -39,6 +39,7 @@ function runArgs(snippet, { workspace, files = {} } = {}) {
     'die() { printf "DIE %s\\n" "$*" >&2; exit 1; }',
     'warn() { :; }',
     `WORKSPACE=${JSON.stringify(dir)}`,
+    `MONCHO_HOME=${JSON.stringify(home ?? '')}`,
     'CONTAINER_NAME=moncho-test',
     'STATE_VOLUME=moncho-state-test',
     'MOUNT_MODE=bind',
@@ -90,6 +91,27 @@ test('a workspace with no .git or env file gets no shadow mount', () => {
   assert.ok(!args.some((arg) => arg.endsWith('.env.moncho:ro')), 'no env file to shadow');
   // The flag is unconditional: it is harmless and keeps the mount the boundary either way.
   assert.ok(args.includes('GIT_OPTIONAL_LOCKS=0'));
+});
+
+test('the installed payload is mounted read-only over the agent runtime', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-home-'));
+  fs.writeFileSync(path.join(home, 'main.js'), '// the agent\n');
+  const { args } = runArgs('', { home });
+
+  const payloadMount = args.find((arg) => arg.endsWith(':/opt/moncho-cli:ro'));
+  assert.ok(payloadMount, `expected a read-only payload mount, got:\n${args.join('\n')}`);
+  assert.equal(payloadMount, `${home}:/opt/moncho-cli:ro`, 'the mount names the installed payload');
+  // node_modules is the one part the agent may write, so an anonymous volume lets the
+  // image's copy win — the same trick /app/node_modules uses.
+  assert.ok(args.includes('/opt/moncho-cli/node_modules'), 'node_modules is a writable volume');
+});
+
+test('a payload that is not installed is not mounted', () => {
+  // MONCHO_HOME set but no main.js: docker would create a *directory* at the mount
+  // point, which is worse than no mount at all.
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-home-empty-'));
+  const { args } = runArgs('', { home: empty });
+  assert.ok(!args.some((arg) => arg.includes('/opt/moncho-cli')), 'nothing to shadow, nothing mounted');
 });
 
 /**

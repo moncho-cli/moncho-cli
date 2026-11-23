@@ -3,6 +3,7 @@ import { resolveProjectPath, projectRelativePath } from '../utils/path-safety.js
 import { recordRead } from '../utils/read-tracker.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { resolveLinePage } from '../utils/line-page.js';
+import { READ_MAX_LINES } from '../config/constants.js';
 
 /**
  * Read a file and return it wrapped in the delimiters required by task.md item 7:
@@ -21,17 +22,18 @@ import { resolveLinePage } from '../utils/line-page.js';
  */
 
 /** Build the opening tag for a read result. */
-export function fileTag({ relativePath, from, to, lines }) {
+export function fileTag({ relativePath, from, to, lines, truncated = false }) {
   const range = [
     Number.isInteger(from) ? `from=${from}` : null,
     Number.isInteger(to) ? `to=${to}` : null
   ].filter(Boolean).join(' ');
-  return `<file relative_path="${relativePath}"${range ? ` ${range}` : ''} lines=${lines}>`;
+  const flag = truncated ? ' truncated=true' : '';
+  return `<file relative_path="${relativePath}"${range ? ` ${range}` : ''} lines=${lines}${flag}>`;
 }
 
 /** Wrap content in the `<file>` delimiter. */
-export function wrapFileContent({ relativePath, content, from, to, lines }) {
-  return [fileTag({ relativePath, from, to, lines }), content, '</file>'].join('\n');
+export function wrapFileContent({ relativePath, content, from, to, lines, truncated = false }) {
+  return [fileTag({ relativePath, from, to, lines, truncated }), content, '</file>'].join('\n');
 }
 
 /**
@@ -45,10 +47,31 @@ export function numberLines(text, from = 1) {
     .join('\n');
 }
 
+/**
+ * The page limit a `read_file` call really uses.
+ *
+ * A bare call is capped (`READ_MAX_LINES`) so one read cannot spend the window by
+ * itself; an explicit `limit` is honoured but never past the cap, and a `null` cap
+ * (`READ_MAX_LINES=off`) restores the old "read to the end" behaviour. Pure, so the
+ * rule is unit tested directly instead of through a fixture of a few thousand lines.
+ *
+ * @param {{requested?: number|null, cap?: number|null}} [options] what the model asked
+ *   for and the configured cap
+ * @returns {{limit: number|null, capped: boolean}} `limit` is what the page gets
+ *   (`null` = to the end of the file); `capped` is true when the cap is what stopped
+ *   the page, which is what the tag's `truncated=true` reports.
+ */
+export function resolveReadLimit({ requested = null, cap = READ_MAX_LINES } = {}) {
+  const asked = Number.isInteger(requested) && requested >= 0 ? requested : null;
+  if (cap === null) return { limit: asked, capped: false };
+  if (asked === null) return { limit: cap, capped: true };
+  return { limit: Math.min(asked, cap), capped: asked > cap };
+}
+
 const { definition, execute } = defineTool({
   name: 'read_file',
   description:
-    'Read the contents of a file, with optional offset and limit for paging. Both count LINES, not characters: offset is a 1-based line number (a negative one counts back from the end, so -1 is the last line) and limit is how many lines to return. An offset past the end returns an empty page rather than clamping. Optionally prepend line numbers (default: true). The result is always delimited by <file relative_path="..."> ... </file> tags.',
+    `Read the contents of a file, with optional offset and limit for paging. Both count LINES, not characters: offset is a 1-based line number (a negative one counts back from the end, so -1 is the last line) and limit is how many lines to return. An offset past the end returns an empty page rather than clamping. A bare call is capped at ${READ_MAX_LINES ?? 'no'} lines so one read cannot spend the window by itself: a page the cap stopped carries truncated=true and lines=<returned>/<total>, so page with offset — prefer grep first and read only what it points at. Optionally prepend line numbers (default: true). The result is always delimited by <file relative_path="..."> ... </file> tags.`,
   parameters: {
     properties: {
       path: {
@@ -61,7 +84,7 @@ const { definition, execute } = defineTool({
       },
       limit: {
         type: 'integer',
-        description: 'Maximum number of lines to read (no default: reads to the end of the file)'
+        description: `Maximum number of lines to read (default ${READ_MAX_LINES ?? 'no cap'}: a bare call is capped, and an explicit limit is never honoured past the cap)`
       },
       lineNumbers: {
         type: 'boolean',
@@ -79,9 +102,11 @@ const { definition, execute } = defineTool({
     // that changed in the meantime is refused (utils/read-tracker.js).
     recordRead(relativePath);
 
+    const { limit, capped } = resolveReadLimit({ requested: args.limit, cap: READ_MAX_LINES });
+
     const page = resolveLinePage(fullContent, {
       ...(Number.isInteger(args.offset) ? { offset: args.offset } : {}),
-      ...(Number.isInteger(args.limit) ? { limit: args.limit } : {})
+      ...(limit === null ? {} : { limit })
     });
 
     // Every page is in the file's own lines, so the tag's range and the numbered body
@@ -91,13 +116,18 @@ const { definition, execute } = defineTool({
     }
 
     const body = args.lineNumbers === false ? page.text : numberLines(page.text, page.from);
+    // `truncated` marks the page the *cap* stopped — and only that page, so an explicit
+    // `limit` keeps the tag it always had. It is the difference between "that is the
+    // whole file" and "there is more, page with offset", said without arithmetic.
+    const truncated = capped && page.to < page.total;
 
     return wrapFileContent({
       relativePath,
       content: body,
       from: page.from,
       to: page.to,
-      lines: page.lines === page.total ? `${page.lines}` : `${page.lines}/${page.total}`
+      lines: page.lines === page.total ? `${page.lines}` : `${page.lines}/${page.total}`,
+      truncated
     });
   }
 });

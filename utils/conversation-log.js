@@ -1,4 +1,5 @@
 import { countRoles } from './session-format.js';
+import { isChunkMeta, normalizeMeta, summarizeMeta } from './chunk-meta.js';
 
 /**
  * The **uncompacted** history of a conversation, kept beside the record
@@ -63,6 +64,7 @@ export function serializeConversationLog({
   model = null,
   cwd = null,
   chunks = [],
+  meta = null,
 } = {}) {
   if (typeof id !== 'string' || id === '') {
     throw new ConversationLogError('INVALID_ID', 'A conversation log needs the session id it belongs to.');
@@ -72,7 +74,7 @@ export function serializeConversationLog({
   }
 
   const created = isoString(createdAt, new Date().toISOString());
-  return {
+  const record = {
     version: CONVERSATION_LOG_VERSION,
     kind: 'conversation-log',
     id,
@@ -83,6 +85,17 @@ export function serializeConversationLog({
     counts: { chunks: chunks.length, roles: countRoles(chunks) },
     chunks: chunks.map((chunk) => ({ ...chunk })),
   };
+
+  // The provenance of each chunk — the build that wrote it and what it weighed
+  // (utils/chunk-meta.js, docs/runtime/chunk-provenance). Written only when a caller
+  // supplies it, so a log without it is byte-for-byte what it always was, and a file
+  // written before the field existed still parses.
+  if (Array.isArray(meta) && meta.some(isChunkMeta)) {
+    record.meta = normalizeMeta(meta, record.chunks.length);
+    record.metaSummary = summarizeMeta(record.meta);
+  }
+
+  return record;
 }
 
 /** The pretty-printed JSON actually written to disk (trailing newline included). */
@@ -130,6 +143,24 @@ export function conversationLogChunks(text) {
   if (typeof text !== 'string' || text.trim() === '') return null;
   try {
     return parseConversationLog(text).chunks.map((chunk) => ({ ...chunk }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The provenance a stored log kept, or `null` when it kept none.
+ *
+ * `null` is the honest answer for a log written before the field existed, and it is the
+ * same shape `conversationLogChunks()` answers: a reader that wants the chunks is not
+ * forced to care about the provenance, and vice versa.
+ */
+export function conversationLogMeta(text) {
+  if (typeof text !== 'string' || text.trim() === '') return null;
+  try {
+    const parsed = parseConversationLog(text);
+    if (!Array.isArray(parsed.meta)) return null;
+    return normalizeMeta(parsed.meta, parsed.chunks.length);
   } catch {
     return null;
   }

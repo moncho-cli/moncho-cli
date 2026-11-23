@@ -58,6 +58,17 @@ export const SESSION_RECORD_FILE = 'context.json';
  */
 export const CONVERSATION_LOG_FILE = 'conversation.json';
 
+/**
+ * The raw chunks of each collapsed section, kept beside the record
+ * (`docs/context/chunkpaction`).
+ *
+ * A collapse replaces a solved item's section with one summary and the summary names a
+ * capture id; this file is what makes that name resolvable. It is written as a section
+ * collapses and never trimmed by a compaction, so a pointer in an old summary keeps
+ * working for the life of the session.
+ */
+export const CHUNKPACTION_FILE = 'chunkpaction.json';
+
 export { SESSION_FORMAT_VERSION, SessionStoreError, sessionId, formatSession, parseSession };
 export { countRoles, serializeSession, sessionChunks, sessionStamps, sessionModeState, sessionSkin, sessionPlanContent, sessionTaskContent, sessionUsage };
 
@@ -86,6 +97,14 @@ export function sessionPath(id, { dir = SESSION_DIR } = {}) {
  */
 export function conversationPath(id, { dir = SESSION_DIR } = {}) {
   return `${sessionDir(id, { dir })}/${CONVERSATION_LOG_FILE}`;
+}
+
+/**
+ * Project-relative path of the chunkpaction captures:
+ * `agent/sessions/<id>/chunkpaction.json`.
+ */
+export function chunkpactionPath(id, { dir = SESSION_DIR } = {}) {
+  return `${sessionDir(id, { dir })}/${CHUNKPACTION_FILE}`;
 }
 
 /**

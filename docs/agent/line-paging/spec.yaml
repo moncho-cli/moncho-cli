@@ -17,7 +17,7 @@ code:
   - path: utils/line-page.js
     symbols: [totalLines, resolveLinePage]
   - path: tools/read_file.js
-    symbols: [fileTag, wrapFileContent, numberLines, definition, execute]
+    symbols: [fileTag, wrapFileContent, numberLines, resolveReadLimit, definition, execute]
   - path: tools/hint_file.js
     symbols: [hintTag, wrapHint, definition, execute]
 tests:
@@ -30,11 +30,14 @@ tests:
       - an omitted limit reads to the end and a page that ends there keeps the last newline
       - an offset past the end is an empty page, never a clamp
       - a zero limit and an empty file are both empty pages
+      - a bare read is capped and an explicit limit is never honoured past the cap
+      - a cap of off restores the read to the end of the file
   - path: tests/harness-tools.test.js
     cases:
       - read_file reports the paged line range and total
       - read_file pages in lines, so the range it reports is the range it returned
       - read_file supports a negative offset (lines from the end)
+      - a bare read_file is capped and says so, and an explicit limit is never honoured past it
   - path: tests/hint-file.test.js
     cases:
       - hint_file pages a file the way read_file does, negative offsets included

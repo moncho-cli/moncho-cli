@@ -2,7 +2,8 @@ import { TASK_FILE, PLAN_FILE } from '../config/constants.js';
 import { readTaskContent, readPlanContent, writeTaskContent, writePlanContent, trackingPaths } from '../utils/tracking-store.js';
 import { completeStep, refusal } from '../utils/tracking-step.js';
 import { defineTool } from '../utils/tool-schema.js';
-import { resetTaskPulse, notifyTrackingUpdate } from '../utils/host.js';
+import { resetTaskPulse, notifyTrackingUpdate, setCurrentItem } from '../utils/host.js';
+import { runItemCollapse } from '../app/item-collapse-runner.js';
 import { parseCheckboxItems, findCheckboxItem, readStatusLine, planProgress } from '../utils/plan-file.js';
 import {
   renderTaskFile, renderPlanFile, readTitle, extractNotes, normalizeStatus, trackingTemplate,
@@ -211,6 +212,14 @@ const { definition, execute } = defineTool({
     // in flight, so neither of them resets anything.
     const pulseReset = action === 'complete' ? resetTaskPulse('item-completed') : false;
 
+    // The section of the item just finished is collapsed into one deterministic chunk,
+    // and its raw chunks are kept in the session's chunkpaction captures so the summary
+    // can name them (docs/context/item-collapse, docs/context/chunkpaction). Only
+    // `complete` triggers it: `start` opens an item, `step` ticks one still in flight,
+    // and `status` is a metadata edit — none of them finishes a section. With no window
+    // or no session registered (a bare tool call) the runner is a no-op.
+    const collapse = action === 'complete' ? runItemCollapse(done.filter((item) => item.done).map((item) => item.text)) : null;
+
     // The user watches the conversation, not the two files, so a milestone the tool just
     // wrote is announced in the transcript as a `[Tracking]` row (app/tracking-notice.js),
     // in the palette's own bright-green + bold. Presentation only: the line is not a
@@ -225,6 +234,17 @@ const { definition, execute } = defineTool({
       planTarget: planTarget ? planTarget.text : null,
       planSteps: Array.isArray(args.steps) ? args.steps.length : 0,
     });
+
+    // Chunks are attributed to the item that was open when they entered the window
+    // (utils/item-collapse.js), and this is the one place that knows which item that is:
+    // `complete` moves to the next one, `start` opens the named one. `step`, `status`
+    // and `list` leave the item in flight alone, because none of them changes it.
+    const itemInFlight = (action === 'complete' || action === 'start')
+      ? (nextItem ? nextItem.text : null)
+      : null;
+    const attributionSet = (action === 'complete' || action === 'start')
+      ? setCurrentItem(itemInFlight)
+      : false;
 
     return JSON.stringify({
       status: 'success',
@@ -243,6 +263,20 @@ const { definition, execute } = defineTool({
       planWritten: Boolean(planWrite),
       // True when this call put the live model-call pulse back to 0.
       pulseReset,
+      // What the collapse of the finished item's section did: the captures it kept (each
+      // with the id its summary names) and the window size it left. `null` when there was
+      // nothing to collapse into — no window or no session registered.
+      collapse: collapse
+        ? {
+          collapsed: collapse.collapsed.length,
+          captures: collapse.collapsed.map((entry) => entry.capture),
+          chunks: collapse.chunks
+        }
+        : null,
+      // The item the next chunk will be attributed to, and whether a live window took
+      // it. `null` means the checklist is finished, so nothing more belongs to an item.
+      itemInFlight,
+      attributionSet,
       // The `[Tracking]` rows the transcript showed, so the user (and the tests) can see
       // exactly what was announced. Empty when no front end is registered.
       trackingLines,

@@ -44,6 +44,7 @@ export const TOOL_FAMILIES = Object.freeze({
   blob: 'read',
   grep: 'read',
   read_capture: 'read',
+  read_chunkpaction: 'read',
   web_fetch: 'read',
   write_file: 'write',
   edit_file: 'write',

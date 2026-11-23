@@ -89,5 +89,7 @@ window nor the record can be mutated through the other.
   `app/context-window.js#ContextWindow.journal` (the append-only history),
   `app/session-recorder.js`, `app/commands.js`, `main.js`
 - The record this file sits beside: `docs/runtime/session-store`
+- The per-chunk provenance this file carries beside its chunks:
+  `docs/runtime/chunk-provenance`
 - What survives a compaction, and what does not: `docs/context/compaction`
 - Proof: `tests/conversation-log.test.js`

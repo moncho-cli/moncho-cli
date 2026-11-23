@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { execute as grepExecute, buildSearchRegExp, searchFile } from '../tools/grep.js';
-import { execute as blobExecute, isGlobPattern, resolveBlobTargets } from '../tools/blob.js';
+import { execute as blobExecute, clampCap, isGlobPattern, resolveBlobTargets } from '../tools/blob.js';
 import {
   DEFAULT_IGNORED_DIRS,
   displayPath,
@@ -224,9 +224,22 @@ test('blob caps the number of files and the bytes returned', async () => {
   assert.ok(byteCapped.includes('<blob path="app/alpha.js" bytes=20 lines=1 truncated=true>'));
 });
 
+test('blob clamps a loose request to the hard ceilings', async () => {
+  // A bare call is bounded by the defaults; the ceilings bound the *request*, so a
+  // model that asks for a gigantic read is answered the ceiling, not a gigantic
+  // response. Clamping keeps the call useful: the tag still reports truncated=true.
+  assert.equal(clampCap(undefined, 8, 40), 8, 'absent falls back to the default');
+  assert.equal(clampCap(12, 8, 40), 12, 'a request under the ceiling is honoured');
+  assert.equal(clampCap(10000, 8, 40), 40, 'a request past the ceiling is clamped');
+  assert.equal(clampCap(-3, 8, 40), 8, 'a nonsense value falls back rather than clamping to it');
+
+  const loose = await blobExecute({ path: 'app/*.js', maxFiles: 10000, maxTotalBytes: 999999999, intent: 'ask for everything' });
+  const header = loose.slice(0, loose.indexOf('\n'));
+  assert.match(header, /^<blobs path="app\/\*\.js" count=2 bytes=\d+>/, 'the ceiling is far above this fixture, so nothing is truncated');
+});
+
 test('blob reports a structured error when nothing matches', async () => {
-  const result = JSON.parse(await blobExecute({ path: 'nope/*.js', intent: 'expect a miss' }));
-  assert.equal(result.status, 'error');
+  const result = JSON.parse(await blobExecute({ path: 'nope/*.js', intent: 'expect a miss' }));  assert.equal(result.status, 'error');
   assert.equal(result.code, 'NOT_FOUND');
   assert.ok(result.guidance.includes('glob'));
 

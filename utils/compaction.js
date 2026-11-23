@@ -176,6 +176,60 @@ export function splitByTokenBudget(
   };
 }
 
+/**
+ * The chunkpaction captures a compaction must carry across, in the order they appear.
+ *
+ * A collapsed summary names `read_chunkpaction({ capture: N })`, and the compaction
+ * summariser is a *model*: it paraphrases, so that line is exactly the kind of detail a
+ * summary drops. The ids therefore have to be carried by code, like the user's own
+ * words (`lastUserChunk`) and for the same reason — a pointer the model cannot see is a
+ * pointer it cannot follow.
+ *
+ * Read from the chunks themselves rather than from a store, so this stays pure and a
+ * chunk is the only thing consulted. Duplicates collapse to one entry, because the same
+ * capture can be named by a summary that was itself summarised.
+ *
+ * @param {any[]} chunks
+ * @returns {number[]} the capture ids, ascending and deduplicated
+ */
+export function capturePointers(chunks = []) {
+  if (!Array.isArray(chunks)) return [];
+  const ids = new Set();
+  for (const chunk of chunks) {
+    if (!chunk || typeof chunk !== 'object') continue;
+    // The structured field first: it is what the collapse wrote, so it survives any
+    // rendering. The text is the fallback for a chunk written before the field existed.
+    const declared = Number(chunk.collapsed_capture);
+    if (Number.isInteger(declared) && declared > 0) ids.add(declared);
+    if (typeof chunk.content !== 'string') continue;
+    for (const match of chunk.content.matchAll(/read_chunkpaction\(\{\s*capture:\s*(\d+)/g)) {
+      ids.add(Number(match[1]));
+    }
+  }
+  return [...ids].sort((a, b) => a - b);
+}
+
+/**
+ * The chunk that keeps a capture reachable across a compaction.
+ *
+ * A **chunk**, not a bare string: everything in the window is an object with a `role` and
+ * `content`, and a string pushed among them would be sent as a content-less chunk — the
+ * pointer would be there in the array and invisible to the model.
+ *
+ * `null` when there is nothing to carry, so a compaction with no collapsed section adds
+ * no line at all — the same shape the user-message carry has.
+ */
+export function buildCaptureCarry(captures = []) {
+  const ids = (Array.isArray(captures) ? captures : []).filter((id) => Number.isInteger(id) && id > 0);
+  if (ids.length === 0) return null;
+  const calls = ids.map((id) => `read_chunkpaction({ capture: ${id} })`).join(', ');
+  return {
+    role: 'system',
+    content: `${COMPACTION_SUMMARY_PREFIX}\nCaptures from collapsed sections are still readable: ${calls}.`,
+    capture_carry: ids,
+  };
+}
+
 /** Build the user message handed to the summariser model. */
 export function buildSummaryPrompt(chunks) {
   return [
@@ -256,23 +310,36 @@ export async function compactChunks(chunks, options = {}) {
     prefix: summaryPrefix
   });
 
+  // A collapsed section's summary named a capture id, and the summariser may well have
+  // paraphrased that line away. The carry is code, not a model answer, so the pointer
+  // survives regardless — without it a compaction would quietly orphan every capture
+  // the conversation had kept (`docs/context/chunkpaction`).
+  const carry = buildCaptureCarry(capturePointers(split.older));
+
   // The user's own message survives the eviction: the last one they wrote inside
   // the summarised block is re-inserted verbatim, after the summary and ahead of
   // the untouched tail. The summariser saw it too — the summary paraphrases it,
   // this keeps it as written.
   const carried = lastUserChunk(split.older);
-  const withCarry = carried ? [summaryChunk, carried, ...split.kept] : null;
+  const head = carry ? [summaryChunk, carry] : [summaryChunk];
+  const withCarry = carried ? [...head, carried, ...split.kept] : null;
   // A carry is a fidelity rule, never a licence to grow the window: if it did not
-  // still shrink the window, the summary stands alone.
+  // still shrink the window, the summary stands alone. The capture line is *not*
+  // dropped that way — it is tiny, and losing it costs the whole capture.
   const carryFits = withCarry !== null && estimateMessagesTokens(withCarry) < split.totalTokens;
-  const nextChunks = carryFits ? withCarry : [summaryChunk, ...split.kept];
+  const nextChunks = carryFits ? withCarry : [...head, ...split.kept];
   const afterTokens = estimateMessagesTokens(nextChunks);
 
   return {
     chunks: nextChunks,
     summary: `<compaction-result>\n${summary}\n</compaction-result>`,
     compacted: true,
-    stats: { ...stats, afterTokens, carriedChunks: carryFits ? 1 : 0 }
+    stats: {
+      ...stats,
+      afterTokens,
+      carriedChunks: carryFits ? 1 : 0,
+      capturedIds: carry ? capturePointers(split.older) : []
+    }
   };
 }
 

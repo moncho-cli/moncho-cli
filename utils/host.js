@@ -25,6 +25,26 @@ export function clearContextWindow() {
 }
 
 // ---------------------------------------------------------------------------
+// The item in flight (utils/item-collapse.js)
+// ---------------------------------------------------------------------------
+// Chunks are attributed to the `task.md` item that was open when they entered the
+// window, and only `update_task` knows which one that is. The attribution lives on
+// the live window, so the tool reaches it through this registry — the same seam the
+// pulse reset uses. With no window registered (a bare tool call, the tool-level
+// suites) this is a silent no-op.
+
+/**
+ * Tell the live window which item the next chunk belongs to.
+ * @param {string|null} item the item text, or null for "no item in flight"
+ * @returns {boolean} true when a window took the attribution
+ */
+export function setCurrentItem(item) {
+  if (!contextWindow || typeof contextWindow.setCurrentItem !== 'function') return false;
+  contextWindow.setCurrentItem(item);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // The model-call pulse (utils/task-pulse.js)
 // ---------------------------------------------------------------------------
 // The pulse counts the agent model calls of the current stretch of work and
@@ -83,6 +103,35 @@ export function notifyTrackingUpdate(update) {
 
 export function clearTrackingNotifier() {
   trackingNotifier = null;
+}
+
+// ---------------------------------------------------------------------------
+// Collapse announcements (app/collapse-notice.js)
+// ---------------------------------------------------------------------------
+// A collapse happens inside a tool call (`update_task` completing an item), so the one
+// place that can turn it into a transcript line is this registry — the same seam the
+// tracking announcements use. main.js registers a sink bound to the front end. With no
+// sink registered (a bare tool call, the tool-level suites) the report is a no-op.
+
+let collapseNotifier = null;
+
+/** Register the sink that announces a collapse (called by main.js). */
+export function registerCollapseNotifier(notifier) {
+  collapseNotifier = notifier;
+  return collapseNotifier;
+}
+
+/**
+ * Announce one collapse to the transcript.
+ * @returns {string[]} the lines shown, empty when nothing is registered
+ */
+export function notifyCollapse(report) {
+  if (!collapseNotifier || typeof collapseNotifier.notify !== 'function') return [];
+  return collapseNotifier.notify(report) || [];
+}
+
+export function clearCollapseNotifier() {
+  collapseNotifier = null;
 }
 
 // ---------------------------------------------------------------------------

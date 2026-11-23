@@ -121,6 +121,32 @@ nothing — `run_bash` included — can write a hook or the env file. Each shado
 **conditional on the path existing**, because docker creates a *directory* at a mount point
 that does not exist, and a directory where `.env.moncho` belongs would be worse than no mount.
 
+### The agent's own code is the third path
+
+The same reasoning applies to the payload the agent *is*: `/opt/moncho-cli` holds the
+runtime it executes, and a write there is self-modification — the one write that can
+change what the next turn does. It is not covered by the fence above (the payload is
+outside the project tree, so the sandbox never sees it) and it is not covered by file
+modes either: the container runs as the host uid, which is **root when the host user is
+root**, so "the files are root-owned" is not a boundary.
+
+So the runner shadows it the same way, in bind mode:
+
+```
+-v "$MONCHO_HOME:/opt/moncho-cli:ro"          # the installed payload, read-only
+-v /opt/moncho-cli/node_modules               # except node_modules, which npm writes
+```
+
+`node_modules` is the one part the agent may legitimately write — `run_npm install` is a
+supported tool — so an anonymous volume lets the image's copy win over the host's, the
+same trick `/app/node_modules` already uses. Both mounts are **conditional on the payload
+existing** (`$MONCHO_HOME/main.js`), for the same reason the other two shadows are: a
+mount point that does not exist becomes a directory.
+
+This is the *boundary*; the tool-level half is that no file tool can name a path outside
+the project tree at all (`docs/agent/file-safety`), so `/opt/moncho-cli` is unreachable
+through `write_file` / `edit_file` / `delete_file` even before the mount is considered.
+
 `GIT_OPTIONAL_LOCKS=0` is passed unconditionally: a read-only `.git` makes git's optional
 index write fail noisily, and the flag keeps ordinary read commands quiet. It is harmless in
 `copy`/`none` mode, where nothing is mounted at all.

@@ -53,6 +53,21 @@ build_run_args() {
       ;;
   esac
 
+  # The agent's own executable path is read-only, and that is a *mount* rather than a
+  # hope about file modes. The payload is baked into the image, but the container runs
+  # as the host uid — root when the host user is root — so "the files are root-owned"
+  # is not a boundary: a root-run container could rewrite the very code it executes.
+  # Mounting the installed payload read-only over /opt/moncho-cli is one, and it is the
+  # same shadow trick the two host-executable paths use above. node_modules is the one
+  # part the agent may legitimately write (`run_npm install`), so an anonymous volume
+  # lets the image's copy win over the host's — the same trick /app/node_modules uses.
+  # Conditional on the payload existing, because docker creates a *directory* at a
+  # mount point that does not exist.
+  if [ -n "${MONCHO_HOME:-}" ] && [ -f "$MONCHO_HOME/main.js" ]; then
+    RUN_ARGS+=(-v "$MONCHO_HOME:/opt/moncho-cli:ro")
+    RUN_ARGS+=(-v /opt/moncho-cli/node_modules)
+  fi
+
   # State: sessions, task.md, implementation_plan.md and the log all default under
   # agent/, so the volume only has to sit there (distributing.md 6.7). Under
   # --state-in-repo the bind mount already *is* $PWD/agent.

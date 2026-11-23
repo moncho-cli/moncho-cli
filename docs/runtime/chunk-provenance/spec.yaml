@@ -1,0 +1,58 @@
+id: runtime/chunk-provenance
+domain: runtime
+title: Per-chunk provenance in the uncompacted history
+status: active
+summary: >
+  Every chunk in conversation.json carries the build that wrote it and its atomic token
+  estimate, so a change to the prompt, the tools or the collapse can be compared against
+  the build before it instead of being taken on faith. The entries are a parallel array
+  beside the chunks and never a field on one: a chunk is what the provider is sent
+  verbatim, and the window and the journal hold the same objects, so a bookkeeping field
+  would be sent and stored. They are aligned with the journal rather than the window,
+  because the journal is append-only and a compaction never rebuilds it — an entry is
+  written once, as the chunk enters, and never re-aligned. The field is optional in both
+  directions: a log without it is byte-for-byte what it always was, and reading it back
+  from such a file answers null rather than a guess.
+code:
+  - path: utils/chunk-meta.js
+    symbols: [NO_META, buildChunkMeta, metaRepeated, isChunkMeta, normalizeMeta, summarizeMeta]
+  - path: app/context-window.js
+    symbols: [ContextWindow]
+  - path: utils/conversation-log.js
+    symbols: [serializeConversationLog, conversationLogMeta]
+  - path: utils/conversation-log-store.js
+    symbols: [writeConversationLog, readConversationLog, readConversationLogMeta]
+  - path: app/session-recorder.js
+    symbols: [createSessionRecorder]
+  - path: app/session-save.js
+    symbols: [createSessionSave]
+  - path: app/commands.js
+    symbols: [createCommandRegistry, sessionsCommand]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
+  - path: app/brand.js
+    symbols: [BRAND_VERSION]
+tests:
+  - path: tests/chunk-meta.test.js
+    cases:
+      - the stamped version is Moncho own, never the working project version
+      - the field is named for whose version it is
+      - a chunk meta names the build and the atomic token estimate of that chunk alone
+      - a bigger chunk weighs more, so the estimate tracks content
+      - a missing version is null rather than an empty string
+      - an entry that cannot be estimated still keeps the version
+      - metaRepeated describes a whole batch the same way
+      - isChunkMeta accepts a real entry and refuses junk
+      - normalizeMeta forces one entry per chunk, junk becoming null
+      - summarizeMeta answers which builds wrote what, without loading the chunks
+      - the window stamps each chunk as it enters, never on the chunk
+      - a batch is described once, one entry per chunk
+      - the provenance stays aligned with the journal across a compaction
+      - an unset version yields an entry with a null build
+      - clear() empties the provenance with everything else
+      - the log carries the meta beside its chunks, with a summary
+      - a log with no meta is byte-for-byte what it always was
+      - the meta is written to the session folder and read back
+      - reading a meta that was never written answers null, never a throw
+      - a resumed window restores the provenance with the journal
+      - a resume with no stored meta pads rather than shifting rows

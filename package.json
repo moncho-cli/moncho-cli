@@ -1,6 +1,6 @@
 {
   "name": "moncho-cli",
-  "version": "0.23.0",
+  "version": "0.26.0",
   "type": "module",
   "license": "MIT",
   "repository": "github:moncho-cli/moncho-cli",

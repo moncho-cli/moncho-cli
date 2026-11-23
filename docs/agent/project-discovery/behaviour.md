@@ -75,6 +75,13 @@ single tool call each, so discovery costs tokens instead of guesses. Both are
 - Budgets are explicit: `maxFiles` (default 8), `maxBytesPerFile` (40 KiB) and
   `maxTotalBytes` (120 KiB). A file that only partly fits is truncated and marked
   rather than dropped, and the envelope reports `truncated=true`.
+- **The budgets are clamped, not trusted.** The defaults bound a bare call; the
+  *request* is bounded too, because `maxFiles: 10000` is exactly the loose argument
+  that produced gigantic responses. `clampCap()` (`tools/blob.js`) answers a request
+  past its ceiling with the ceiling — 40 files, 256 KiB per file, 512 KiB in total —
+  rather than refusing the call, since the envelope already reports `truncated=true`
+  and the caller can narrow the glob instead. A nonsense value (negative, non-integer)
+  falls back to the default rather than clamping to itself.
 
 ## Failure behaviour
 

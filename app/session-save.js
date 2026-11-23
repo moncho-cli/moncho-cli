@@ -51,6 +51,10 @@ export function createSessionSave({
         // keeps every chunk all the way back for conversation.json
         // (docs/runtime/conversation-log).
         journal: manager.contextWindow.journal,
+        // The provenance of each journal chunk — the build that wrote it and what it
+        // weighed (utils/chunk-meta.js, docs/runtime/chunk-provenance). Index-aligned with
+        // the journal, so it travels with it and a later investigation can compare builds.
+        journalMeta: manager.contextWindow.journalMeta,
         // The append time of each chunk, so a resumed transcript can show when each
         // block was written instead of the time the file was reopened
         // (utils/chunk-stamps.js, docs/interface/session-stamps).
