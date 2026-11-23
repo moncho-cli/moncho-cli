@@ -11,6 +11,7 @@ import {
 } from '../utils/session-store.js';
 import { writeConversationLog } from '../utils/conversation-log-store.js';
 import { getSessionTaskContent, getSessionPlanContent } from '../utils/host.js';
+import { runningVersion } from '../utils/session-version.js';
 
 /**
  * Keeps the conversation being had on disk (task.md item 3).
@@ -48,6 +49,11 @@ export function createSessionRecorder({
   if (Number.isNaN(created.getTime())) created = startedAt;
   let savedAt = null;
   let saves = 0;
+  // The version this recorder writes into every save (`docs/runtime/session-version`).
+  // `undefined` means "stamp the running build", which is the normal path; `/upgrade`
+  // hands over the new pin so the saves that follow it keep the new version instead of
+  // silently re-stamping the old one.
+  let version_;
 
   return {
     get id() {
@@ -55,6 +61,10 @@ export function createSessionRecorder({
     },
     dir,
     model,
+    /** The version this recorder writes into every save (`docs/runtime/session-version`). */
+    get monchoVersion() {
+      return version_ ?? runningVersion();
+    },
     get startedAt() {
       return created.toISOString();
     },
@@ -77,7 +87,7 @@ export function createSessionRecorder({
      * @param {string} nextId the resumed session id
      * @param {object} [extra] `{ createdAt, model }` taken from the session file
      */
-    adopt(nextId, { createdAt: created_ = null, model: adoptedModel = undefined } = {}) {
+    adopt(nextId, { createdAt: created_ = null, model: adoptedModel = undefined, pin = undefined } = {}) {
       if (nextId == null || String(nextId).trim() === '') {
         throw new Error('adopt() requires a session id.');
       }
@@ -87,6 +97,10 @@ export function createSessionRecorder({
         if (!Number.isNaN(at.getTime())) created = at;
       }
       if (adoptedModel !== undefined && adoptedModel !== null) model = adoptedModel;
+      // The pin travels with the identity, because `save()` writes it on every save
+      // (`docs/runtime/session-version`). Without this an upgrade would be undone by the
+      // very next save: the folder would be new and the pin old again.
+      if (pin !== undefined) version_ = pin;
       savedAt = null;
       return sessionId_;
     },
@@ -139,6 +153,7 @@ export function createSessionRecorder({
           work: Boolean(state.work),
           skin,
           cwd,
+          monchoVersion: version_,
           chunks,
           // The append time of each chunk, index-aligned with them and never on a
           // chunk: the chunks are sent to the provider verbatim (utils/chunk-stamps.js,

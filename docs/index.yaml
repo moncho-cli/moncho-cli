@@ -72,6 +72,7 @@ specs:
   - runtime/provider-diagnostics
   - runtime/startup-wiring
   - runtime/session-store
+  - runtime/session-version
   - runtime/conversation-log
   - runtime/chunk-provenance
   - runtime/logging

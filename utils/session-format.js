@@ -1,5 +1,6 @@
 import { normalizeModelUsage } from './usage-stats.js';
 import { isStamp, normalizeStamps } from './chunk-stamps.js';
+import { runningVersion } from './session-version.js';
 
 /**
  * The **shape** of a stored conversation.
@@ -52,6 +53,9 @@ export function serializeSession({
   usage = {},
   taskContent = null,
   planContent = null,
+  monchoVersion = undefined,
+  upgradedFrom = undefined,
+  upgradedAt = undefined,
 } = {}) {
   const created = createdAt instanceof Date ? createdAt.toISOString() : String(createdAt);
   const updated = updatedAt instanceof Date
@@ -97,6 +101,21 @@ export function serializeSession({
 
   if (taskContent !== null) record.taskContent = taskContent;
   if (planContent !== null) record.planContent = planContent;
+
+  // The version that wrote this record (`docs/runtime/session-version`). Stamped on every
+  // save, so the pin is always the build that produced the bytes on disk — never one that
+  // passed through. `undefined` means "this is the running build", which is the normal
+  // path; `/upgrade` passes the new pin explicitly, together with the audit line.
+  const pin = typeof monchoVersion === 'string' && monchoVersion.trim()
+    ? monchoVersion.trim()
+    : runningVersion();
+  record.monchoVersion = pin;
+  if (typeof upgradedFrom === 'string' && upgradedFrom.trim()) {
+    record.upgradedFrom = upgradedFrom.trim();
+    record.upgradedAt = upgradedAt instanceof Date
+      ? upgradedAt.toISOString()
+      : String(upgradedAt ?? new Date().toISOString());
+  }
 
   return record;
 }
@@ -212,4 +231,18 @@ export function sessionModeState(session) {
 export function sessionSkin(session) {
   const parsed = parseSession(formatSession(session));
   return typeof parsed.skin === 'string' && parsed.skin.trim() ? parsed.skin.trim() : null;
+}
+
+/**
+ * The version that last wrote this session, or `null` when the record predates the pin
+ * (`docs/runtime/session-version`).
+ *
+ * `null` is not a wildcard here: it means "nobody has claimed this conversation", which
+ * every runtime may open, and the next save stamps it with whichever build wrote it.
+ */
+export function sessionMonchoVersion(session) {
+  const parsed = parseSession(formatSession(session));
+  return typeof parsed.monchoVersion === 'string' && parsed.monchoVersion.trim()
+    ? parsed.monchoVersion.trim()
+    : null;
 }

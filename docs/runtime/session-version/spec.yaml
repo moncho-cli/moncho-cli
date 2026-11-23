@@ -1,0 +1,58 @@
+id: runtime/session-version
+domain: runtime
+title: Which version is running, and which sessions it may open
+status: active
+summary: >
+  A conversation is written by one build of the agent, and two builds are not
+  interchangeable in practice: a newer runtime may read a record shape an older one
+  cannot, and a tool contract may have moved. So every session records the version that
+  last wrote it, and a runtime refuses to open a session another version owns. The rule
+  is strict equality of the two strings rather than a comparison of semvers, because
+  "newer is fine" would let 0.29.0 open a session 0.28.0 wrote and then write it back in
+  a shape the older build cannot read — a refusal the user can act on beats a record that
+  only works in one direction. A record written before the pin existed carries none, and
+  that is a separate answer from a mismatch: `null` means nobody has claimed the
+  conversation, so any runtime may open it and the next save stamps it. Treating a
+  missing pin as a mismatch would strand every session already on disk at every upgrade,
+  which is the one thing the rule must not do. The refusal names the pinned version and
+  the exact command that opens it, because a message that only says "wrong version" is a
+  dead end. The running version comes from the runner (`MONCHO_VERSION`), which is the
+  thing that chose which installed payload to mount, and falls back to the manifest the
+  build ships for a checkout run through `./start.sh`.
+code:
+  - path: utils/session-version.js
+    symbols: [runningVersion, sessionVersion, canOpenSession, sessionVersionRefusal, upgradedPin, DECLARED_VERSION, VERSION_ENV]
+  - path: utils/session-format.js
+    symbols: [serializeSession, sessionMonchoVersion]
+  - path: utils/session-move.js
+    symbols: [moveSession]
+  - path: app/upgrade-command.js
+    symbols: [upgradeCommand]
+  - path: app/session-loop.js
+    symbols: [handleCommand, runSessionLoop]
+tests:
+  - path: tests/session-version.test.js
+    cases:
+      - the running version comes from the runner and falls back to the manifest
+      - a session with no pin is openable and is stamped by the next save
+      - a session pinned to another version is refused, and the refusal names the command
+      - a session pinned to the running version opens
+      - the pin is strict equality, so a newer version is still refused
+      - an upgrade rewrites the claim so the old version refuses it afterwards
+      - the audit line records where an upgrade came from and when
+      - /sessions refuses a locked session before touching the conversation
+      - /sessions opens a session written by the running version
+      - the picker marks a locked row and still lists it
+      - the picker refuses the locked row it was told to open
+      - an unpinned session still opens, and the next save claims it
+      - a move carries every file the session owns, and leaves the old id empty
+      - a moved session sorts first, so --continue finds it
+      - a move refuses to overwrite a session that already sits at the new id
+      - a move of a session that is not there says so instead of creating one
+      - /upgrade moves the session, pins it to the running version and asks to close
+      - /upgrade refuses a session that belongs to another version
+      - /upgrade on a session already at the running version is a no-op
+      - /upgrade refuses an argument and a front end with no session
+  - path: tests/session-loop.test.js
+    cases:
+      - runSessionLoop() ends on a command that asks to close, saving through the same path as exit

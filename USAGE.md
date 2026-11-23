@@ -116,6 +116,8 @@ container can always be inspected and removed.
 | Option | Effect |
 | ------ | ------ |
 | `--env <path>` | Read this env file instead of `./.env.moncho` |
+| `--version <v>` | Run this installed version (default: the newest installed) |
+| `--continue` | Open the newest session of this version instead of starting a fresh one |
 | `--state-in-repo` | Keep the state in `./agent` instead of a named volume |
 | `--do-not-mount` | No bind mount: `/app` is what the image contains |
 | `--copy-files` | Copy the workspace into the image at build time |

@@ -84,6 +84,11 @@ export async function handleCommand(input, {
   // The read-only viewer `/task` opens (`docs/interface/task-viewer`): the host supplies
   // the screen-bound function, so a front end without one prints the documents instead.
   contentView = null,
+  // How a command asks for the process to end. `/upgrade` needs it: the running container
+  // cannot become the version it just pinned the session to, so the conversation has to be
+  // reopened in a fresh start (`docs/runtime/session-version`). The loop supplies a
+  // function that raises the same flag the `exit` sentinel raises, so there is one way out.
+  closeRequested = null,
 } = {}) {
   const parsed = parseCommand(input);
   if (!parsed) return false;
@@ -97,6 +102,10 @@ export async function handleCommand(input, {
     confirm: typeof cli?.confirm === 'function' ? (question, options) => cli.confirm(question, options) : null,
     manager,
     dir: sessions?.dir,
+    // The session itself, so `/upgrade` can read the pin it is moving and the id it is
+    // moving it from (`docs/runtime/session-version`). Absent in a front end with no
+    // session, and the command refuses with its own code rather than guessing.
+    sessions,
     // The live mode (`app/session-mode.js`), so `/work on|off` moves the very state
     // the gate and the label read. Absent in a front end without modes.
     mode,
@@ -119,6 +128,24 @@ export async function handleCommand(input, {
 
   if (result === null) {
     log(`Unknown command /${parsed.name}. Try /help.`);
+    return true;
+  }
+
+  if (result.ok && result.code === 'UPGRADED') {
+    // `/upgrade` moved the session to a new id on disk and pinned it to the running
+    // version (`docs/runtime/session-version`). Two things follow, and they are the whole
+    // reason the command ends the process:
+    //
+    //  - the recorder must continue the *moved* session, so the exit save below lands at
+    //    the new id with the new pin rather than re-creating the old folder; and
+    //  - the running container cannot become the new version, so the only way to open the
+    //    upgraded conversation is to start again. `close` is how a command says so, and
+    //    the loop honours it through the same save-and-exit path the `exit` sentinel uses.
+    if (typeof sessions?.adopt === 'function' && result.id) {
+      sessions.adopt(result.id, { createdAt: result.createdAt ?? undefined, pin: result.monchoVersion });
+    }
+    for (const line of formatCommandResult(result)) log(line);
+    if (result.close && typeof closeRequested === 'function') closeRequested();
     return true;
   }
 
@@ -241,6 +268,15 @@ export async function runSessionLoop({
     return record;
   };
 
+  // A command may ask to end the process (`/upgrade`). The flag is read after the command
+  // returns, so the exit is one path: save the session, then leave — the same route the
+  // `exit` sentinel takes, and the reason a resumed-then-upgraded conversation is written
+  // to its new id instead of the old folder.
+  let closing = false;
+  const requestClose = () => {
+    closing = true;
+  };
+
   while (true) {
     // Between two turns -- and only there -- the pending-message queue is drained
     // (app/message-queue.js#nextPrompt): a message typed while the last turn was in
@@ -264,8 +300,18 @@ export async function runSessionLoop({
     if (!String(userInput ?? '').trim()) continue;
 
     // A slash command is answered here and never sent to the model.
-    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions, mode, skinSubchat, contentView });
-    if (consumed) continue;
+    const consumed = await handleCommand(userInput, { commands, log, cli, tui, manager, sessions, mode, skinSubchat, contentView, closeRequested: requestClose });
+    if (consumed) {
+      // A command asked for the process to end (`/upgrade`). It chose this because the
+      // running container cannot become the version it pinned the session to, so the save
+      // happens here — through the same `commit('exit')` the `exit` sentinel uses — and the
+      // loop leaves exactly once, with the moved id and the new pin already in place.
+      if (closing) {
+        commit('exit');
+        return 'exit';
+      }
+      continue;
+    }
 
     abortManager?.startTask();
     try {

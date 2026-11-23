@@ -99,6 +99,19 @@ build_run_args() {
     RUN_ARGS+=("${ENV_FLAGS[@]}")
   fi
 
+  # The agent has to know which version it *is* (to pin a session and to refuse another
+  # version's) and which is the newest installed (what `/upgrade` moves a session to).
+  # The runner knows both; the agent cannot see the installation from inside the
+  # container (`docs/runtime/session-version`).
+  RUN_ARGS+=(-e "MONCHO_VERSION=$RUN_VERSION")
+  RUN_ARGS+=(-e "MONCHO_LATEST_VERSION=$LATEST_VERSION")
+  if [ "$CONTINUE" = "1" ]; then
+    # Open the newest session of this version instead of a fresh one. The agent owns the
+    # decision (it is the thing that can read `agent/sessions/`), so this is a request,
+    # not a session id.
+    RUN_ARGS+=(-e "MONCHO_CONTINUE=1")
+  fi
+
   RUN_ARGS+=("$PROJECT_IMAGE")
 }
 

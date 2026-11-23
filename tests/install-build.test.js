@@ -190,12 +190,12 @@ test(
 );
 
 test(
-  'a second install of a different reference refuses rather than overwriting',
+  'a second version installs beside the first instead of replacing it',
   { skip: CAN_INSTALL_HERMETICALLY ? false : 'bash, git and tar are required to stage an archive' },
   () => {
     // Both refs are staged in one fixture, so the second run really downloads and
     // extracts a *different* payload — without that it would fail at the download and
-    // prove nothing about the version check.
+    // prove nothing about versioned installs.
     const OTHER = 'v0.20.0';
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-install-'));
     const first = hermeticInstall({ work });
@@ -203,20 +203,20 @@ test(
     hermeticInstall({ work, ref: OTHER });
 
     const second = hermeticInstall({ work, ref: OTHER });
-    assert.notEqual(second.result.status, 0, 'a second version must be refused without --force');
-    assert.match(
-      second.result.stderr,
-      /already holds/i,
-      `the refusal must name the installed version:\n${second.result.stderr}`
-    );
+    assert.equal(second.result.status, 0, `a second version installs beside the first:\n${second.result.stderr}`);
 
-    // The refusal is a refusal: the tree that was there is still there, untouched.
+    // The first tree is untouched and the second has one of its own: a session is pinned
+    // to the version that wrote it, so replacing the older tree would make its sessions
+    // unopenable (`docs/runtime/session-version`).
     assert.equal(
       fs.readFileSync(path.join(first.installDir, 'VERSION'), 'utf-8').trim(),
       REF,
-      'a refused install must leave the existing tree untouched'
+      'the first version keeps its own tree'
     );
-    assert.ok(fs.existsSync(path.join(first.installDir, 'config/prompt.md')), 'nothing was swapped out');
+    const versioned = path.join(first.installDir, 'versions', OTHER);
+    assert.ok(fs.existsSync(path.join(versioned, 'VERSION')), 'the second version has a tree of its own');
+    assert.equal(fs.readFileSync(path.join(versioned, 'VERSION'), 'utf-8').trim(), OTHER);
+    assert.ok(fs.existsSync(path.join(versioned, 'config/prompt.md')), 'and it is a whole payload');
   }
 );
 

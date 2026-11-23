@@ -1,10 +1,12 @@
 import { listSessions, loadSession, describeSession, sessionChunks, sessionStamps, sessionUsage, sessionModeState, sessionSkin, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
 import { readConversationLog, readConversationLogMeta } from '../utils/conversation-log-store.js';
+import { canOpenSession, runningVersion, sessionVersionRefusal } from '../utils/session-version.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
 import { compactCommand } from './compact-command.js';
 import { skinsCommand } from './skins-command.js';
 import { newCommand } from './new-command.js';
+import { upgradeCommand } from './upgrade-command.js';
 import { taskCommand } from './task-command.js';
 import { refCommand } from './ref-command.js';
 
@@ -77,6 +79,7 @@ export function createDefaultCommands() {
   registry.register(taskCommand());
   registry.register(refCommand());
   registry.register(sessionsCommand());
+  registry.register(upgradeCommand());
   registry.register(usageCommand());
   registry.register(compactCommand());
   registry.register(skinsCommand());
@@ -126,7 +129,7 @@ export function sessionsCommand() {
     description: 'list stored conversations and continue one',
     aliases: ['resume'],
     async run(ctx = {}) {
-      const { arg = '', dir = undefined, choose, manager } = ctx;
+      const { arg = '', dir = undefined, choose, manager, version = runningVersion() } = ctx;
       const summaries = listSessions({ dir });
 
       if (summaries.length === 0) {
@@ -142,17 +145,31 @@ export function sessionsCommand() {
         }
         picked = wanted;
       } else if (typeof choose === 'function') {
-        const labels = summaries.map((entry) => describeSession(entry));
+        const labels = summaries.map((entry) => describeSession(entry, version));
         const index = await choose(labels, { title: 'Sessions' });
         if (index == null) return { ok: true, code: 'CANCELLED' };
         picked = summaries[Number(index)];
       } else {
-        const lines = summaries.map((entry) => describeSession(entry));
+        const lines = summaries.map((entry) => describeSession(entry, version));
         return { ok: true, code: 'LISTED', lines, sessions: summaries };
       }
 
       if (!picked || picked.error) {
         return { ok: false, code: 'UNREADABLE', message: `Session ${picked?.id} cannot be read (${picked?.error}).` };
+      }
+
+      // The version gate (`docs/runtime/session-version`). It runs *before* the record is
+      // loaded and before the context window is replaced, so a refused session leaves the
+      // conversation you are in exactly as it was. Only the pin `canOpenSession()` judges
+      // matters here; the chunks are never handed over.
+      if (!canOpenSession(picked, version)) {
+        return {
+          ok: false,
+          code: 'VERSION_LOCKED',
+          message: sessionVersionRefusal(picked, version),
+          sessions: summaries,
+          monchoVersion: picked.monchoVersion ?? null,
+        };
       }
 
       const session = loadSession(picked.id, { dir });

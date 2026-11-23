@@ -104,6 +104,37 @@ test('runSessionLoop() answers a command without calling the model', async () =>
   assert.ok(logged.some((line) => line.includes('pong')), 'the command result is printed');
 });
 
+test('runSessionLoop() ends on a command that asks to close, saving through the same path as exit', async () => {
+  // `/upgrade` is the reason this exists: the running container cannot become the version
+  // it just pinned the session to, so the command ends the process and the save has to
+  // land after it — once, on the same route the `exit` sentinel takes.
+  const registry = createCommandRegistry();
+  registry.register({
+    name: 'done',
+    description: 'end the session',
+    run: () => ({ ok: true, code: 'UPGRADED', id: 'new-id', monchoVersion: '9.9.9', close: true, message: 'moved' }),
+  });
+
+  const saved = [];
+  const adopted = [];
+  const cli = scriptedCli(['/done', 'this must never run']);
+  const sessions = { id: 'old-id', monchoVersion: '1.0.0', adopt: (id, options) => adopted.push([id, options]) };
+
+  const result = await runSessionLoop({
+    cli,
+    log: () => {},
+    manager: { processInput: async () => { throw new Error('the loop should have ended'); } },
+    commands: registry,
+    sessions,
+    saveSession: (reason) => { saved.push(reason); return null; },
+  });
+
+  assert.equal(result, 'exit', 'the loop returns the same sentinel an explicit exit does');
+  assert.deepEqual(adopted, [['new-id', { createdAt: undefined, pin: '9.9.9' }]], 'the recorder continues the moved session');
+  assert.deepEqual(saved, ['exit'], 'the session was saved exactly once, on the way out');
+  assert.equal(cli.asked.length, 1, 'nothing after the command was asked for');
+});
+
 test('runSessionLoop() swallows an abort, keeps going, and always tears the task down', async () => {
   const logged = [];
   const saved = [];

@@ -96,9 +96,9 @@ test('the command registry is iterable code, not a hard-coded switch', async () 
   assert.throws(() => registry.register({ name: 'x' }), /needs a run/);
 });
 
-test('the default registry ships /work, /new, /sessions, /usage, /compact, /skins, /task, /ref and /help, and /help lists them', async () => {
+test('the default registry ships /work, /new, /sessions, /upgrade, /usage, /compact, /skins, /task, /ref and /help, and /help lists them', async () => {
   const registry = createDefaultCommands();
-  assert.deepEqual(registry.list().map((command) => command.name), ['compact', 'help', 'new', 'ref', 'sessions', 'skins', 'task', 'usage', 'work']);
+  assert.deepEqual(registry.list().map((command) => command.name), ['compact', 'help', 'new', 'ref', 'sessions', 'skins', 'task', 'upgrade', 'usage', 'work']);
   assert.equal(registry.get('resume').name, 'sessions', 'the alias is registered');
 
   const help = await runCommand(registry, 'help', {});
@@ -111,6 +111,7 @@ test('the default registry ships /work, /new, /sessions, /usage, /compact, /skin
     '/sessions — list stored conversations and continue one',
     "/skins — manage the project's colour palette and presentation (/skins prompt <request> for a new skin, /skins customize <request> to adjust the active one)",
     "/task — show this session's task.md and implementation_plan.md in a read-only modal",
+    '/upgrade — move this session to the newest version (then restart with --continue)',
     '/usage — token usage per model in this session',
     '/work — turn the execution lock on or off (/work on, /work off)',
   ]);

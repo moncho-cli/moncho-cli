@@ -156,8 +156,14 @@ install_payload() {
   if [ -d "$INSTALL_DIR" ] && [ "$FORCE" != "1" ]; then
     local installed
     installed="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || printf 'unknown')"
-    if [ "$installed" != "$REF" ]; then
-      die "$INSTALL_DIR already holds $installed (use --force to replace it with $REF)"
+    # The root layout is what an older installer left behind: it is upgraded in place, so
+    # an existing install keeps working. A *different* version is a separate directory
+    # under versions/ instead, which is what lets two versions be installed at once.
+    if [ "$installed" != "$REF" ] && [ "$installed" != "unknown" ]; then
+      install_versioned "$staged" "$REF"
+      trap - EXIT
+      rm -rf "$work"
+      return 0
     fi
   fi
 
@@ -169,6 +175,23 @@ install_payload() {
   trap - EXIT
   rm -rf "$work"
   log "Installed $REF into $INSTALL_DIR"
+}
+
+# Install one more version beside the others: `$MONCHO_HOME/versions/<ref>`.
+#
+# The versions live side by side rather than replacing each other because a session is
+# pinned to the version that wrote it (`docs/runtime/session-version`): an upgrade that
+# deleted the older tree would make its sessions unopenable, which is the opposite of
+# what the pin is for.
+install_versioned() {
+  local staged="$1" ref="$2" target="$INSTALL_DIR/versions/$2"
+  mkdir -p "$(dirname "$target")"
+  rm -rf "$target"
+  mv "$staged" "$target"
+  chmod 0755 "$target/bin/moncho-cli"
+  chmod 0755 "$target/bin/lib"/*.sh
+  log "Installed $ref into $target"
+  log "Run it with --version $ref (the newest version is the default)"
 }
 
 link_binary() {
@@ -215,6 +238,9 @@ uninstall() {
     fi
   fi
   if [ -d "$INSTALL_DIR" ]; then
+    # Read the version *before* removing the tree: the image the user is told to delete is
+    # tagged with the version that was installed, not with whatever `--ref` defaulted to.
+    REMOVED_VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || printf '%s' "$REF")"
     rm -rf "$INSTALL_DIR"
     log "Removed $INSTALL_DIR"
   fi
@@ -223,7 +249,11 @@ uninstall() {
   # silently would be a surprise. The commands are printed instead.
   log ""
   log "The Docker images were left in place. To remove them:"
-  log "  docker image rm moncho-agent:${REF} \$(docker images -q --filter reference='moncho-project:*')"
+  log "  docker image rm moncho-agent:${REMOVED_VERSION:-$REF} \$(docker images -q --filter reference='moncho-project:*')"
+  # Each installed version has its own base image (`moncho-agent:<version>`), so the one
+  # tag above is only the default's. Naming the rest keeps a user from leaving four
+  # hundred megabytes behind per version by accident.
+  log "  (one image per version: also 'docker images --filter reference='moncho-agent:*'')"
   log ""
   log "Session state was left in place too: one volume per workspace you ran it in."
   log "That is the agent's conversation history, so removing it is your call:"

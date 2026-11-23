@@ -5,6 +5,9 @@ import { createTui } from './app/tui.js';
 import { AbortManager } from './app/abort-manager.js';
 import { createSessionSave } from './app/session-save.js';
 import { createDefaultCommands } from './app/commands.js';
+import { listStoredSessions } from './app/session-recorder.js';
+import { sessionsCommand } from './app/commands.js';
+import { canOpenSession, runningVersion } from './utils/session-version.js';
 import { createSkinSubchat } from './app/skin-subchat.js';
 import { createSkinProposer } from './app/skin-prompt.js';
 import { applyProjectSkin, currentSkin } from './app/skin-host.js';
@@ -214,6 +217,38 @@ async function main() {
   // checklist in the tree keeps working; the bytes written are canonical.
   registerSession(sessions);
   ensureTrackingFiles();
+
+  // `--continue`: reopen the newest session of *this* version instead of starting a new
+  // one (`docs/runtime/session-version`). The runner only says it was asked for; the
+  // choice is made here because this is the process that can read `agent/sessions/` and
+  // judge each pin. A session another version wrote is skipped rather than refused: the
+  // point is to come back to this build's work, and an older conversation is reached
+  // through `/sessions` once it has been upgraded.
+  if (process.env.MONCHO_CONTINUE === '1') {
+    const resumable = listStoredSessions().find((entry) => canOpenSession(entry, runningVersion()));
+    if (!resumable) {
+      log('[Session] --continue found no session for this version; starting a new one.');
+    } else {
+      const result = await sessionsCommand().run({
+        arg: resumable.id,
+        manager,
+        sessions,
+        log,
+        version: runningVersion(),
+      });
+      if (result.ok && result.code === 'RESUMED') {
+        sessions.adopt(resumable.id, {
+          createdAt: result.resumed?.createdAt,
+          model: result.resumed?.model,
+        });
+        registerSession(sessions, result.taskContent, result.planContent);
+        ensureTrackingFiles();
+        log(`[Session] Continuing ${resumable.id}.`);
+      } else {
+        log(`[Session] --continue could not open ${resumable.id}: ${result.message}`);
+      }
+    }
+  }
 
   // A tracking update is announced twice, both in the palette's own contrasting colour
   // (app/tracking-block.js): the `[Tracking]` rows say *what happened* ("item X done",

@@ -18,6 +18,7 @@ import {
   sessionUsage,
   formatSession,
 } from './session-format.js';
+import { canOpenSession } from './session-version.js';
 
 /**
  * Conversation sessions **on disk** (task.md item 3).
@@ -192,6 +193,10 @@ export function listSessions({ dir = SESSION_DIR } = {}) {
         createdAt: parsed.createdAt,
         updatedAt: parsed.updatedAt,
         model: parsed.model,
+        // The version that wrote it (`docs/runtime/session-version`), carried in the
+        // listing so the picker can mark a session this build may not open *without*
+        // loading its chunks: a locked row is still shown, it is just not enterable.
+        monchoVersion: parsed.monchoVersion ?? null,
         counts: parsed.counts || { chunks: parsed.chunks.length, roles: countRoles(parsed.chunks) },
         stats: parsed.stats || {},
         bytes: fs.statSync(found.file).size,
@@ -261,13 +266,26 @@ export function latestSession({ dir = SESSION_DIR } = {}) {
   }
 }
 
-/** One line describing a summary, for the session picker. */
-export function describeSession(summary) {
+/**
+ * One line describing a summary, for the session picker.
+ *
+ * A session this build may not open is **marked, never hidden**: a row that silently
+ * disappears is indistinguishable from a conversation that was lost, and the user needs
+ * to see that the history is still there and why it cannot be entered
+ * (`docs/runtime/session-version`).
+ *
+ * @param {object} summary a listing entry from `listSessions()`
+ * @param {string} [version] the running version, when the caller wants the mark
+ */
+export function describeSession(summary, version = undefined) {
   if (!summary) return '';
   if (summary.error) return `${summary.id} — unreadable (${summary.error})`;
   const when = summary.updatedAt || summary.createdAt || '';
   const turns = summary.counts?.roles?.user ?? 0;
   const chunks = summary.counts?.chunks ?? 0;
   const model = summary.model ? ` · ${summary.model}` : '';
-  return `${summary.id} — ${turns} turn(s), ${chunks} chunk(s)${model} · ${when}`;
+  const locked = version !== undefined && !canOpenSession(summary, version)
+    ? ` · locked (${summary.monchoVersion})`
+    : '';
+  return `${summary.id} — ${turns} turn(s), ${chunks} chunk(s)${model} · ${when}${locked}`;
 }

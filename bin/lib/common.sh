@@ -31,6 +31,39 @@ moncho_version() {
   fi
 }
 
+# Every version installed under $MONCHO_HOME/versions, newest first. Empty for a
+# checkout, which has exactly one version: the one it is.
+moncho_versions() {
+  local dir="$MONCHO_HOME/versions"
+  [ -d "$dir" ] || return 0
+  ls -1 "$dir" 2>/dev/null | sort -Vr
+}
+
+# The newest installed version: what /upgrade moves a session towards, and what a plain
+# `moncho-cli` runs when --version names nothing.
+moncho_latest_version() {
+  local versions
+  versions="$(moncho_versions)"
+  if [ -n "$versions" ]; then
+    printf '%s\n' "$versions" | head -n 1
+  else
+    moncho_version
+  fi
+}
+
+# The version this run uses: --version when given, else the newest installed.
+resolve_version() {
+  if [ -n "${VERSION_ARG:-}" ]; then
+    case " $(moncho_versions | tr '\n' ' ') " in
+      *" $VERSION_ARG "*) ;;
+      *) [ "$VERSION_ARG" = "$(moncho_version)" ] || die "version $VERSION_ARG is not installed (try: moncho-cli versions)" ;;
+    esac
+    printf '%s' "$VERSION_ARG"
+  else
+    moncho_latest_version
+  fi
+}
+
 # A stream digest with whatever the host provides (coreutils, then perl, then
 # POSIX): the runner may not assume sha256sum is installed, and a weaker digest
 # used consistently is still a correct fingerprint.
@@ -68,7 +101,12 @@ resolve_workspace() {
   # clipboard (bin/lib/clipboard-watch.sh). Its pid lives with the rest of the runner's
   # bookkeeping, so a later `stop` finds the watcher this session's `start` left running.
   WATCH_PIDFILE="$MONCHO_DIR/clipboard-watch.pid"
-  BASE_IMAGE="$BASE_IMAGE_NAME:$(moncho_version)"
+  # The version this run uses, and the image that carries it. The tag is derived from the
+  # *resolved* version rather than a fixed name: a fixed tag plus a moving default would
+  # run the newest code on the oldest baked dependencies, with nothing reporting it.
+  RUN_VERSION="$(resolve_version)"
+  LATEST_VERSION="$(moncho_latest_version)"
+  BASE_IMAGE="$BASE_IMAGE_NAME:$RUN_VERSION"
 }
 
 require_docker() {

@@ -69,6 +69,10 @@ SKIP_GIT="0"
 MOUNT_MODE="bind"
 STATE_MODE="volume"
 PURGE="0"
+# Which installed version to run (`--version <v>`), and whether to open the newest
+# session of that version instead of starting fresh (`--continue`).
+VERSION_ARG=""
+CONTINUE="0"
 
 usage() {
   cat <<'EOF'
@@ -88,6 +92,8 @@ Commands:
   help      this text
 
 Options:
+  --version <v>      run this installed version (default: the newest installed)
+  --continue         open the newest session instead of starting a fresh one
   --env <path>       read this env file instead of ./.env.moncho (the only file read)
   --state-in-repo    keep the agent's state in ./agent instead of a named volume
   --do-not-mount     no bind mount: /app is what the project image contains
@@ -142,6 +148,11 @@ parse_args() {
       --skip-git) SKIP_GIT="1"; shift ;;
       --yes|-y) ASSUME_YES="1"; shift ;;
       --purge) PURGE="1"; shift ;;
+      --version)
+        [ $# -ge 2 ] || die "--version needs a value (the version to run)"
+        VERSION_ARG="$2"; shift 2 ;;
+      --version=*) VERSION_ARG="${1#--version=}"; shift ;;
+      --continue) CONTINUE="1"; shift ;;
       -h|--help) COMMAND="help"; shift ;;
       *) die "unknown argument '$1' (try 'moncho-cli help')" ;;
     esac

@@ -46,6 +46,11 @@ function runArgs(snippet, { workspace, files = {}, home } = {}) {
     'STATE_MODE=volume',
     'PROJECT_IMAGE=moncho-test:latest',
     'ENV_FLAGS=()',
+    // The runner resolves these before anything else (`bin/lib/common.sh`); the harness
+    // states them, so `build_run_args` never has to guess a version.
+    'RUN_VERSION=1.0.0',
+    'LATEST_VERSION=1.0.0',
+    'CONTINUE=0',
     `source ${JSON.stringify(envLibrary)}`,
     `source ${JSON.stringify(library)}`,
     'build_run_args',
@@ -286,6 +291,9 @@ test('copy mode mounts nothing at all, so there is nothing to shadow', () => {
     'STATE_MODE=volume',
     'PROJECT_IMAGE=moncho-test:latest',
     'ENV_FLAGS=()',
+    'RUN_VERSION=1.0.0',
+    'LATEST_VERSION=1.0.0',
+    'CONTINUE=0',
     `source ${JSON.stringify(envLibrary)}`,
     `source ${JSON.stringify(library)}`,
     'build_run_args',
