@@ -1,0 +1,51 @@
+id: interface/busy-commands
+domain: interface
+title: Commands submitted while a turn is in flight
+status: active
+summary: >
+  A slash command typed while a request is in flight is not a message for the model,
+  so it never enters the pending-message queue (app/prompt-input.js#submit). The
+  verdict is deterministic and declared by the command itself: a read-only command
+  carries busy 'parallel' and is answered at once in parallel with the turn through
+  the same handleCommand() the loop uses (/help, /usage, /task), while a command that
+  mutates the conversation (/new, /sessions, /compact, /work, /ref, /skins) — and any
+  command registered later that declares nothing — is refused with a notice, because
+  running it underneath a live turn would corrupt the window that turn is appending
+  to. An unknown name is refused with the loop's own wording. The runner
+  (app/busy-command.js) decides synchronously and works asynchronously, so a keystroke
+  cannot wait for a modal or a provider call, and a command that throws is reported
+  rather than thrown into the keystroke. A front end with no input box (the line CLI)
+  installs no mid-turn handler and is unchanged.
+code:
+  - path: app/busy-command.js
+    symbols: [busyVerdict, createBusyCommandRunner, isParallelCommand]
+  - path: app/prompt-input.js
+    symbols: [createPromptInput]
+  - path: app/tui-input-stack.js
+    symbols: [createInputStack]
+  - path: app/commands.js
+    symbols: [createCommandRegistry, parseCommand, createDefaultCommands, helpCommand, usageCommand]
+  - path: app/task-command.js
+    symbols: [taskCommand]
+  - path: app/session-loop.js
+    symbols: [handleCommand, runSessionLoop]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/busy-command.test.js
+    cases:
+      - "busyVerdict() leaves a prompt alone, so the queue still holds it"
+      - "busyVerdict() runs a read-only command at once instead of queueing it"
+      - "busyVerdict() refuses a command that mutates the conversation"
+      - "busyVerdict() refuses an unknown command without waiting for the turn"
+      - "a command that declares nothing is deferred, so a new one cannot corrupt a live turn"
+      - "the runner consumes a command and starts a parallel one without awaiting it"
+      - "the runner refuses a mutating command and never calls run()"
+      - "the runner hands a prompt back to the queue, consumed by nobody"
+      - "a command that throws is reported, never thrown into the keystroke"
+      - "a front end with no way to run a command refuses instead of pretending"
+  - path: tests/busy-command-wiring.test.js
+    cases:
+      - "the mid-turn command runner reports a throwing command as a red notice"
+      - "main.js never names a host variable it has not declared in the mid-turn runner"
+      - "the wiring declares the subchat before both closures that use it"

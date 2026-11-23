@@ -41,6 +41,16 @@ remembering the session folder.
 - The keyboard is a **lease** (`app/keyboard-ownership.js`), released after the event that
   closed the box, and the input box takes the focus back — the same contract every other
   modal in the TUI follows.
+- **The document can be selected and copied.** A drag inside the box copies the text under
+  the pointer through the very same gesture and writer the conversation uses
+  (`docs/interface/clipboard-selection`), so a session that opens the viewer mid-turn — a
+  read-only command is answered in parallel with the turn (`docs/interface/busy-commands`) —
+  can still be read *out of*: the whole point of looking at `task.md` is often to take a line
+  of it somewhere else. Two things make it possible that a plain `tags: false` box could not
+  offer: the document is written through `escapeTags()`, so the box parses tags and the band
+  can be spliced into a line while what is drawn stays the file's own bytes, and the modal
+  takes the keyboard as a lease but **gives the mouse back** (`unlockMouse()`), because
+  blessed gates both input channels behind the one `lockKeys` flag.
 - A front end with no screen (the line CLI, a bare tool call) gets the documents as plain
   lines instead, so `/task` is never a no-op.
 

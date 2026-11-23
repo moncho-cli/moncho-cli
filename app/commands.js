@@ -95,6 +95,8 @@ export function usageCommand() {
   return {
     name: 'usage',
     description: 'token usage per model in this session',
+    // Read-only: it formats the live accounting table, so a mid-turn answer is honest.
+    busy: 'parallel',
     run(ctx = {}) {
       const table = normalizeModelUsage(
         ctx.usage
@@ -110,6 +112,9 @@ export function helpCommand(registry) {
   return {
     name: 'help',
     description: 'list the available commands',
+    // Read-only: it renders the registry and touches no session state, so it is safe
+    // to answer while a turn is in flight (app/busy-command.js).
+    busy: 'parallel',
     run: () => ({ ok: true, code: 'HELP', lines: registry.helpLines() }),
   };
 }

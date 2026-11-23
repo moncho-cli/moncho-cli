@@ -60,6 +60,10 @@ code:
     symbols: [contentOrigin, scrollBase, scrollOffset, visibleHeight, scrollHeight, drawnRows, drawnWidth, wrapWidthOf, contentPoint]
   - path: app/cell-width.js
     symbols: [graphemes, graphemeWidth]
+  - path: app/keyboard-ownership.js
+    symbols: [claimKeyboard, releaseKeyboard, releaseKeyboardLater, unlockMouse, keyboardHeld]
+  - path: app/content-modal.js
+    symbols: [openContentModal]
 tests:
   - path: tests/clipboard-file.test.js
     cases:
@@ -106,6 +110,12 @@ tests:
       - "a file that is not a clipboard file is left alone"
       - "a watcher does not copy a selection that was already there when it started"
       - "the watcher starts only where a clipboard tool exists, and stop is idempotent"
+  - path: tests/keyboard-ownership.test.js
+    cases:
+      - "a keyboard lease sets the lock, and releasing it restores the lock before it"
+      - "unlockMouse() clears the lock while the keyboard lease still stands"
+      - "unlockMouse() refuses a screen nobody has claimed, and a missing one"
+      - "unlockMouse() is scoped to the screen it is asked about"
   - path: tests/toast.test.js
     cases:
       - "the copy toast says the plain sentence and lives for four seconds"

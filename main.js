@@ -15,8 +15,9 @@ import { createModeController } from './app/mode-controller.js';
 import { createNoticeSink } from './app/notice-sink.js';
 import { createToolEcho } from './app/tool-echo.js';
 import { formatUserEcho } from './app/tui-render.js';
-import { runSessionLoop } from './app/session-loop.js';
+import { runSessionLoop, handleCommand } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
+import { createBusyCommandRunner } from './app/busy-command.js';
 import { registerSession, registerTrackingNotifier, registerCollapseNotifier, registerLogger } from './utils/host.js';
 import { createLogger, logEvent } from './utils/logger.js';
 import { createTrackingAnnouncer } from './app/tracking-block.js';
@@ -244,6 +245,44 @@ async function main() {
   // restart and no second conversation.
   const drive = createWorkDrive({ mode: sessionMode, log });
 
+  // Mid-turn commands (app/busy-command.js): a slash command typed while a turn runs is
+  // not a message for the model, so it must not enter the pending-message queue. A
+  // read-only one (`/help`, `/usage`, `/task`) is answered at once — it runs through the
+  // same `handleCommand()` the loop uses, so it behaves exactly as it would between
+  // turns — and a command that mutates the conversation is refused with a notice, because
+  // running it underneath a live turn would corrupt the window that turn is appending to.
+  // Installed here because the handler needs everything above: the registry, the manager,
+  // the picker and the notice sink. A front end without an input box (the line CLI) has
+  // nothing to install into and is unchanged.
+  // `/skins prompt` reaches the modal subchat through this one function: the model
+  // call is a proposer over the live provider (`app/skin-prompt.js`), and the TUI
+  // puts the proposal in a modal (`app/skin-modal.js`). With no TUI the subchat is
+  // absent and `/skins prompt` refuses with its own code, leaving the look alone.
+  //
+  // It is **declared here**, not passed inline below, because two closures need it: the
+  // loop's context *and* the mid-turn command runner installed just above
+  // (`app/busy-command.js`). Naming it as an object property at the call site does not
+  // create a binding in scope, so the runner's `run` closure reached an undeclared
+  // identifier and every mid-turn `/task` failed with
+  // `ReferenceError: skinSubchat is not defined` — a red notice for a command that was
+  // not actually broken.
+  const skinSubchat = tui
+    ? createSkinSubchat({
+      screen: tui.screen,
+      inputBox: tui.inputBox,
+      refresh: tui.refresh,
+      proposer: createSkinProposer({
+        callModel: (messages, ctx) => callOllama(messages, [], false, ctx?.signal, { systemPrompt: false }),
+      }),
+    })
+    : null;
+
+  tui?.setBusySubmit?.(createBusyCommandRunner({
+    registry: commands,
+    run: (input) => handleCommand(input, { commands, log, cli, tui, manager, sessions, mode: sessionMode, skinSubchat, contentView: tui ? (view) => tui.contentView(view) : null }),
+    notify: (kind, text) => notify(kind, text),
+  }));
+
   tui?.setTokens(manager.contextWindow.usage());
   log(`\nProvider/model: ${label}`);
   log(`Session file: ${sessions.path} (saved after every turn)`);
@@ -263,20 +302,10 @@ async function main() {
     sessions,
     mode: sessionMode,
     drive,
-    // `/skins prompt` reaches the modal subchat through this one function: the model
-    // call is a proposer over the live provider (`app/skin-prompt.js`), and the TUI
-    // puts the proposal in a modal (`app/skin-modal.js`). With no TUI the subchat is
-    // absent and `/skins prompt` refuses with its own code, leaving the look alone.
-    skinSubchat: tui
-      ? createSkinSubchat({
-        screen: tui.screen,
-        inputBox: tui.inputBox,
-        refresh: tui.refresh,
-        proposer: createSkinProposer({
-          callModel: (messages, ctx) => callOllama(messages, [], false, ctx?.signal, { systemPrompt: false }),
-        }),
-      })
-      : null,
+    // `/skins prompt` reaches the modal subchat (declared above, where the mid-turn
+    // command runner needs it too). With no TUI it is null and `/skins prompt` refuses
+    // with its own code, leaving the look alone.
+    skinSubchat,
     // `/task` opens the read-only viewer when there is a screen; without one the command
     // returns the documents as lines and the host prints them.
     contentView: tui ? (view) => tui.contentView(view) : null,

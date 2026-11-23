@@ -55,6 +55,7 @@ tests:
       - "a click on a ✕ row deletes that message only, and the region shrinks back"
       - "a message typed while idle is not queued: the box settles the armed question"
       - "a long queued message uses the whole bar and is never wrapped or clipped"
+      - "a slash command submitted mid-turn is answered, never queued"
   - path: tests/tui.test.js
     cases:
       - "a pty gets the three-region TUI (transcript, status bar, input box)"

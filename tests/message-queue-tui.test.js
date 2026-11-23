@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { withTui } from './support/tui-harness.js';
 import { displayWidth } from '../app/queue-rows.js';
+import { createBusyCommandRunner } from '../app/busy-command.js';
+import { createDefaultCommands } from '../app/commands.js';
 
 /**
  * The queue bar on screen: the region right above the input box, the
@@ -189,5 +191,41 @@ test('a long queued message uses the whole bar and is never wrapped or clipped',
     assert.equal(displayWidth(tui.queueRows()[0]), 38);
     assert.equal(tui.queueBar.getScreenLines().length, 1, 'still one row, never wrapped');
     assert.equal(tui.queueBar.height, 1);
+  });
+});
+
+test('a slash command submitted mid-turn is answered, never queued', async () => {
+  await withTui(async (tui) => {
+    // The host's mid-turn handler (`docs/interface/busy-commands`): a read-only command is
+    // consumed and run now, a mutating one is refused, a prompt is handed back.
+    const seen = [];
+    const notices = [];
+    tui.setBusySubmit(createBusyCommandRunner({
+      registry: createDefaultCommands(),
+      run: (input) => { seen.push(input); return Promise.resolve(); },
+      notify: (kind, text) => notices.push({ kind, text }),
+    }));
+
+    tui.startSpinner();
+    // A read-only command: answered at once, so the queue stays empty.
+    await typeAndEnter(tui, '/help');
+    assert.equal(tui.queuedCount, 0, 'a command is not a message for the model');
+    assert.equal(tui.queueBar.hidden, true);
+    assert.deepEqual(seen, ['/help'], 'and it really ran, in parallel with the turn');
+
+    // A command that would rewrite the live window is refused instead of queued.
+    await typeAndEnter(tui, '/new');
+    assert.equal(tui.queuedCount, 0);
+    assert.equal(notices.length, 1);
+    assert.match(notices[0].text, /cannot run while a turn is in progress/);
+
+    // A prompt is still a prompt: it waits in the queue as it always did.
+    await typeAndEnter(tui, 'steer the work');
+    assert.equal(tui.queuedCount, 1);
+    assert.deepEqual(tui.queued.map((item) => item.text), ['steer the work']);
+
+    // And the box is still in its read cycle after each of those: mid-turn there is no
+    // armed *question* (the loop is busy in processInput), only the capturing box.
+    assert.equal(tui.promptInput.isReading, true);
   });
 });

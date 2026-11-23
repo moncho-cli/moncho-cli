@@ -5,7 +5,10 @@
  * the input box, the transcript, or the host's own bindings. Blessed offers a single
  * switch for that — `screen.lockKeys` — and it gates blessed's *own* dispatch
  * (`lib/widgets/screen.js`: the screen's keypress handler returns while it is true).
- * It does **not** gate the other program-level listeners: the host's
+ * That same flag also returns early from blessed's **mouse** dispatcher, which is why
+ * `unlockMouse()` below exists: a modal that keeps the keyboard and still wants the
+ * pointer (a viewer the user selects text in) asks for the mouse back explicitly.
+ * The lock does **not** gate the other program-level listeners: the host's
  * (`app/tui-keys.js`), which answers Escape and Tab for the whole program.
  *
  * So a lock alone is not ownership. Two things are needed, and this module is both:
@@ -135,6 +138,39 @@ export function releaseKeyboard(token) {
 export function releaseKeyboardLater(token, { defer = queueMicrotask } = {}) {
   if (!token || !leases.has(token)) return false;
   defer(() => releaseKeyboard(token));
+  return true;
+}
+
+/**
+ * Let the **mouse** through while the keyboard stays claimed.
+ *
+ * `screen.lockKeys` is one switch over two input channels: blessed returns from its
+ * mouse dispatcher for the same flag that makes its key dispatcher stand down
+ * (`lib/widgets/screen.js` — `_listenMouse`: `if (self.lockKeys) return;`, and
+ * `_listenKeys`: the keypress handler returns while it is set). A modal that claims the
+ * keyboard therefore also stops every mouse report reaching any widget. That is right for
+ * the conversation *behind* it — nothing should respond under a modal — and wrong for the
+ * modal itself, because a read-only viewer whose text cannot be selected cannot be copied
+ * from (`docs/interface/clipboard-selection`).
+ *
+ * So the lock is made to mean what it is named: a *keyboard* lock. The mouse dispatcher is
+ * left to its own hit-testing, and the regions behind the modal are safe under it for a
+ * reason already in place — each one is created with `autoFocus: false` and answers no
+ * drag of its own, so a report that reaches one does nothing. The one widget that acts on
+ * the pointer is the modal's own box, which is the point.
+ *
+ * Blessed reads the flag on every report, so clearing it once is enough for as long as
+ * nothing re-raises it; a caller that paints repeatedly may simply ask again.
+ *
+ * @param {object} [options]
+ * @param {object} [options.screen] the screen whose lease is being relaxed
+ * @returns {boolean} whether the flag was actually cleared
+ */
+export function unlockMouse({ screen = null } = {}) {
+  if (!screen) return false;
+  if (![...leases].some((token) => token.screen === screen)) return false;
+  if (screen.lockKeys !== true) return false;
+  screen.lockKeys = false;
   return true;
 }
 

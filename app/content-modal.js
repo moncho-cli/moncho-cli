@@ -1,6 +1,10 @@
 import blessed from 'neo-blessed';
 import { activeTokens } from './theme.js';
-import { claimKeyboard, releaseKeyboardLater, KEYBOARD_OWNER_MODAL } from './keyboard-ownership.js';
+import { claimKeyboard, releaseKeyboardLater, unlockMouse, KEYBOARD_OWNER_MODAL } from './keyboard-ownership.js';
+import { escapeTags } from './tui-render.js';
+import { createTextSelection } from './transcript-select.js';
+import { bindSelectionGestures } from './transcript-mouse.js';
+import { highlightRows, wrapWidthOf } from './transcript-highlight.js';
 
 /**
  * A **read-only** content modal: a bordered box that shows documents exactly as they
@@ -14,10 +18,17 @@ import { claimKeyboard, releaseKeyboardLater, KEYBOARD_OWNER_MODAL } from './key
  *
  * Four decisions:
  *
- *  - **the text is verbatim.** The box is built with `tags: false`, so a document's
- *    braces, brackets and asterisks are painted as the bytes they are. A markdown
- *    renderer here would be a second, silently different view of the file the user is
- *    checking — and the whole point of `/task` is to see what is really on disk.
+ *  - **the text is verbatim.** A document's braces, brackets and asterisks are painted as
+ *    the bytes they are: a markdown renderer here would be a second, silently different
+ *    view of the file the user is checking — and the whole point of `/task` is to see what
+ *    is really on disk. The bytes reach the widget through `escapeTags()`, which is the
+ *    *paint* escaping every untrusted string needs in a tag-parsing box (a literal brace
+ *    would otherwise be read as a colour tag); what is drawn is therefore the document
+ *    itself, character for character. The one difference from a `tags: false` box is that
+ *    braces travel as `{open}`/`{close}`, which the renderer paints as the brace and which
+ *    `contentRows()` strips nothing from — that escaping exists only so the **selection
+ *    band** can be inserted into a line, which a `tags: false` box cannot do at all
+ *    (`docs/interface/clipboard-selection`).
  *  - **the box takes most of the screen, never all of it.** The size is computed from
  *    the live terminal and leaves a margin on every side, so the user can still see that
  *    a conversation is behind the modal (`contentModalSize()`).
@@ -143,6 +154,9 @@ export function contentHint(count = 1) {
  * @param {string} [options.title] the box's outer title
  * @param {Function} [options.refresh] repaint hook
  * @param {Function} [options.onOpenChange] told when the modal opens and closes
+ * @param {Function} [options.copy] `(text) => report` — the clipboard writer
+ *   (`app/tui-clipboard.js`); absent leaves the modal readable but not copyable
+ * @param {Function} [options.notify] `(report, text)` — told what the copy did
  * @returns {Promise<{closed: string, document: number}|null>}
  */
 export function openContentModal({
@@ -151,6 +165,8 @@ export function openContentModal({
   title = 'Content',
   refresh = null,
   onOpenChange = null,
+  copy = null,
+  notify = null,
 } = {}) {
   const docs = (Array.isArray(documents) ? documents : [])
     .filter((doc) => doc && typeof doc.text === 'string');
@@ -173,10 +189,17 @@ export function openContentModal({
       width: size.width,
       height: size.height,
       border: { type: 'line' },
-      // Verbatim: the document's own braces and brackets are not markup.
-      tags: false,
+      // The box parses tags so the selection band can be inserted into a line. The
+      // document itself is escaped (`escapeTags`) before it is written, so no brace of the
+      // file is ever read as markup and what is drawn is the file itself.
+      tags: true,
       scrollable: true,
       alwaysScroll: true,
+      // Clickable so blessed hit-tests the pointer against this box — a selection is a drag
+      // (docs/interface/clipboard-selection). `autoFocus` stays off: the modal owns the
+      // keyboard through its own lease, never through the widget's focus.
+      clickable: true,
+      autoFocus: false,
       padding: { left: 1, right: 1 },
       style: { border: { fg: activeTokens().border } },
     });
@@ -194,6 +217,48 @@ export function openContentModal({
 
     const lease = claimKeyboard({ screen, label: KEYBOARD_OWNER_MODAL });
 
+    // The keyboard stays the modal's, but the **mouse is given back**: blessed returns early
+    // from its mouse dispatcher for the same `lockKeys` flag the keyboard uses, so a modal
+    // that kept it would be a viewer nothing can be selected in. The regions behind the modal
+    // are safe under the pointer — each already opts out of focus and answers no drag — and
+    // this box is the one widget that acts on it (`app/keyboard-ownership.js#unlockMouse`).
+    const releaseMouse = () => unlockMouse({ screen });
+    releaseMouse();
+
+    // Selecting text in the document (`docs/interface/clipboard-selection`) is the same
+    // machine the conversation uses, and deliberately the same one: a reader who knows how
+    // to copy a transcript row already knows how to copy a line of `task.md`. Two things
+    // make it work here that a `tags: false` box could not: the content is written escaped
+    // so a band can be spliced in (`highlightRows`), and the box is `clickable` so blessed
+    // hit-tests the pointer against it.
+    const selection = createTextSelection({
+      widget: box,
+      copy,
+      notify,
+      repaint: () => paint(),
+    });
+    const gestures = bindSelectionGestures({
+      widget: box,
+      screen,
+      selection,
+      repaint: () => paint(),
+    });
+
+    /** The document as display lines, escaped so it is painted verbatim under a band. */
+    const displayLines = (text) => String(text ?? '').split('\n').map((line) => escapeTags(line));
+
+    /** The lines to hand the widget: the document, with the live selection marked. */
+    const decorated = (text) => {
+      const lines = displayLines(text);
+      return highlightRows({
+        lines,
+        anchor: selection.anchor,
+        focus: selection.focus,
+        ftor: box?._clines?.ftor ?? null,
+        width: wrapWidthOf(box),
+      }).join('\n');
+    };
+
     const docAt = (at) => docs[Math.min(docs.length - 1, Math.max(0, at))];
 
     const paint = () => {
@@ -202,7 +267,7 @@ export function openContentModal({
       const lines = text.split('\n');
       scroll = clampScroll(scroll, lines.length, size.height - 2);
       box.setLabel(documentLabel(doc, index, docs.length));
-      box.setContent(text);
+      box.setContent(decorated(text));
       box.scrollTo(scroll);
       hint.setContent(contentHint(docs.length));
       repaint();
@@ -212,6 +277,8 @@ export function openContentModal({
       if (done) return;
       done = true;
       screen?.program?.removeListener?.('keypress', onKey);
+      // The gesture bindings outlive no one: disposed before the box they were made for.
+      gestures.dispose();
       box.destroy();
       hint.destroy();
       // The lease goes at the end of the event: the key that closed the modal is still

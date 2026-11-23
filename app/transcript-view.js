@@ -44,7 +44,7 @@ export {
  * decorator at all.
  */
 export function createTranscriptView({
-  widget, refresh = () => {}, stamp = null, decorate = null,
+  widget, refresh = () => {}, stamp = null, decorate = null, onPaint = null,
 } = {}) {
   const model = new TranscriptModel();
   let closed = false;
@@ -86,7 +86,39 @@ export function createTranscriptView({
     return { ...record, text: colorizeLine(text) };
   };
 
-  const viewport = createViewport({ widget, repaint: () => refresh() });
+  /**
+   * Tell the pinned row to re-read the content and the offset.
+   *
+   * Its *presence* depends on where the view is, so it cannot be part of `refresh()`:
+   * every paint and every move of the viewport asks here, and the hook itself is the
+   * caller's (app/sticky-bar.js). A hook that throws is contained, because the bar is
+   * presentation and must never cost the conversation a paint or a scroll.
+   */
+  const repaintPin = () => {
+    if (typeof onPaint !== 'function') return false;
+    try {
+      onPaint();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // A move of the view is announced to the pin in **one** place, and this is it. The
+  // viewport binds the wheel itself (`app/transcript-viewport.js`), so a wheel notch never
+  // passes through `scrollRows` below — an earlier version told the pin only from that
+  // wrapper, and a wheel-scrolled conversation therefore kept a pinned row whose real
+  // message was visible again. Asking here covers every route the viewport moves by: the
+  // wheel, a key, a page. `repaintPin` is declared first because this closure is what uses
+  // it, and a viewport that repainted during construction would otherwise reach the
+  // temporal dead zone.
+  const viewport = createViewport({
+    widget,
+    repaint: () => {
+      repaintPin();
+      refresh();
+    },
+  });
 
   /**
    * Repaint the widget from the model.
@@ -128,7 +160,16 @@ export function createTranscriptView({
     setImmediate(() => {
       if (closed || !widget) return;
       settle();
+      // blessed moves the viewport on its own tick, so the offset the pin compares against
+      // only becomes true here: told before it, it would read the *previous* position and
+      // leave a stale row on screen (`docs/interface/sticky-user-message`).
+      repaintPin();
     });
+
+    // The pin is a view of the content that was just handed to the widget, so it re-reads
+    // it here — after the content and the scroll are settled, never before, or it would
+    // compare the new lines against the previous geometry (app/sticky-bar.js).
+    repaintPin();
 
     refresh();
     return true;
@@ -271,7 +312,11 @@ export function createTranscriptView({
     bulk,
     paint,
     /** Move the view by rows (positive = towards the bottom), clamped to the content. */
-    scrollRows: (delta) => viewport.scrollRows(delta),
+    scrollRows: (delta) => {
+      // The pin is told inside the viewport's own repaint, which every route a move takes
+      // already funnels through — including the wheel the viewport binds itself.
+      return viewport.scrollRows(delta);
+    },
     /** Move a whole screenful (`direction < 0` pages up), one row short of the screenful. */
     scrollPage: (direction) => viewport.scrollPage(direction),
     /**
@@ -299,5 +344,13 @@ export function createTranscriptView({
     get content() {
       return model.content;
     },
+    /**
+     * The display lines with the options each was built with (`{ text, role, stamp }`).
+     *
+     * Exposed because the pinned row is a view of one of them (`app/sticky-bar.js`): it
+     * needs the *entry index* — the row the user's prompt occupies — which the plain
+     * `content` string has already lost.
+     */
+    lineRecords: () => model.lineRecords(),
   };
 }

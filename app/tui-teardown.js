@@ -35,6 +35,7 @@ export function createResizeRepaint({
   workRow = null,
   queue,
   overlays = null,
+  sticky = null,
   refresh = null,
 } = {}) {
   const repaint = () => {
@@ -51,6 +52,9 @@ export function createResizeRepaint({
     // of them without the others would stack them wrong. `overlays.paint()` does all
     // three in that order, which also re-reads the brand row after a resize.
     overlays?.paint?.();
+    // The pinned user message is fitted to the width it has *now* and anchored to the
+    // transcript's new first row, so a resize re-cuts it or hides it again.
+    sticky?.paint?.();
     // blessed paints the screen *before* it emits 'resize' (`screen.js`: alloc(),
     // render(), then the event), so without this second paint the re-fit above would
     // only reach the next frame — and the frame in between is the all-black flash the

@@ -26,6 +26,7 @@ import { noticeSurface } from './notice-overlay.js';
 export function createTuiSurface({
   question,
   promptInput,
+  setBusySubmit = null,
   view,
   selection = null,
   queue,
@@ -47,6 +48,8 @@ export function createTuiSurface({
   toastBar = null,
   brandBar = null,
   slashBar = null,
+  sticky = null,
+  clipboard = null,
   refresh,
   scrollBy,
   scrollPage,
@@ -62,6 +65,9 @@ export function createTuiSurface({
       question: (prompt, callback) => question(prompt, callback),
     },
     question,
+    // Install the host's mid-turn command handler once the host exists
+    // (app/busy-command.js); absent in a front end without one.
+    setBusySubmit: typeof setBusySubmit === 'function' ? setBusySubmit : () => null,
     // Settle an armed question with the 'exit' sentinel the host loop understands.
     exit() {
       return promptInput.exit();
@@ -187,6 +193,10 @@ export function createTuiSurface({
       documents,
       title,
       refresh,
+      // The viewer is selectable and copyable like the conversation
+      // (`docs/interface/clipboard-selection`): the same writer, the same toast.
+      copy: clipboard ? (text) => clipboard.copy(text) : null,
+      notify: clipboard ? (report) => clipboard.notify(report) : null,
       // The focus comes back to the box when the modal closes, like every other modal:
       // the box is the single arming point, so the host's next read finds it focused.
       onOpenChange: (open) => {
@@ -212,6 +222,8 @@ export function createTuiSurface({
       noticeBar?.paint?.();
       toastBar?.paint?.();
       slashBar?.paint?.();
+      // The pinned row paints the palette's stamp colour, so a skin reaches it here.
+      sticky?.paint?.();
       // The transcript is repainted **from the model**, not from a frozen frame: every
       // stored row is re-coloured at paint time (`app/transcript-view.js#paintRecord`), so
       // a skin reaches the rows already on screen and not only the chrome. This is the one
@@ -310,6 +322,17 @@ export function createTuiSurface({
     // the two facts a caller or a test asks about — whether it is up and which rows it
     // shows. A view of the menu, never a second copy of it.
     slashBar,
+    // The pinned last user message (`docs/interface/sticky-user-message`): the bar itself,
+    // plus the two facts a caller asks about — whether it is up and what it says.
+    sticky,
+    /** True while the pinned row is on screen (the prompt has scrolled off the top). */
+    get stickyVisible() {
+      return Boolean(sticky) && sticky.visible === true;
+    },
+    /** The line the pinned row paints, or '' while nothing is pinned. */
+    get stickyLine() {
+      return sticky ? sticky.line : '';
+    },
     /** True while the popup offering matching commands is on screen. */
     get slashOpen() {
       return slashBar ? slashBar.visible : false;

@@ -21,6 +21,10 @@ import { highlightRows, wrapWidthOf } from './transcript-highlight.js';
  */
 export function createTranscriptPane({
   transcript, refresh = () => {}, stamp = null, copy = null, notify = null, screen = null,
+  // Called after every paint and every move of the view. The pinned user message is the
+  // one thing on screen whose *presence* depends on the offset, so it re-reads from here
+  // (`app/sticky-bar.js`); absent in a front end with no such row.
+  onPaint = null,
 } = {}) {
   // The mouse selection (docs/interface/clipboard-selection). It is created before the
   // view because the view paints *through* it: the decorator below is the one hook that
@@ -49,7 +53,7 @@ export function createTranscriptPane({
     width: wrapWidthOf(widget),
   }).join('\n');
 
-  const view = createTranscriptView({ widget: transcript, refresh, stamp, decorate });
+  const view = createTranscriptView({ widget: transcript, refresh, stamp, decorate, onPaint });
 
   // A click on the transcript finishes a mouse gesture before it means anything else:
   // a drag copies the selection and consumes the click, a plain click falls through to

@@ -18,6 +18,7 @@ import { createPasteRegistry } from './paste-registry.js';
 import { createCompactionNotifier } from './compaction-notice.js';
 import { createSelectionClipboard } from './tui-clipboard.js';
 import { createToastBar } from './tui-toast.js';
+import { createStickyBar } from './sticky-bar.js';
 import { bindKeys } from './tui-keys.js';
 import { createResizeRepaint, createTeardown } from './tui-teardown.js';
 import {
@@ -111,6 +112,20 @@ export function createTui(options = {}) {
     writer: options.clipboardWriter,
     toast: () => toastBar,
   });
+  // The pinned last user message (app/sticky-bar.js, docs/interface/sticky-user-message):
+  // a floating one-row bar over the top of the conversation. It is built before the pane
+  // because the pane's paint is what tells it to re-read, and it reads the transcript
+  // widget's geometry rather than the model's — "is that row still on screen?" is a
+  // question about the viewport, not about the conversation.
+  // The records are the view's (the conversation); the widget is what knows where the
+  // viewport is. The view does not exist yet, so the source is a live lookup.
+  const sticky = createStickyBar({
+    screen,
+    transcript,
+    records: () => (typeof pane?.view?.lineRecords === 'function' ? pane.view.lineRecords() : []),
+    refresh,
+  });
+
   // The transcript is a model + view pair behind one pane (app/tui-transcript.js):
   // the pane owns the click-to-toggle binding, the mouse selection and the operations the
   // host asks of the conversation, so the wiring below never reaches into the view.
@@ -118,6 +133,11 @@ export function createTui(options = {}) {
     transcript,
     refresh,
     stamp,
+    // The pinned last user message (app/sticky-bar.js): it floats over the first content
+    // row and re-reads after every paint and every move of the view, which is the only
+    // way it can know whether the real row has scrolled away. Late-bound because the bar
+    // needs the transcript widget's geometry, which is the view's to paint.
+    onPaint: () => sticky.paint(),
     copy: clipboard.copy,
     notify: clipboard.notify,
     // The screen is what makes a release *outside* the pane finish the gesture: blessed
@@ -179,6 +199,9 @@ export function createTui(options = {}) {
     anchor: () => INPUT_HEIGHT + (Number(queue.height) || 0),
     // Read live, never snapshotted: `main.js` builds the registry after the screen.
     commands: () => (typeof options.commands === 'function' ? options.commands() : options.commands || []),
+    // A submission that arrives mid-turn: the host answers a read-only command now and
+    // refuses a mutating one, so neither waits in the message queue (app/busy-command.js).
+    onBusySubmit: typeof options.onBusySubmit === 'function' ? options.onBusySubmit : null,
   });
   const promptInput = stack.promptInput;
   const { slashBar } = stack;
@@ -237,7 +260,7 @@ export function createTui(options = {}) {
   // A resize re-fits every row measured at the old width and puts the newest line
   // back in view (app/tui-teardown.js).
   createResizeRepaint({
-    screen, transcript, statusRow, workRow: statusRows.workRow, queue, overlays, refresh,
+    screen, transcript, statusRow, workRow: statusRows.workRow, queue, overlays, sticky, refresh,
   });
 
   // The teardown is the reverse of construction, and happens once: the input box
@@ -251,6 +274,8 @@ export function createTui(options = {}) {
       () => queue.close(),
       () => modeRow.close(),
       () => overlays.close(),
+      // The floating row goes with the other overlays, before the widget it floats over.
+      () => sticky.close(),
       () => view.close(),
       () => keys.dispose(),
       () => statusRows.dispose(),
@@ -266,6 +291,8 @@ export function createTui(options = {}) {
   return createTuiSurface({
     question: stack.question,
     promptInput,
+    /** Install the host's mid-turn command handler, once the host exists. */
+    setBusySubmit: (hook) => stack.setBusySubmit(hook),
     view,
     selection: pane.selection,
     queue,
@@ -287,6 +314,12 @@ export function createTui(options = {}) {
     toastBar,
     brandBar,
     slashBar,
+    // The pinned last user message (app/sticky-bar.js): the host and the tests read what
+    // it paints and whether it is up, without reaching into the wiring.
+    sticky,
+    // The same writer the conversation copies through, so the read-only viewer can be
+    // selected and copied from too (`docs/interface/clipboard-selection`).
+    clipboard,
     refresh,
     scrollBy: (amount) => pane.scrollBy(amount),
     scrollPage: (direction) => pane.scrollPage(direction),

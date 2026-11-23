@@ -77,6 +77,10 @@ export function taskCommand() {
   return {
     name: 'task',
     description: 'show this session\'s task.md and implementation_plan.md in a read-only modal',
+    // Read-only by construction — the files are shown, never written — so the one
+    // command a user reaches for mid-turn to check progress answers at once instead of
+    // waiting for the turn to end (app/busy-command.js).
+    busy: 'parallel',
     async run(ctx = {}) {
       const parsed = parseTaskArg(ctx.arg);
       if (parsed.error) {

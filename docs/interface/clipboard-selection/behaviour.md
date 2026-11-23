@@ -239,9 +239,28 @@ The saved file is the record. On a host with a clipboard tool the runner also ha
 text to it, so pasting works; on a host without one the file is still there to open, and
 nothing in the program claims a copy landed when it cannot prove it did.
 
+## Also the read-only viewer
+
+The same gesture, the same band and the same writer serve the **content modal** that
+`/task` opens (`docs/interface/task-viewer`, `app/content-modal.js`): a reader who knows how
+to copy a transcript row already knows how to copy a line of `task.md`. Two facts make it
+work there:
+
+- **the box parses tags.** A band is spliced into a line (`highlightRows`), which a
+  `tags: false` box cannot host; the document is written through `escapeTags()`, so what is
+  drawn is still the file's own bytes, braces included.
+- **the mouse is given back.** A modal takes the keyboard as a lease
+  (`app/keyboard-ownership.js`), and `screen.lockKeys` gates blessed's *mouse* dispatcher as
+  well as its key one — so a modal that kept it would be a viewer nothing can be selected
+  in. `unlockMouse()` clears the flag while the lease stands: the keyboard stays the
+  modal's, the pointer reaches the box, and the regions behind it are safe because each
+  already opts out of focus and answers no drag. This is why a modal opened *mid-turn* is
+  still safe to read out of (`docs/interface/busy-commands`).
+
 ## See also
 
 - The gesture and its blessed quirks: `app/transcript-mouse.js`, `app/transcript-select.js`
+- The modal that reuses them: `app/content-modal.js`, `docs/interface/task-viewer`
 - The band that marks the selection: `app/transcript-highlight.js`
 - The file writer and its naming rule: `app/clipboard-file.js`
 - The sentence and its four seconds: `app/toast.js`, `app/tui-toast.js`

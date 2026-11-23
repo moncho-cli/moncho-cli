@@ -43,6 +43,9 @@ export function createInputStack({
   columns = null,
   anchor = null,
   commands = () => [],
+  // A submission that arrives mid-turn: the host answers a command now and refuses a
+  // mutating one instead of letting it wait in the queue (app/busy-command.js).
+  onBusySubmit = null,
 } = {}) {
   // Filled immediately below, and only read from a keystroke: see the note above.
   let promptInput = null;
@@ -73,8 +76,7 @@ export function createInputStack({
     },
   });
 
-  promptInput = createPromptInput({ inputBox, pastes, queue, keys, log, refresh });
-
+  promptInput = createPromptInput({ inputBox, pastes, queue, keys, log, refresh, onBusySubmit });
   // A submission from the widget goes through the same machine, so the two paths — Enter
   // on the line and Enter on a highlighted row — cannot disagree.
   if (inputBox && typeof inputBox.on === 'function') {
@@ -103,6 +105,11 @@ export function createInputStack({
     focusGuard,
     /** Arm a question and resolve it with the next submission. */
     question: (prompt, callback) => promptInput.question(prompt, callback),
+    /**
+     * Install the host's mid-turn command handler (app/busy-command.js). The host is
+     * built after the screen, so the box is told about it once it exists.
+     */
+    setBusySubmit: (hook) => promptInput.setBusySubmit(hook),
     /**
      * Tab while the popup is open: complete the highlighted command's name into the box.
      * Returns whether it took the key, which is what keeps `app/tui-keys.js` from moving

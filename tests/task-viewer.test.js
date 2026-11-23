@@ -143,6 +143,49 @@ test('the modal resolves null when there is nothing to show', async () => {
   assert.equal(result, null);
 });
 
+test('a drag inside the viewer copies the selected document text', async () => {
+  await withTui(async (tui, { clipboardDir }) => {
+    const text = 'alpha bravo\ncharlie delta\necho foxtrot';
+    const copied = [];
+    const opening = openContentModal({
+      screen: tui.screen,
+      documents: [{ name: 'task.md', text }],
+      refresh: tui.refresh,
+      copy: (selection) => {
+        copied.push(selection);
+        return { ok: true, file: 'clip.txt' };
+      },
+      notify: () => {},
+    });
+    await flush();
+
+    const box = tui.screen.children.at(-2);
+    // The content is escaped for painting, so a selection is drawn from the box's own rows.
+    // The document is verbatim: no brace was invented and the first line is intact.
+    assert.match(box.getContent(), /^alpha bravo/, 'the document starts on its own first line');
+
+    const x = box.lpos.xi + box.ileft;
+    const y = box.lpos.yi + box.itop;
+    const mouse = (action, mx, my) => tui.screen.program.emit('mouse', { x: mx, y: my, action });
+
+    // Press on the first line, release partway along the second: the same gesture the
+    // conversation answers (`docs/interface/clipboard-selection`).
+    mouse('mousedown', x, y);
+    mouse('mouseup', x + 4, y + 1);
+    await flush();
+
+    assert.equal(copied.length, 1, 'the release copied exactly once');
+    const saved = copied[0].split('\n');
+    assert.equal(saved[0], 'alpha bravo', 'the first line is copied whole');
+    assert.ok(saved[1].startsWith('char'), `the second line is cut short, got ${JSON.stringify(saved[1])}`);
+    assert.equal(saved.length, 2, 'the drag covered exactly two rows');
+    assert.ok(clipboardDir, 'the harness gives the copy a directory to write into in the real TUI');
+
+    press(tui.screen, 'escape');
+    await opening;
+  });
+});
+
 test('/task ships in the default registry, so the user can type it', () => {
   const registry = createDefaultCommands();
   assert.ok(registry.has('task'));

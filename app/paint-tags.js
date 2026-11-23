@@ -129,6 +129,41 @@ export function stripSymbolicTags(text) {
 }
 
 /**
+ * The **plain text** of a formatted line: every kind of markup removed and nothing else.
+ *
+ * A formatted line (`app/tui-render.js`) is not plain prose — it carries three kinds of
+ * brace that stand for something the renderer will do rather than for a character the
+ * reader typed:
+ *
+ *  - a **symbolic palette tag** (`{@quote-fg}`), which `resolveTags()` turns into a colour
+ *    at paint time;
+ *  - a **real blessed tag** (`{bold}`, `{underline}`, `{cyan-fg}`), which blessed paints;
+ *  - an **escaped brace** (`{open}` / `{close}`), which the renderer protects a literal
+ *    `{` or `}` with (`app/tui-render.js#escapeTags`) and which is drawn as the brace
+ *    itself.
+ *
+ * Anything that means "paint this" is dropped, and an escaped brace is turned back into
+ * the character it stands for. A consumer that shows the line somewhere the renderer will
+ * not run — the pinned row, a plain-text export, a width measurement — needs exactly this:
+ * left alone, `{bold}` is printed as the word `bold` in braces, and measured as nine cells
+ * instead of none.
+ */
+export function stripTags(text) {
+  const source = String(text ?? '');
+  if (!source.includes('{')) return source;
+  // One pass, because the alternatives have to be tried in order: `{open}` is a literal
+  // brace and must be turned back into one, while every other brace pair is markup. Doing
+  // it as three sequential replaces is the bug this comment prevents — unescaping first
+  // turns a literal brace into the very pattern the tag stripper is looking for, and the
+  // user's own `{literal}` disappears from the text.
+  return source.replace(/\{open\}|\{close\}|\{[^{}]*\}/g, (match) => {
+    if (match === '{open}') return '{';
+    if (match === '{close}') return '}';
+    return '';
+  });
+}
+
+/**
  * A symbolic foreground tag around `body`: what a render site emits when it wants a
  * palette key rather than a fixed colour.
  */

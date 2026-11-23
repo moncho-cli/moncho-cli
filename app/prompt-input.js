@@ -51,6 +51,8 @@ export function normalizePrompt(prompt) {
  * @param {object} [options.keys]    the caret/history seam (app/prompt-keys.js)
  * @param {Function} [options.log]   where the "[pasted N lines -> …]" notice goes
  * @param {Function} [options.refresh] repaint hook
+ * @param {Function} [options.onBusySubmit] `(text) => boolean` — a submission that
+ *   arrived mid-turn and was consumed by the host instead of queued (app/busy-command.js)
  */
 export function createPromptInput({
   inputBox = null,
@@ -60,12 +62,16 @@ export function createPromptInput({
   keys = null,
   log = () => {},
   refresh = () => {},
+  onBusySubmit = null,
 } = {}) {
   // The arrows, the caret and the recallable history (app/prompt-keys.js). It adopts
   // whatever the box already holds, so an injected seam is respected.
   const promptKeys = keys || createPromptKeys({ inputBox, refresh });
   let pending = null;
   let inFlight = false;
+  // Late-bound: the host that answers a command is built *after* the screen (main.js),
+  // so the hook the input box asks is one it can replace once it exists.
+  let busySubmit = onBusySubmit;
   let labelText = ' > ';
   // The "Last prompt: …" hint shown over an empty box (app/input-hint.js).
   const lastPromptHint = hint || createInputHint({ inputBox, refresh });
@@ -160,6 +166,16 @@ export function createPromptInput({
       settle(text);
       return null;
     }
+    // A command is not a message for the model, so it never waits in the queue: the
+    // host answers a read-only one now and refuses a mutating one outright
+    // (app/busy-command.js). The box is emptied and re-armed exactly as the queued
+    // path leaves it, so the next keystroke of a long turn still lands.
+    if (inFlight && typeof busySubmit === 'function' && busySubmit(text)) {
+      promptKeys.reset();
+      promptKeys.record(text);
+      arm();
+      return null;
+    }
     const queued = queue ? queue.enqueue(text) : null;
     promptKeys.reset();
     // A message the user really sent is part of the history even when it was queued
@@ -176,6 +192,16 @@ export function createPromptInput({
     submit,
     settle,
     arm,
+    /**
+     * Install the host's mid-turn command handler, once the host exists
+     * (`app/busy-command.js`). Returns the hook it replaced, so a wiring bug is
+     * observable rather than silent.
+     */
+    setBusySubmit(hook) {
+      const previous = busySubmit;
+      busySubmit = typeof hook === 'function' ? hook : null;
+      return previous;
+    },
     /** The editing seam: the caret, the window and the recallable history. */
     keys: promptKeys,
     /** The box's text, verbatim, as the caret editor sees it. */

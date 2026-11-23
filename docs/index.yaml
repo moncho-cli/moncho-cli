@@ -59,6 +59,7 @@ specs:
   - interface/session-replay
   - interface/session-stamps
   - interface/commands
+  - interface/busy-commands
   - interface/task-viewer
   - interface/session-ref
   - interface/line-cli
@@ -79,6 +80,7 @@ specs:
   - context/chunkpaction
   - interface/conversation-timestamps
   - interface/prose-bands
+  - interface/sticky-user-message
   - interface/markdown-tables
   - interface/clipboard-selection
   - interface/skins

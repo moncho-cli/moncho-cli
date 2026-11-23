@@ -1,0 +1,53 @@
+id: interface/sticky-user-message
+domain: interface
+title: The last user message pinned at the top of the conversation
+status: active
+summary: >
+  The newest prompt — the newest entry on the user side of the dialogue, the same role
+  the prose band is painted from — is kept at the top of the transcript while the reader
+  scrolls back through the agent's output. The pin is due only once the real row has
+  scrolled off the top (its display-line index is compared against childBase, so it hides
+  again when the reader scrolls back to it, and a caller with no geometry pins nothing);
+  because a new prompt becomes the newest user entry, the previous one is released and
+  the new one re-appears when it scrolls away, with no extra state. The row is one line —
+  the ⌖ marker, the entry's own timestamp and the prompt's first non-blank line, fitted
+  in cells between grapheme clusters — so a multi-line prompt is summarised and a long one
+  never wraps onto a row the region's height would clip. app/sticky-bar.js paints it as a
+  floating one-row blessed box over the transcript's first content row, in the stamp
+  colour rather than the user's band, never focusable; it re-reads lineRecords() on every
+  paint and is driven from the transcript view after every paint and every scroll. The row
+  is presentation only: never a chunk, never a session file, never sent to the model.
+code:
+  - path: app/transcript-sticky.js
+    symbols: [lastUserEntry, isStickyDue, stickyText, stickyLine, STICKY_MARKER]
+  - path: app/sticky-bar.js
+    symbols: [createStickyBar]
+  - path: app/transcript-view.js
+    symbols: [createTranscriptView]
+  - path: app/transcript-geometry.js
+    symbols: [contentOrigin, scrollBase, visibleHeight]
+  - path: app/cell-width.js
+    symbols: [displayWidth, truncateToWidth]
+  - path: app/paint-tags.js
+    symbols: [stripTags]
+  - path: app/tui.js
+    symbols: [createTui]
+  - path: app/tui-teardown.js
+    symbols: [createResizeRepaint]
+tests:
+  - path: tests/sticky-user-message.test.js
+    cases:
+      - "lastUserEntry() finds the newest user line and skips the band margins"
+      - "lastUserEntry() returns the latest of several prompts, and null before any"
+      - "isStickyDue() pins only once the real row has left the top"
+      - "isStickyDue() says no without a prompt or without geometry"
+      - "stickyText() flattens a prompt to its first line and fits it in cells"
+      - "stickyLine() opens with the marker, carries the stamp and respects the width"
+      - "the bar pins the prompt once it scrolls away, and hides again on the way back"
+      - "the bar hides itself when the user has not spoken yet"
+      - "a bar with no screen still answers what it would paint"
+      - "the pinned row carries no markup, only the prompt’s own characters"
+      - "a markup-laden prompt is measured by its glyphs, not by its tags"
+      - "a quoted prompt pins its text, never the palette tag behind it"
+      - "the real screen pins the prompt when the reader scrolls, and releases it at the top"
+      - "a wheel scroll releases the pin too, because the viewport binds the wheel itself"

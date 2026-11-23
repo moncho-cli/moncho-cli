@@ -63,7 +63,7 @@ code:
   - path: app/terminal-capability.js
     symbols: [UNKNOWN_COLOR_COUNT, setTerminalColorCount, terminalColorCount, supportsBrightColors, effectiveBackgroundName, reducedBackgrounds]
   - path: app/paint-tags.js
-    symbols: [FALLBACK_COLOR, fgTag, fgOpen, fgClose, hasSymbolicTags, resolveTags, stripSymbolicTags, symbolicTag]
+    symbols: [FALLBACK_COLOR, fgTag, fgOpen, fgClose, hasSymbolicTags, resolveTags, stripSymbolicTags, stripTags, symbolicTag]
   - path: app/theme-palette.js
     symbols: [USER_ECHO_HEADER, CONVERSATION_COLORS, SLASH_COLORS, THEME_TOKENS, INTENT_COLOR, INTENT_BOLD, TRACKING_COLOR, TRACKING_BOLD, STAMP_COLOR, REFUSAL_COLOR, REFUSAL_BOLD, DEFAULT_CONVERSATION_COLORS, isColorName, activePalette, activeTokens, setPalette, setTokens, applySkin, resetTheme]
   - path: app/band-palette.js

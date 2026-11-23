@@ -79,7 +79,12 @@ fatal:
 - A click on a hidden region cannot happen: blessed skips elements without a
   position, so the queue bar only receives clicks while it is on screen.
 - A click on the box while a modal is open is ignored by the guard, because the
-  screen's mouse dispatch is skipped while `lockKeys` is set.
+  modal owns the keyboard. Since `unlockMouse()`
+  (`app/keyboard-ownership.js`, `docs/interface/clipboard-selection`) a *viewer* modal
+  grants the mouse back while keeping the keyboard, so the pointer does reach the
+  regions behind it — the guard still stands down, and what it would have protected is
+  covered by the fact that arming is idempotent and a click on an already-armed box
+  changes nothing.
 - A box that is already armed is not focused again: focusing an element that
   already owns the focus emits a `blur` on it and would end the read it is holding.
 - A check that lands in the tick between `_reading = true` and the listener being

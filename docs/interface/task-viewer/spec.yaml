@@ -32,6 +32,7 @@ tests:
       - "the modal shows the document verbatim and closes on Escape"
       - "the modal cycles between documents and keeps the keyboard lease"
       - "the modal resolves null when there is nothing to show"
+      - "a drag inside the viewer copies the selected document text"
       - "/task ships in the default registry, so the user can type it"
       - "/task reads the session pair through the same store the tools use"
       - "/task opens the viewer with both documents and reports the close"
