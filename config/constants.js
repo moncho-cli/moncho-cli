@@ -25,6 +25,25 @@ export const API_KEY = process.env.OPENAI_API_KEY || "";
 export const MODEL = process.env.OPENAI_MODEL || "qwen3.6:35b-a3b-q4_K_M";
 
 /**
+ * The `User-Agent` a provider call carries, when the user configures one.
+ *
+ * It is **opt-in**: `MONCHO_USER_AGENT` is sent only when it is set, so an unconfigured
+ * install presents no header of its own and the provider sees the request it would have
+ * seen before this knob existed. A blank or whitespace-only value reads as **unset**,
+ * because an empty header is not a request anyone means to send.
+ */
+function toUserAgent(value) {
+  const raw = String(value ?? '').trim();
+  return raw === '' ? null : raw;
+}
+
+/**
+ * The `User-Agent` a provider call sends, or `null` when none is configured.
+ * Configurable through `MONCHO_USER_AGENT`; see `api/ollama.js#buildHeaders`.
+ */
+export const USER_AGENT = toUserAgent(process.env.MONCHO_USER_AGENT);
+
+/**
  * A sampling temperature as a number, or `null` when the value cannot be used.
  *
  * `null` is a real answer here, not a failure: the temperature is **absent** from

@@ -1,5 +1,6 @@
 import { windowLines, renderYamlHeader, OUTPUT_DELIMITER, EMPTY_OUTPUT, CAPTURE_HINT } from './command-output.js';
 import { htmlToText, isHtmlType } from './html-text.js';
+import { USER_AGENT } from '../config/constants.js';
 
 /**
  * Retrieving a URL, bounded in every direction it can grow (`docs/agent/web-fetch`).
@@ -46,6 +47,27 @@ export const MAX_FETCH_LINES = 1000;
 
 /** The only schemes a fetch may use. */
 export const ALLOWED_PROTOCOLS = Object.freeze(['http:', 'https:']);
+
+/** The `User-Agent` a fetch presents when the user configured none. */
+export const FETCH_USER_AGENT_DEFAULT = 'moncho-cli';
+
+/**
+ * The headers one fetch carries: an `accept` list and a `User-Agent`.
+ *
+ * The user agent is configurable through `MONCHO_USER_AGENT`
+ * (`config/constants.js#USER_AGENT`) — the same knob a provider call reads, so one
+ * setting names the program to the provider and to every host it fetches from. When the
+ * user configured none, `FETCH_USER_AGENT_DEFAULT` is presented, because a client that
+ * names itself nothing is refused by a fair number of hosts. The `accept` list stays
+ * fixed: the user's key, the conversation and every local path stay out of the request.
+ */
+export function fetchHeaders(userAgent = USER_AGENT) {
+  const raw = String(userAgent ?? '').trim();
+  return {
+    accept: 'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8',
+    'user-agent': raw || FETCH_USER_AGENT_DEFAULT,
+  };
+}
 
 /** A fetch that failed before any body could be handed over. */
 export class WebFetchError extends Error {
@@ -254,10 +276,7 @@ export async function fetchUrl(rawUrl, {
       method: 'GET',
       redirect: 'manual',
       signal: abort,
-      headers: {
-        accept: 'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8',
-        'user-agent': 'moncho-cli',
-      },
+      headers: fetchHeaders(),
     });
 
     const location = response.headers?.get?.('location');

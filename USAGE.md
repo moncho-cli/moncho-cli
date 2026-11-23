@@ -149,6 +149,7 @@ cp .env.moncho.example .env.moncho
 | `OPENAI_API_KEY` | — | Bearer token; omit for Ollama |
 | `OPENAI_MODEL` | `qwen3.6:35b` | Model name |
 | `MODEL_TEMPERATURE` | unset | Sampling temperature (`0`–`2`); unset leaves the key out of the request |
+| `MONCHO_USER_AGENT` | unset | `User-Agent` header sent with every provider call and every `web_fetch`; unset sends none to the provider and presents `moncho-cli` when fetching |
 | `CONTEXT_MAX_LENGTH` | the provider's real total | Context budget override |
 | `COMPACTION_OLD_RATIO` | `0.7` | Share of the window summarised on compaction (`0.7`, `70` or `70%`) |
 | `PULSE_LIMIT` | `30` | Model calls before the pulse notice |

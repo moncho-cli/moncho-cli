@@ -29,8 +29,12 @@ decision rather than a default:
   exists for.
 
 The request is always a **GET**: a fetch reads a resource, and a body-carrying method would
-be a write aimed at a stranger. The headers are fixed (`accept`, `user-agent: moncho-cli`) —
-the user's key, the conversation and every local path stay out of it.
+be a write aimed at a stranger. The `accept` list is fixed — the user's key, the conversation
+and every local path stay out of the request — while the `User-Agent` is the one header the
+user may name: `MONCHO_USER_AGENT` (`config/constants.js#USER_AGENT`) is presented when set,
+and `moncho-cli` (`FETCH_USER_AGENT_DEFAULT`) otherwise, because a client that names itself
+nothing is refused by a fair number of hosts (`utils/web-fetch.js#fetchHeaders`). The same
+variable names the program to the provider (`docs/runtime/provider-calls`).
 
 ## The body
 

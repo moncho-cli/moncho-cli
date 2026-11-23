@@ -8,8 +8,10 @@ summary: >
   read streaming and cut at maxBytes with the reader cancelled (readBounded, DEFAULT_MAX_BODY_BYTES),
   at most DEFAULT_MAX_REDIRECTS hops followed manually so a loop is TOO_MANY_REDIRECTS and
   https is never downgraded (REDIRECT_DOWNGRADE), and one whole-exchange AbortSignal.timeout
-  (timeoutSignal). The request is always a GET with fixed headers, so the key, the
-  conversation and every local path stay out of it. tools/web_fetch.js answers in the
+  (timeoutSignal). The request is always a GET whose accept list is fixed, so the key, the
+  conversation and every local path stay out of it, while its User-Agent is the one header
+  the user may name: MONCHO_USER_AGENT when set, moncho-cli (FETCH_USER_AGENT_DEFAULT)
+  otherwise (fetchHeaders). tools/web_fetch.js answers in the
   command-document shape (renderYamlHeader, ---, payload): HTML is reduced to readable text
   by utils/html-text.js — raw elements dropped before entities are decoded, block elements
   ending a paragraph, list and table members ending a line, an inline tag introducing
@@ -25,7 +27,7 @@ summary: >
   the branch PRIVACY.md states — the provider plus any URL the agent itself chose to fetch.
 code:
   - path: utils/web-fetch.js
-    symbols: [DEFAULT_FETCH_TIMEOUT_MS, MAX_FETCH_TIMEOUT_MS, DEFAULT_MAX_BODY_BYTES, MAX_MAX_BODY_BYTES, DEFAULT_MAX_REDIRECTS, DEFAULT_FETCH_LINES, MAX_FETCH_LINES, ALLOWED_PROTOCOLS, WebFetchError, validateFetchUrl, charsetFromContentType, charsetFromBody, normalizeCharset, isSupportedCharset, decodeBody, readBounded, timeoutSignal, fetchUrl, renderFetchDocument, windowBody, shownRange, fetchErrorDocument]
+    symbols: [DEFAULT_FETCH_TIMEOUT_MS, MAX_FETCH_TIMEOUT_MS, DEFAULT_MAX_BODY_BYTES, MAX_MAX_BODY_BYTES, DEFAULT_MAX_REDIRECTS, DEFAULT_FETCH_LINES, MAX_FETCH_LINES, ALLOWED_PROTOCOLS, FETCH_USER_AGENT_DEFAULT, WebFetchError, validateFetchUrl, charsetFromContentType, charsetFromBody, normalizeCharset, isSupportedCharset, decodeBody, readBounded, timeoutSignal, fetchHeaders, fetchUrl, renderFetchDocument, windowBody, shownRange, fetchErrorDocument]
   - path: utils/html-text.js
     symbols: [isRawElement, decodeEntity, decodeEntities, normalizeWhitespace, breakFor, htmlToText, isHtmlType]
   - path: tools/web_fetch.js
@@ -55,3 +57,7 @@ tests:
       - web_fetch hands a long body to the capture store for read_capture
       - web_fetch refuses a bad URL, an unsupported scheme and a dead host with a stable code
       - web_fetch is a read-only tool in the read family
+  - path: tests/user-agent.test.js
+    cases:
+      - a fetch presents moncho-cli when the user configured no user agent
+      - a configured MONCHO_USER_AGENT is the user agent a fetch presents

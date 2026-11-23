@@ -1,4 +1,4 @@
-import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, OLLAMA_MAX_TOKENS, THINKING_FILE as THINKING_TARGET, FILE_LINE_LIMIT } from '../config/constants.js';
+import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, OLLAMA_MAX_TOKENS, THINKING_FILE as THINKING_TARGET, FILE_LINE_LIMIT, USER_AGENT } from '../config/constants.js';
 import { logEvent } from '../utils/logger.js';
 import { resolveProjectPath } from '../utils/path-safety.js';
 import { recordProviderFailure } from './provider-diagnostics.js';
@@ -95,8 +95,16 @@ function isOpenAiCompatibleSurface(baseUrl = BASE_URL) {
   return /\/v1\//.test(baseUrl);
 }
 
-function buildHeaders() {
+/**
+ * The headers a provider request carries: JSON, the configured `User-Agent` when one is
+ * set, and the bearer token when an API key is configured. The user agent is **opt-in**
+ * (`config/constants.js#USER_AGENT`), so an install that never set it sends no header of
+ * its own. The parameter defaults to the configured value so the rule is a pure function
+ * the tests can drive, mirroring `buildBody(..., baseUrl = BASE_URL)`.
+ */
+export function buildHeaders(userAgent = USER_AGENT) {
   const headers = { "Content-Type": "application/json" };
+  if (userAgent) headers["User-Agent"] = userAgent;
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
   return headers;
 }

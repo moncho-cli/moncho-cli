@@ -39,6 +39,16 @@ implementation is linked below.
   and a provider that is not Ollama (`api/ollama.js#isOllamaProvider`) receives no cap,
   so its own default applies.
 
+## Request headers
+
+- Every provider call carries a **`User-Agent`** beside `Content-Type` and the bearer
+  token (`api/ollama.js#buildHeaders`), but only when the user configured one. It is
+  **opt-in**: `MONCHO_USER_AGENT` (`config/constants.js#USER_AGENT`) is sent as the header
+  when it is set, and an install that never set it presents no header of its own, so the
+  request is exactly what it would have been before this knob existed. A blank or
+  whitespace-only value reads as **unset** — an empty header is not a request anyone means
+  to send. The same variable names the program to `web_fetch` (`docs/agent/web-fetch`).
+
 ## Responses
 
 - Responses from both shapes are **normalised** to
@@ -116,4 +126,4 @@ implementation is linked below.
   `api/provider-response.js`
 - Proof: `tests/ollama-provider.test.js`, `tests/stream-reader.test.js`,
   `tests/model-temperature.test.js`, `tests/ollama-token-cap.test.js`,
-  `tests/provider-diagnostics.test.js`
+  `tests/provider-diagnostics.test.js`, `tests/user-agent.test.js`
