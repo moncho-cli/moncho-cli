@@ -23,7 +23,21 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# The installer links this script into ~/.local/bin (scripts/install.sh#link_binary), so
+# reached by name on PATH, BASH_SOURCE[0] is that *link* — and `dirname` would point at
+# ~/.local/bin, where none of the libs live. Resolve the chain first: the libraries sit
+# beside the real file in the install tree, and `cd`/`pwd -P` only ever resolved the
+# directory, never the symlink in the filename.
+ENTRY_SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$ENTRY_SOURCE" ]; do
+  ENTRY_DIR="$(cd "$(dirname "$ENTRY_SOURCE")" && pwd -P)"
+  ENTRY_SOURCE="$(readlink "$ENTRY_SOURCE")"
+  case "$ENTRY_SOURCE" in
+    /*) ;;
+    *) ENTRY_SOURCE="$ENTRY_DIR/$ENTRY_SOURCE" ;;
+  esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$ENTRY_SOURCE")" && pwd -P)"
 
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
@@ -39,6 +53,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$SCRIPT_DIR/lib/template.sh"
 # shellcheck source=lib/git.sh
 . "$SCRIPT_DIR/lib/git.sh"
+# shellcheck source=lib/uninstall.sh
+. "$SCRIPT_DIR/lib/uninstall.sh"
 
 # --- defaults ---------------------------------------------------------------
 COMMAND=""
@@ -52,6 +68,7 @@ SYNC_DELETE="0"
 SKIP_GIT="0"
 MOUNT_MODE="bind"
 STATE_MODE="volume"
+PURGE="0"
 
 usage() {
   cat <<'EOF'
@@ -66,6 +83,8 @@ Commands:
   shell     open a shell inside the running container
   build     build this project's image (and the agent base image if missing)
   status    print what this directory resolves to
+  uninstall remove the installation (no docker, no download; --purge takes the
+            images and state volumes too)
   help      this text
 
 Options:
@@ -80,6 +99,8 @@ Options:
   --base-only        with build: stop after the agent base image, no project image
   --skip-git         work here even without a git repository (see below)
   --yes, -y          take the default (minimal template) instead of asking
+  --purge            with uninstall: also remove the images and the state volumes
+                     (needs -y as well; the volumes hold your session history)
   -h, --help         this text
 
 Environment:
@@ -103,7 +124,7 @@ EOF
 parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      run|start|stop|shell|build|status|help) COMMAND="$1"; shift ;;
+      run|start|stop|shell|build|status|uninstall|help) COMMAND="$1"; shift ;;
       --env) [ $# -ge 2 ] || die "--env needs a path"; ENV_FILE_ARG="$2"; shift 2 ;;
       --env=*) ENV_FILE_ARG="${1#--env=}"; shift ;;
       --state-in-repo) STATE_MODE="repo"; shift ;;
@@ -120,6 +141,7 @@ parse_args() {
       --base-only) BASE_ONLY="1"; shift ;;
       --skip-git) SKIP_GIT="1"; shift ;;
       --yes|-y) ASSUME_YES="1"; shift ;;
+      --purge) PURGE="1"; shift ;;
       -h|--help) COMMAND="help"; shift ;;
       *) die "unknown argument '$1' (try 'moncho-cli help')" ;;
     esac
@@ -130,6 +152,16 @@ main() {
   parse_args "$@"
   [ -n "$COMMAND" ] || COMMAND="run"
   [ "$COMMAND" = "help" ] && { usage; return 0; }
+
+  # `uninstall` removes the installation itself, so it runs before anything resolves a
+  # workspace, reads an env file or asks git and docker a question: which directory it is
+  # typed in does not matter, and that directory need not be a repository. It may also
+  # delete the very tree it is running from — bin/lib/uninstall.sh makes that removal its
+  # last action for exactly that reason.
+  if [ "$COMMAND" = "uninstall" ]; then
+    uninstall_moncho
+    return 0
+  fi
 
   # --sync-files writes back through the workspace, so it needs one to exist.
   if [ "$SYNC_FILES" = "1" ] && [ "$MOUNT_MODE" = "bind" ]; then

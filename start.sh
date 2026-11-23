@@ -6,7 +6,19 @@ CONTAINER_NAME="moncho"
 # The host-side clipboard pickup (bin/lib/clipboard-watch.sh): a selection the agent saves
 # into the workspace is read on the host and fed to the host's own clipboard tool. Sourced
 # by absolute path, so it works whatever directory this script is invoked from.
-START_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# Resolved through any symlink first, for the same reason bin/moncho-cli does it
+# (`install.sh#link_binary` links that runner into ~/.local/bin): `dirname` of the path
+# this script was *reached* by is not where its libraries live once it is a link.
+START_SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$START_SOURCE" ]; do
+  START_LINK_DIR="$(cd "$(dirname "$START_SOURCE")" && pwd -P)"
+  START_SOURCE="$(readlink "$START_SOURCE")"
+  case "$START_SOURCE" in
+    /*) ;;
+    *) START_SOURCE="$START_LINK_DIR/$START_SOURCE" ;;
+  esac
+done
+START_DIR="$(cd "$(dirname "$START_SOURCE")" && pwd -P)"
 # shellcheck source=bin/lib/clipboard-watch.sh
 . "$START_DIR/bin/lib/clipboard-watch.sh"
 # Where the watcher's pid is recorded, so `stop` can end it. Named after this checkout.

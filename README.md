@@ -59,6 +59,29 @@ knobs (`CONTEXT_MAX_LENGTH`, `PULSE_LIMIT`, `LOG_LEVEL`) sit beside them. A gene
 is deliberately ignored, so a project's own credentials never become the agent's provider.
 The full table is in [USAGE.md](USAGE.md#configuration).
 
+## Uninstall
+
+`moncho-cli` can remove itself — no download, no clone:
+
+```bash
+moncho-cli uninstall
+```
+
+That deletes the `~/.local/bin/moncho-cli` entry and the staged tree in `MONCHO_HOME`
+(default `~/.config/moncho-cli`) and nothing else: your project directories, their
+`Monchofile`, `.env.moncho` and `.moncho/` are untouched. It needs no Docker daemon.
+
+The Docker images and the named `moncho-state-*` volumes are left in place on purpose —
+the volumes are your session history, one per workspace. To take those too:
+
+```bash
+moncho-cli uninstall --purge --yes
+```
+
+If the installation is already broken or half-removed, the installer carries the same
+job: `curl -fsSL …/scripts/install.sh | bash -s -- --uninstall`. See
+[USAGE.md](USAGE.md#uninstalling) for the details.
+
 ## The two rules of a Monchofile
 
 1. The first `FROM` is `moncho-agent`; the agent's runtime sits under your app's.

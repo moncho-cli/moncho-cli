@@ -49,13 +49,31 @@ function has(command) {
  *
  * `git archive` is the same command `agent/utils/make-release.mjs` packages with, so
  * the fixture is the shape a release really has — not a hand-rolled approximation.
+ *
+ * It packs the **working tree**, not `HEAD`: the files as they are on disk mean a fix
+ * under test is the one in front of you, and `make install` stays a pre-release check
+ * rather than a check of the last commit. A *temporary index* is what makes that work —
+ * `git add -A` into an index of its own includes the files a change just added, which
+ * `git stash create` does not (it takes tracked paths only), and it never touches the
+ * developer's real index.
  */
 function makeArchive(base, { ref = REF, prefix = `moncho-cli-${ref}` } = {}) {
   const target = path.join(base, 'moncho-cli', 'moncho-cli', 'archive', 'refs', 'tags');
   fs.mkdirSync(target, { recursive: true });
   const file = path.join(target, `${ref}.tar.gz`);
-  const result = run('git', ['archive', '--format=tar.gz', `--prefix=${prefix}/`, '-o', file, 'HEAD']);
+
+  const index = path.join(base, 'fixture.index');
+  const env = { ...process.env, GIT_INDEX_FILE: index };
+  // -A stages additions, edits and deletions, and respects .gitignore: `agent/` and
+  // `node_modules/` stay out of the fixture exactly as they stay out of a release.
+  const added = run('git', ['add', '-A'], { env });
+  assert.equal(added.status, 0, `staging the fixture failed: ${added.stderr}`);
+  const tree = run('git', ['write-tree'], { env });
+  assert.equal(tree.status, 0, `writing the fixture tree failed: ${tree.stderr}`);
+
+  const result = run('git', ['archive', '--format=tar.gz', `--prefix=${prefix}/`, '-o', file, tree.stdout.trim()]);
   assert.equal(result.status, 0, `git archive failed: ${result.stderr}`);
+  fs.rmSync(index, { force: true });
   return { file, dir: path.dirname(file) };
 }
 
@@ -97,11 +115,14 @@ function stub(dir, name, body) {
  * asks (`can I download this`, `is a daemon reachable`) and refuse everything else,
  * so the assertions land on the installer's own logic rather than on the stub's.
  */
-function hermeticInstall({ work: existing, ref = REF } = {}) {
+function hermeticInstall({ work: existing, ref = REF, link = false } = {}) {
   const work = existing ?? fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-install-'));
   const base = path.join(work, 'archive');
   const bin = path.join(work, 'bin');
   const installDir = path.join(work, 'install');
+  // Where the installer puts the symlink. It reads XDG_BIN_HOME, so this — not the stub
+  // `bin/` above, which is only there to shadow curl and docker on PATH — is the seam.
+  const xdgBin = path.join(work, 'local-bin');
   fs.mkdirSync(bin, { recursive: true });
   makeArchive(base, { ref });
 
@@ -122,17 +143,23 @@ function hermeticInstall({ work: existing, ref = REF } = {}) {
   // The host check: `docker info` must succeed, and nothing else is asked of it here.
   stub(bin, 'docker', 'exit 0');
 
-  const result = run('bash', [installer, '--ref', ref, '--dir', installDir, '--no-symlink'], {
+  // `link` asks for the shape a real install has. The cases that only care about the
+  // staged tree keep `--no-symlink`, because the link is what the two link cases test.
+  const args = [installer, '--ref', ref, '--dir', installDir];
+  if (!link) args.push('--no-symlink');
+
+  const result = run('bash', args, {
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
+      XDG_BIN_HOME: xdgBin,
       FIXTURE: path.join(base, 'moncho-cli', 'moncho-cli', 'archive', 'refs', 'tags', `${ref}.tar.gz`),
       MONCHO_ARCHIVE_BASE: `file://${base}`,
       MONCHO_REPO: 'moncho-cli/moncho-cli',
       MONCHO_REF: ref,
     },
   });
-  return { work, installDir, result };
+  return { work, installDir, xdgBin, linkPath: path.join(xdgBin, 'moncho-cli'), result };
 }
 
 const CAN_INSTALL_HERMETICALLY = has('bash') && has('git') && has('tar');
@@ -190,6 +217,104 @@ test(
       'a refused install must leave the existing tree untouched'
     );
     assert.ok(fs.existsSync(path.join(first.installDir, 'config/prompt.md')), 'nothing was swapped out');
+  }
+);
+
+/**
+ * The one shape every real install has and the staged-tree cases deliberately skip: the
+ * runner is reached through `~/.local/bin/moncho-cli`, a symlink to the tree in
+ * `MONCHO_HOME`. Deriving the library directory from `BASH_SOURCE[0]` there points at
+ * the *link's* directory, so the runner died at its first `source` with
+ * "~/.local/bin/lib/common.sh: No such file" — a failure no `--no-symlink` install could
+ * ever show.
+ */
+test(
+  'the installed runner works when reached through the ~/.local/bin symlink',
+  { skip: CAN_INSTALL_HERMETICALLY ? false : 'bash, git and tar are required to stage an archive' },
+  () => {
+    const { work, installDir, linkPath, result } = hermeticInstall({ link: true });
+    assert.equal(result.status, 0, `install.sh failed:\n${result.stderr}`);
+    assert.ok(fs.lstatSync(linkPath).isSymbolicLink(), 'the installer links the runner, it does not copy it');
+
+    // `status` reads no daemon and writes nothing, so it is the cheapest command that
+    // proves the whole preamble ran: every lib was sourced before the dispatch.
+    const status = run(linkPath, ['status'], {
+      cwd: work,
+      env: { ...process.env, MONCHO_HOME: installDir },
+    });
+    assert.equal(
+      status.status,
+      0,
+      `the linked runner must run, not fail to source its libraries:\n${status.stderr}`
+    );
+    assert.doesNotMatch(status.stderr, /common\.sh|No such file/i, 'a library went unfound');
+    assert.match(status.stdout, new RegExp(`installed at\\s+${installDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  }
+);
+
+/**
+ * A user who hit the broken link worked around it by writing a wrapper script at the same
+ * name. `uninstall` guarded only on `-L`, so that file survived with no word said about
+ * it; the tree it pointed into was deleted and the name was left behind broken.
+ */
+test(
+  'uninstall removes a regular file at the binary name as well as the symlink',
+  { skip: CAN_INSTALL_HERMETICALLY ? false : 'bash, git and tar are required to stage an archive' },
+  () => {
+    const { installDir, linkPath, xdgBin, result } = hermeticInstall({ link: true });
+    assert.equal(result.status, 0, `install.sh failed:\n${result.stderr}`);
+
+    // The workaround: the symlink replaced by a real file at the same name.
+    fs.unlinkSync(linkPath);
+    fs.writeFileSync(linkPath, '#!/bin/sh\nexec "$HOME/.config/moncho-cli/bin/moncho-cli" "$@"\n', { mode: 0o755 });
+
+    const removed = run('bash', [installer, '--uninstall', '--dir', installDir], {
+      env: { ...process.env, XDG_BIN_HOME: xdgBin, MONCHO_HOME: installDir },
+    });
+    assert.equal(removed.status, 0, `uninstall failed:\n${removed.stderr}`);
+    assert.ok(!fs.existsSync(linkPath), 'a regular file at the binary name must be removed too');
+    assert.ok(!fs.existsSync(installDir), 'the installation must be removed');
+
+    // The state volumes hold the user's session history: named, not silently deleted.
+    assert.match(removed.stdout, /moncho-state-/, 'uninstall must name the leftover state volumes');
+  }
+);
+
+/**
+ * The verb a user actually has: `moncho-cli uninstall`, run through the installed copy
+ * itself. That is the case the installer path cannot cover — the tree being deleted is
+ * the one the running script lives in, and bash reads a script incrementally, so a
+ * careless `rm -rf` leaves it reading a file that no longer exists.
+ */
+test(
+  'the installed runner uninstalls itself, without docker and without a download',
+  { skip: CAN_INSTALL_HERMETICALLY ? false : 'bash, git and tar are required to stage an archive' },
+  () => {
+    const { work, installDir, linkPath, xdgBin, result } = hermeticInstall({ link: true });
+    assert.equal(result.status, 0, `install.sh failed:\n${result.stderr}`);
+    const env = { ...process.env, MONCHO_HOME: installDir, XDG_BIN_HOME: xdgBin };
+
+    // --purge without --yes is refused *before* anything is deleted: the volumes it
+    // would take are the user's session history, so consent is typed, not implied.
+    const refused = run(linkPath, ['uninstall', '--purge'], { cwd: work, env });
+    assert.notEqual(refused.status, 0, '--purge without --yes must refuse');
+    assert.match(refused.stderr, /--yes/i, 'the refusal must say what is missing');
+    assert.ok(fs.existsSync(linkPath), 'a refusal must delete nothing');
+    assert.ok(fs.existsSync(installDir), 'a refusal must delete nothing');
+
+    // The real thing. No docker is stubbed on PATH under the installer's name here, so
+    // reaching the daemon at all would fail the run: the plain verb must not need it.
+    const removed = run(linkPath, ['uninstall'], { cwd: work, env });
+    assert.equal(removed.status, 0, `the verb must remove the installation:\n${removed.stderr}`);
+    assert.ok(!fs.existsSync(linkPath), 'the PATH entry must be gone');
+    assert.ok(!fs.existsSync(installDir), 'the staged tree must be gone');
+
+    // It says what it left behind, and the command that would take it.
+    assert.match(removed.stdout, /--purge/, 'the verb must name the way to remove the rest');
+    assert.match(removed.stdout, /moncho-state-/, 'the verb must name the state volumes');
+
+    // The project directory the user was standing in is not the installation.
+    assert.ok(fs.existsSync(work), 'the workspace must survive an uninstall');
   }
 );
 

@@ -67,7 +67,7 @@ half-installed tree behind.
 | `--dir <path>` | Install somewhere other than `~/.config/moncho-cli` |
 | `--no-symlink` | Do not link `moncho-cli` into `~/.local/bin` |
 | `--force` | Replace an existing installation |
-| `--uninstall` | Remove the installation and the symlink |
+| `--uninstall` | Remove the installation and the `~/.local/bin` entry |
 | `-h`, `--help` | The installer's own help |
 
 The same three knobs are available as environment variables: `MONCHO_REPO`,
@@ -108,6 +108,7 @@ container can always be inspected and removed.
 | `moncho-cli shell` | Open a shell inside the running container |
 | `moncho-cli build` | Rebuild this project's image |
 | `moncho-cli status` | Print what this directory resolves to |
+| `moncho-cli uninstall` | Remove the installation (`--purge --yes` takes the images and volumes) |
 | `moncho-cli help` | The command's own help |
 
 ## Options
@@ -124,7 +125,8 @@ container can always be inspected and removed.
 | `--build-base` | Repaint the agent base image even when it exists |
 | `--base-only` | With `build`: stop after the base image |
 | `--skip-git` | Work here without a git repository |
-| `--yes`, `-y` | Take the default template instead of asking |
+| `--yes`, `-y` | Take the default template instead of asking; with `uninstall --purge`, confirm it |
+| `--purge` | With `uninstall`: also remove the images and the state volumes (needs `--yes`) |
 
 `--do-not-mount` and `--copy-files` are mutually exclusive. `--sync-files` requires one
 of them, because a bind mount already writes straight through.
@@ -343,18 +345,41 @@ on the host.
 
 ## Uninstalling
 
+The runner removes itself, since it is the one thing guaranteed to be installed:
+
+```bash
+moncho-cli uninstall
+```
+
+That deletes the `~/.local/bin/moncho-cli` entry (a symlink, or a regular file if you
+wrote a wrapper there) and the staged tree in `MONCHO_HOME`, wherever `--dir`,
+`MONCHO_HOME` or `XDG_BIN_HOME` put them — the verb reads the same variables the
+installer did, so no path has to be repeated. It needs no Docker daemon. Your project
+directories are never touched: a `Monchofile`, a `.env.moncho` and a `.moncho/` stay
+where they are.
+
+The images and the named state volumes are left alone, because the volumes *are* your
+session history, one per workspace. Take them too with:
+
+```bash
+moncho-cli uninstall --purge --yes
+```
+
+`--purge` removes every `moncho-agent:*` and `moncho-project:*` image and every
+`moncho-state-*` volume, and stops any container Moncho left running. It needs `--yes`
+because the volumes are not recoverable.
+
+If the installation is already broken, half-removed, or `moncho-cli` is no longer on
+`PATH`, the installer carries the same job — it is not part of the payload it installs,
+so it is fetched again to run:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/moncho-cli/moncho-cli/main/scripts/install.sh \
   | bash -s -- --uninstall
 ```
 
-The installer is not part of the payload it installs, so it is fetched again to run the
-uninstaller; from a checkout, `./scripts/install.sh --uninstall` does the same.
-
-That removes the installation and the symlink. It prints — but does not run — the
-`docker rmi` command for the images it created, so you can see what is being removed
-before anything is deleted. Named state volumes survive; remove one with
-`docker volume rm moncho-state-<hash>` when you no longer want the sessions.
+From a checkout, `./scripts/install.sh --uninstall` does the same. This path names the
+`docker rmi` and `docker volume ls` commands instead of running them.
 
 ## Troubleshooting
 

@@ -42,7 +42,7 @@ Options:
   --dir <path>       install here instead of ~/.config/moncho-cli
   --no-symlink       do not link moncho-cli into ~/.local/bin
   --force            replace an existing installation whose version is newer or equal
-  --uninstall        remove the installation and the symlink
+  --uninstall        remove the installation, the symlink and any state volumes note
   -h, --help         this text
 
 Environment:
@@ -201,19 +201,33 @@ next_steps() {
 }
 
 uninstall() {
-  if [ -n "$BIN_DIR" ] && [ -L "$BIN_DIR/moncho-cli" ]; then
-    rm -f "$BIN_DIR/moncho-cli"
-    log "Removed $BIN_DIR/moncho-cli"
+  # The link is what the installer created, but a user who worked around a broken
+  # link has a regular file there instead (`exec ~/.config/moncho-cli/bin/moncho-cli`).
+  # Guarding only on -L left that behind with no word about it, so anything at the name
+  # is removed — and a regular file says so, because it was not the installer's to own.
+  if [ -n "$BIN_DIR" ] && { [ -L "$BIN_DIR/moncho-cli" ] || [ -f "$BIN_DIR/moncho-cli" ]; }; then
+    if [ -L "$BIN_DIR/moncho-cli" ]; then
+      rm -f "$BIN_DIR/moncho-cli"
+      log "Removed $BIN_DIR/moncho-cli (symlink)"
+    else
+      rm -f "$BIN_DIR/moncho-cli"
+      log "Removed $BIN_DIR/moncho-cli (a regular file, not the installer's symlink)"
+    fi
   fi
   if [ -d "$INSTALL_DIR" ]; then
     rm -rf "$INSTALL_DIR"
     log "Removed $INSTALL_DIR"
   fi
-  # Images are not removed for the user: they may be shared with other installs, and
-  # deleting them silently would be a surprise. The command is printed instead.
+  # Images and state volumes are not removed for the user: images may be shared with
+  # other installs, and a state volume is the user's session history. Deleting either
+  # silently would be a surprise. The commands are printed instead.
   log ""
   log "The Docker images were left in place. To remove them:"
   log "  docker image rm moncho-agent:${REF} \$(docker images -q --filter reference='moncho-project:*')"
+  log ""
+  log "Session state was left in place too: one volume per workspace you ran it in."
+  log "That is the agent's conversation history, so removing it is your call:"
+  log "  docker volume ls --filter name=moncho-state- --format '{{.Name}}' | xargs -r docker volume rm"
 }
 
 main() {
