@@ -134,14 +134,19 @@ So the runner shadows it the same way, in bind mode:
 
 ```
 -v "$MONCHO_HOME:/opt/moncho-cli:ro"          # the installed payload, read-only
--v /opt/moncho-cli/node_modules               # except node_modules, which npm writes
+-v /opt/node_modules                          # the dependencies, which npm writes
 ```
 
 `node_modules` is the one part the agent may legitimately write — `run_npm install` is a
 supported tool — so an anonymous volume lets the image's copy win over the host's, the
-same trick `/app/node_modules` already uses. Both mounts are **conditional on the payload
-existing** (`$MONCHO_HOME/main.js`), for the same reason the other two shadows are: a
-mount point that does not exist becomes a directory.
+same trick `/app/node_modules` already uses. It lives at **`/opt/node_modules`, beside the
+module root and never inside it**, and that placement is load-bearing: a volume mounted at
+a path inside the read-only bind cannot be created, so the container dies at init
+(`mkdirat /opt/moncho-cli/node_modules: read-only file system`) before the agent starts.
+Node's resolver walks up from `/opt/moncho-cli` and finds `/opt/node_modules`, so the
+dependencies still resolve. Both mounts are **conditional on the payload existing**
+(`$MONCHO_HOME/main.js`), for the same reason the other two shadows are: a mount point that
+does not exist becomes a directory.
 
 This is the *boundary*; the tool-level half is that no file tool can name a path outside
 the project tree at all (`docs/agent/file-safety`), so `/opt/moncho-cli` is unreachable

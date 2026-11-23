@@ -58,14 +58,20 @@ build_run_args() {
   # as the host uid — root when the host user is root — so "the files are root-owned"
   # is not a boundary: a root-run container could rewrite the very code it executes.
   # Mounting the installed payload read-only over /opt/moncho-cli is one, and it is the
-  # same shadow trick the two host-executable paths use above. node_modules is the one
-  # part the agent may legitimately write (`run_npm install`), so an anonymous volume
-  # lets the image's copy win over the host's — the same trick /app/node_modules uses.
+  # same shadow trick the two host-executable paths use above.
+  #
+  # The payload's dependencies are the one part the agent may legitimately write
+  # (`run_npm install`), and they live at /opt/node_modules — *beside* the module root,
+  # never inside it. That placement is the whole reason this works: a volume mounted at
+  # a path inside a read-only bind cannot be created, and the container dies at init
+  # ("mkdirat /opt/moncho-cli/node_modules: read-only file system") before the agent
+  # runs. Node walks up from /opt/moncho-cli and finds /opt/node_modules, so an
+  # anonymous volume there gives the image's copy priority with no nested mount point.
   # Conditional on the payload existing, because docker creates a *directory* at a
   # mount point that does not exist.
   if [ -n "${MONCHO_HOME:-}" ] && [ -f "$MONCHO_HOME/main.js" ]; then
     RUN_ARGS+=(-v "$MONCHO_HOME:/opt/moncho-cli:ro")
-    RUN_ARGS+=(-v /opt/moncho-cli/node_modules)
+    RUN_ARGS+=(-v /opt/node_modules)
   fi
 
   # State: sessions, task.md, implementation_plan.md and the log all default under

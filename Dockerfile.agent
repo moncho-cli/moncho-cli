@@ -37,7 +37,24 @@ RUN apk add --no-cache \
 # repository layout has to survive the copy unchanged.
 WORKDIR /opt/moncho-cli
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+# Dependencies live in /opt/node_modules, *beside* the module root rather than inside it.
+# Node's resolver walks up from /opt/moncho-cli, so /opt/node_modules is found exactly as
+# ./node_modules would be — and the runner can mount the payload read-only as one whole
+# directory, with no mount point nested inside it. A writable volume at
+# /opt/moncho-cli/node_modules could not work: docker has to create the mount point
+# inside the read-only bind, and the container fails to init ("mkdirat ... read-only file
+# system") before the agent ever starts.
+#
+# No NODE_PATH is set, deliberately: the agent is ES modules (`"type": "module"`), and
+# ESM resolution ignores NODE_PATH entirely — the walk up the directory tree is what
+# makes /opt/node_modules work, and it is the only thing that does.
+#
+# The manifest is copied to /opt as well as to the module root, so this is an ordinary
+# install of the project's own dependencies: no second source of truth and no parsing the
+# manifest in a shell. `npm ci` needs the lockfile beside the manifest, so it goes too.
+COPY package.json package-lock.json /opt/
+RUN cd /opt && (npm ci --omit=dev --no-audit --no-fund \
+      || npm install --omit=dev --no-audit --no-fund)
 COPY main.js ./
 COPY app ./app
 COPY api ./api
@@ -65,8 +82,7 @@ RUN node -e "import('diff').then(m => { \
 #
 # The npm cache is the second half: HOME is "/" in this image and is not writable by
 # that uid, so `npm install <pkg>` would try to create "/.npm" and fail.
-RUN mkdir -p /opt/moncho-cli/node_modules \
- && chmod -R a+rwX /opt/moncho-cli/node_modules
+RUN chmod -R a+rwX /opt/node_modules
 RUN mkdir -p /tmp/.npm && chmod -R a+rwX /tmp/.npm
 ENV npm_config_cache=/tmp/.npm
 

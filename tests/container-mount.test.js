@@ -101,9 +101,17 @@ test('the installed payload is mounted read-only over the agent runtime', () => 
   const payloadMount = args.find((arg) => arg.endsWith(':/opt/moncho-cli:ro'));
   assert.ok(payloadMount, `expected a read-only payload mount, got:\n${args.join('\n')}`);
   assert.equal(payloadMount, `${home}:/opt/moncho-cli:ro`, 'the mount names the installed payload');
-  // node_modules is the one part the agent may write, so an anonymous volume lets the
-  // image's copy win — the same trick /app/node_modules uses.
-  assert.ok(args.includes('/opt/moncho-cli/node_modules'), 'node_modules is a writable volume');
+  // The dependencies are the one part the agent may write, so an anonymous volume lets
+  // the image's copy win — and it sits at /opt/node_modules, *beside* the payload rather
+  // than inside it. A volume mounted inside the read-only bind cannot be created at all:
+  // docker fails at init with "mkdirat /opt/moncho-cli/node_modules: read-only file
+  // system", which is how this shape was found. Node walks up from /opt/moncho-cli, so
+  // the dependencies are still resolved.
+  assert.ok(args.includes('/opt/node_modules'), 'the dependencies are a writable volume');
+  assert.ok(
+    !args.some((arg) => /^\/opt\/moncho-cli\/[^:]*$/.test(arg)),
+    'no writable volume may be mounted inside the read-only payload'
+  );
 });
 
 test('a payload that is not installed is not mounted', () => {
