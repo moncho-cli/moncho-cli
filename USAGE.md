@@ -389,6 +389,7 @@ From a checkout, `./scripts/install.sh --uninstall` does the same. This path nam
 | `moncho-cli: command not found` | `~/.local/bin` is not on `PATH`; the installer printed the line |
 | The agent cannot reach the provider | The base URL must be reachable from *inside* the container; a host Ollama needs the gateway name |
 | Files are owned by root | The container was started without the uid mapping; remove it and let the runner recreate it |
+| `EACCES: permission denied, mkdir '/app/agent/sessions/…'` | The state volume arrived root-owned. `moncho-cli` fixes it on the next `run`; if it persists, `docker volume rm moncho-state-<hash>` and run again |
 | `not a git repository` | Run `git init`, or move into an existing repository, or pass `--skip-git` |
 
 ## Where the rest is written down

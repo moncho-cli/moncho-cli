@@ -123,6 +123,77 @@ test('a payload that is not installed is not mounted', () => {
 });
 
 /**
+ * Drive `ensure_state_writable()` with a stub `docker` on PATH, recording the argv it
+ * received. The volume docker creates is root-owned and empty, so the agent's first
+ * `mkdir /app/agent/sessions/<id>` fails with EACCES while the container runs as the host
+ * uid — the failure this step exists to prevent. The argv is what matters: the container
+ * has to run as root, mount the state volume, and create the directory before chmodding it.
+ */
+function runStateWritable({ stateMode = 'volume', dockerFails = false } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-state-'));
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  // Record every argv, then succeed or fail — `docker run` is the only call this makes.
+  const stub = [
+    '#!/bin/bash',
+    'printf "%s\\n" "$*" >> "$RECORD"',
+    dockerFails ? 'exit 1' : 'exit 0',
+  ].join('\n');
+  fs.writeFileSync(path.join(bin, 'docker'), stub, { mode: 0o755 });
+
+  const record = path.join(dir, 'argv.txt');
+  const script = [
+    'set -euo pipefail',
+    'log() { :; }',
+    'die() { printf "DIE %s\\n" "$*" >&2; exit 1; }',
+    'warn() { printf "WARN %s\\n" "$*" >&2; }',
+    'STATE_VOLUME=moncho-state-test',
+    'PROJECT_IMAGE=moncho-test:latest',
+    `STATE_MODE=${stateMode}`,
+    `source ${JSON.stringify(library)}`,
+    'ensure_state_writable',
+  ].join('\n');
+
+  const result = spawnSync('bash', ['-c', script], {
+    encoding: 'utf-8',
+    cwd: dir,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RECORD: record },
+  });
+  const calls = fs.existsSync(record) ? fs.readFileSync(record, 'utf-8').trim().split('\n').filter(Boolean) : [];
+  return { calls, result };
+}
+
+test('the state volume is made writable for the mapped uid before the agent starts', () => {
+  const { calls, result } = runStateWritable();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(calls.length, 1, `expected exactly one docker call, got:\n${calls.join('\n')}`);
+
+  const argv = calls[0];
+  assert.match(argv, /\brun\b/, 'the step runs a container');
+  assert.match(argv, /-u 0\b/, 'only root can chmod a volume root docker created');
+  assert.match(argv, /--entrypoint sh\b/, 'the agent entrypoint would start the agent, not a shell');
+  assert.match(argv, /-v moncho-state-test:\/app\/agent\b/, 'it mounts the state volume it fixes');
+  // A fresh volume is *empty*: chmod alone would fail on a missing path.
+  assert.match(argv, /mkdir -p \/app\/agent/, 'the directory is created before it is chmodded');
+  assert.match(argv, /chmod a\+rwX \/app\/agent\b/, 'the volume root is made writable');
+  assert.match(argv, /--rm\b/, 'the helper container does not linger');
+});
+
+test('a failed chmod warns instead of aborting the run', () => {
+  // The agent's own write reports the problem far better than this step could, so the
+  // step must not be the thing that kills a run.
+  const { result } = runStateWritable({ dockerFails: true });
+  assert.equal(result.status, 0, 'a failed chmod is not fatal');
+  assert.match(result.stderr, /could not make moncho-state-test writable/, 'it says what may break');
+});
+
+test('--state-in-repo needs no volume step, so no container is started for it', () => {
+  const { calls, result } = runStateWritable({ stateMode: 'repo' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(calls.length, 0, 'the state is a bind mount; nothing to chmod');
+});
+
+/**
  * Drive `sync_back()` with a stub `docker` on PATH. The stub answers `ps -aq` with a
  * container name and `cp` by copying a fixture tree, so the function's own logic — the
  * staging copy and the `agent/` removal — runs for real without a daemon.

@@ -102,10 +102,33 @@ build_run_args() {
   RUN_ARGS+=("$PROJECT_IMAGE")
 }
 
+# The state volume is created by docker **root-owned and empty**, while the agent runs as
+# the host uid (`-u $(id -u):$(id -g)`). Its first write — `mkdir
+# /app/agent/sessions/<id>` — therefore fails with EACCES before the TUI ever paints, and
+# the run dies with a stack trace rather than an explanation.
+#
+# Docker populates a fresh named volume with an image directory's *contents*, not with
+# that directory's own mode, so creating /app/agent in the image does not fix this: the
+# volume root has to be chmodded, and only root can. One throwaway container does it,
+# before the agent's own starts.
+#
+# Only the root is touched, not `-R`: everything the agent creates inside it is already
+# its own, and a recursive chmod over a long session history would cost more than it
+# could ever fix. Failures warn rather than abort — a container that is about to fail on
+# its own write says so far better than this step can.
+ensure_state_writable() {
+  [ "$STATE_MODE" = "volume" ] || return 0
+  docker run --rm -u 0 --entrypoint sh \
+    -v "$STATE_VOLUME:/app/agent" \
+    "$PROJECT_IMAGE" -c 'mkdir -p /app/agent && chmod a+rwX /app/agent' >/dev/null 2>&1 \
+    || warn "could not make $STATE_VOLUME writable; the agent may fail to save its state"
+}
+
 # `run`: foreground, disposable, and it refuses to fight a container that is already
 # up for this workspace — start.sh's behaviour, one workspace at a time.
 run_container() {
   ensure_project_image
+  ensure_state_writable
   if container_running; then
     die "a container for this project is already running ($CONTAINER_NAME):
        attach to it with 'docker start -ai $CONTAINER_NAME',
@@ -151,6 +174,7 @@ run_container() {
 # container the agent is already running in.
 start_container() {
   ensure_project_image
+  ensure_state_writable
   if container_running; then
     die "container $CONTAINER_NAME is already running"
   fi

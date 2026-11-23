@@ -45,6 +45,9 @@ tests:
       - a workspace with no .git or env file gets no shadow mount
       - the installed payload is mounted read-only over the agent runtime
       - a payload that is not installed is not mounted
+      - the state volume is made writable for the mapped uid before the agent starts
+      - a failed chmod warns instead of aborting the run
+      - "--state-in-repo needs no volume step, so no container is started for it"
       - copy mode mounts nothing at all, so there is nothing to shadow
       - sync_back never copies the agent state back to the host
       - the --sync-delete path excludes agent/ too

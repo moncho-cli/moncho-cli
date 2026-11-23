@@ -156,6 +156,23 @@ through `write_file` / `edit_file` / `delete_file` even before the mount is cons
 index write fail noisily, and the flag keeps ordinary read commands quiet. It is harmless in
 `copy`/`none` mode, where nothing is mounted at all.
 
+### The state volume has to be made writable, and that is part of the same boundary
+
+The named state volume is mounted at `/app/agent` with the agent running as the host uid
+(`-u $(id -u):$(id -g)`). Docker creates a fresh named volume **root-owned and empty**, so
+the agent's first write — `mkdir /app/agent/sessions/<id>` — fails with `EACCES` and the
+run dies before the TUI paints.
+
+The modes are the trap: docker seeds a new volume with an image directory's *contents*,
+not with that directory's own mode, so creating `/app/agent` in the image does not make the
+volume root writable. `bin/lib/container.sh#ensure_state_writable` therefore runs one
+throwaway container as root — `mkdir -p /app/agent && chmod a+rwX /app/agent` on the mounted
+volume — before the agent's own container starts, on both `run` and `start`. Only the root
+is touched, never `-R`: everything the agent creates inside it is already its own. A failure
+warns rather than aborting, because the agent's own write reports the problem far better
+than this step can. Under `--state-in-repo` the state is a bind mount and the step does
+nothing.
+
 ## What it does not cover
 
 The mount closes the write path in bind mode. It does not change what the **host** does with
