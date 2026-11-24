@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   contentModalSize, contentModalOrigin, nextDocumentIndex, clampScroll,
   documentLabel, contentHint, openContentModal, CONTENT_MODAL_MARGIN,
+  CONTENT_MODAL_WIDTH_RATIO, visibleDocuments, documentsChanged,
 } from '../app/content-modal.js';
 import { taskCommand, parseTaskArg, readDocuments } from '../app/task-command.js';
 import { createDefaultCommands } from '../app/commands.js';
@@ -40,10 +41,14 @@ test.afterEach(() => {
   fs.rmSync(path.join(root, 'agent'), { recursive: true, force: true });
 });
 
-test('the box takes most of the screen but never all of it', () => {
+test('the box takes most of the width, and the height it always did', () => {
   const size = contentModalSize({ width: 100, height: 40 });
-  assert.equal(size.width, 100 - CONTENT_MODAL_MARGIN * 2);
+  assert.equal(size.width, 90, 'nine tenths of the columns');
+  assert.equal(size.width, Math.round(100 * CONTENT_MODAL_WIDTH_RATIO));
   assert.equal(size.height, 40 - CONTENT_MODAL_MARGIN * 2);
+
+  // The width never swallows the screen: a strip is left for the conversation.
+  assert.ok(size.width < 100);
 
   // A tiny terminal still gets a box, clamped to the screen rather than overflowing it.
   const small = contentModalSize({ width: 20, height: 6 });
@@ -55,14 +60,32 @@ test('the box takes most of the screen but never all of it', () => {
   assert.ok(fallback.width > 0 && fallback.height > 0);
 });
 
-test('the box is centred, and never placed off the screen', () => {
-  const origin = contentModalOrigin({ width: 60, height: 20 }, { width: 100, height: 40 });
-  assert.equal(origin.left, 20);
+test('the box is anchored right and vertically centred, and never off the screen', () => {
+  // The columns it does not take stay on the LEFT, where the conversation is: that strip is
+  // the whole reason the box is anchored rather than centred.
+  const origin = contentModalOrigin({ width: 90, height: 20 }, { width: 100, height: 40 });
+  assert.equal(origin.left, 10);
   assert.equal(origin.top, 10);
+  assert.equal(origin.left + 90, 100, 'the box ends exactly at the right edge');
 
   const clamped = contentModalOrigin({ width: 120, height: 50 }, { width: 100, height: 40 });
   assert.equal(clamped.left, 0);
   assert.equal(clamped.top, 0);
+});
+
+test('a re-read is a change only when the documents really differ', () => {
+  const before = [{ name: 'task.md', text: 'one' }];
+  // A fresh array with the same bytes is NOT a change — the caller rebuilds the list on every
+  // tick, so identity would repaint the box three times a minute for nothing.
+  assert.equal(documentsChanged(before, [{ name: 'task.md', text: 'one' }]), false);
+  assert.equal(documentsChanged(before, [{ name: 'task.md', text: 'two' }]), true, 'an edit');
+  assert.equal(documentsChanged(before, [{ name: 'plan.md', text: 'one' }]), true, 'a renamed file');
+  assert.equal(documentsChanged(before, []), true, 'a document that went away');
+  assert.equal(documentsChanged([], before), true, 'a document that appeared');
+
+  // A document with no text is not shown, so it is not a change either.
+  assert.equal(documentsChanged(before, [...before, { name: 'plan.md', text: null }]), false);
+  assert.deepEqual(visibleDocuments([...before, { name: 'plan.md', text: null }]), before);
 });
 
 test('the document cursor wraps, and a single document stays put', () => {
@@ -141,6 +164,41 @@ test('the modal cycles between documents and keeps the keyboard lease', async ()
 test('the modal resolves null when there is nothing to show', async () => {
   const result = await openContentModal({ screen: null, documents: [] });
   assert.equal(result, null);
+});
+
+test('an open viewer follows the files, repainting only when the bytes change', async () => {
+  await withTui(async (tui) => {
+    // A clock the test drives by hand, so "every few seconds" is proved without waiting.
+    const ticks = [];
+    let live = { name: 'task.md', text: '- [ ] one\n' };
+    const opening = openContentModal({
+      screen: tui.screen,
+      documents: [live],
+      refresh: tui.refresh,
+      reload: () => [live],
+      refreshMs: 5,
+      timer: { set: (fn) => { ticks.push(fn); return { unref() {} }; }, clear: () => {} },
+    });
+    await flush();
+
+    const box = tui.screen.children.at(-2);
+    assert.match(box.getContent(), /- \[ \] one/);
+    assert.equal(ticks.length, 1, 'one timer was armed for the open viewer');
+
+    // Same bytes: the box is not repainted for nothing.
+    const painted = box.getContent();
+    assert.equal(ticks[0](), false, 'a re-read with no change reports no change');
+    assert.equal(box.getContent(), painted);
+
+    // The file changes underneath: the next tick shows it.
+    live = { name: 'task.md', text: '- [x] one\n- [ ] two\n' };
+    assert.equal(ticks[0](), true, 'a real change is reported and repainted');
+    assert.match(box.getContent(), /- \[x\] one/);
+    assert.match(box.getContent(), /- \[ \] two/);
+
+    press(tui.screen, 'escape');
+    await opening;
+  });
 });
 
 test('a drag inside the viewer copies the selected document text', async () => {
@@ -225,6 +283,28 @@ test('/task opens the viewer with both documents and reports the close', async (
   assert.equal(seen.documents.length, 2);
   assert.equal(seen.documents[0].text, TASK);
   assert.equal(seen.documents[1].text, PLAN);
+});
+
+test('/task hands the viewer a live re-read of the same files', async () => {
+  registerSession({ id: ID });
+  ensureTrackingFiles();
+  fs.writeFileSync(path.join(root, FOLDER, 'task.md'), TASK, 'utf-8');
+  fs.writeFileSync(path.join(root, FOLDER, 'implementation_plan.md'), PLAN, 'utf-8');
+
+  let seen = null;
+  await taskCommand().run({
+    arg: 'task',
+    contentView: async (view) => { seen = view; return { closed: 'escape', document: 0 }; },
+  });
+
+  assert.equal(typeof seen.reload, 'function', 'the viewer is given something to re-read with');
+  assert.equal(seen.reload()[0].text, TASK, 'the first re-read says what is on disk');
+  assert.equal(seen.reload().length, 1, '/task task re-reads task.md alone');
+
+  // The write happens *after* the box was opened, which is the case the reload exists for.
+  const edited = TASK.replace('- [ ] one', '- [x] one');
+  fs.writeFileSync(path.join(root, FOLDER, 'task.md'), edited, 'utf-8');
+  assert.equal(seen.reload()[0].text, edited, 'the next re-read sees the write');
 });
 
 test('/task names a document, and refuses an unknown one', async () => {

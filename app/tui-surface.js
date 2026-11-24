@@ -188,11 +188,14 @@ export function createTuiSurface({
       const choice = await tui.choose([`Yes — ${question}`, 'No'], { title });
       return choice === 0;
     },
-    contentView: ({ documents = [], title = 'Content' } = {}) => openContentModal({
+    contentView: ({ documents = [], title = 'Content', reload = null } = {}) => openContentModal({
       screen,
       documents,
       title,
       refresh,
+      // A live re-read, when the command supplied one: the viewer follows the tracking files
+      // while it is open instead of freezing the bytes it was opened with.
+      reload,
       // The viewer is selectable and copyable like the conversation
       // (`docs/interface/clipboard-selection`): the same writer, the same toast.
       copy: clipboard ? (text) => clipboard.copy(text) : null,

@@ -1,0 +1,30 @@
+id: interface/design-review
+domain: interface
+title: The design checklist review at the turn boundary
+status: active
+summary: >
+  When a design turn stops and the session is waiting for the user again, the host puts the
+  session's task.md back on screen as a titled block, deterministically and without asking the
+  model to do anything. It follows a turn that landed and a turn that was aborted, reads the
+  live mode on every turn (so Tab moves it and work:on is covered), and shows nothing in chat
+  or work, on a front end with no block sink, when there is no checklist yet, or when the
+  bytes are unchanged. The block is presentation only: it reaches the transcript's own sink
+  and never the model context.
+code:
+  - path: app/design-review.js
+    symbols: [shouldReviewDesign, formatDesignReview, createDesignReview]
+  - path: app/session-loop.js
+    symbols: [runSessionLoop]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/design-review.test.js
+    cases:
+      - "the review belongs to design alone, and the lock is covered by the mode"
+      - "the block is titled, carries the checklist verbatim, and paints in the tracking colour"
+      - "a design turn shows the checklist, and a repeated one does not"
+      - "chat and work show nothing, and a missing checklist is silence"
+      - "a reader that throws costs the turn nothing"
+      - "the review is presentation only: it never touches the model context"
+      - "the loop reviews the checklist when a design turn lands, and not in chat"
+      - "an aborted design turn still reviews, and a failure does not"

@@ -29,9 +29,14 @@ import { highlightRows, wrapWidthOf } from './transcript-highlight.js';
  *    `contentRows()` strips nothing from — that escaping exists only so the **selection
  *    band** can be inserted into a line, which a `tags: false` box cannot do at all
  *    (`docs/interface/clipboard-selection`).
- *  - **the box takes most of the screen, never all of it.** The size is computed from
- *    the live terminal and leaves a margin on every side, so the user can still see that
- *    a conversation is behind the modal (`contentModalSize()`).
+ *  - **the box takes most of the width, anchored right.** The size is computed from the
+ *    live terminal (`contentModalSize()`) and the origin pins the box to the right edge
+ *    (`contentModalOrigin()`), so a strip of the conversation stays visible on the left
+ *    and the user can watch a turn land while they read the checklist.
+ *  - **it re-reads itself while it is open.** The caller hands over a `reload()` that
+ *    reads the files again; a timer calls it every `refreshMs` and repaints only when the
+ *    bytes really changed, so a viewer left open shows the pair being written rather than a
+ *    snapshot taken when it was opened.
  *  - **the keyboard is a lease.** The screen's dispatch is locked and a program-level
  *    listener is prepended, exactly as the other modals do it
  *    (`app/keyboard-ownership.js`), so the transcript and the input box never see the
@@ -45,8 +50,17 @@ import { highlightRows, wrapWidthOf } from './transcript-highlight.js';
  * when the user closes it, or `null` when there was nothing to show.
  */
 
-/** How much of the terminal the box leaves free on each side. */
+/** How much of the terminal's *height* the box leaves free on each side. */
 export const CONTENT_MODAL_MARGIN = 2;
+
+/**
+ * How much of the terminal's width the box takes. The rest stays visible on the left,
+ * which is the whole point of anchoring the box right rather than centring it.
+ */
+export const CONTENT_MODAL_WIDTH_RATIO = 0.9;
+
+/** How often an open viewer re-reads the files it was given. */
+export const CONTENT_MODAL_REFRESH_MS = 3000;
 
 /** The smallest box worth drawing, so a tiny terminal still shows something. */
 export const CONTENT_MODAL_MIN_WIDTH = 20;
@@ -55,8 +69,10 @@ export const CONTENT_MODAL_MIN_HEIGHT = 5;
 /**
  * The size of the box for a terminal of `width` × `height`.
  *
- * Most of the screen, never all of it: the margin is what tells the user the modal is an
- * overlay rather than the whole interface. A terminal smaller than the minimums gets the
+ * Most of the width, never all of it: the box takes `CONTENT_MODAL_WIDTH_RATIO` of the
+ * columns, so the conversation stays visible in the strip that is left (`contentModalOrigin()`
+ * pins the box to the right edge, which is where that strip comes from). The height leaves a
+ * margin on each side, the way it always did. A terminal smaller than the minimums gets the
  * minimums clamped to the terminal, so the box is never bigger than the screen.
  *
  * @param {{width?: number, height?: number}} [size]
@@ -66,7 +82,7 @@ export function contentModalSize({ width = 80, height = 24 } = {}) {
   const cols = Math.max(1, Math.floor(Number(width) || 80));
   const rows = Math.max(1, Math.floor(Number(height) || 24));
   const wanted = {
-    width: Math.max(CONTENT_MODAL_MIN_WIDTH, cols - CONTENT_MODAL_MARGIN * 2),
+    width: Math.max(CONTENT_MODAL_MIN_WIDTH, Math.round(cols * CONTENT_MODAL_WIDTH_RATIO)),
     height: Math.max(CONTENT_MODAL_MIN_HEIGHT, rows - CONTENT_MODAL_MARGIN * 2),
   };
   return {
@@ -76,7 +92,11 @@ export function contentModalSize({ width = 80, height = 24 } = {}) {
 }
 
 /**
- * Where the box sits: centred, and never off the screen.
+ * Where the box sits: vertically centred, anchored to the right edge, and never off screen.
+ *
+ * The right anchor is deliberate rather than cosmetic: the columns the box does not take
+ * stay on the **left**, where the conversation is, so an open `/task` leaves a live strip of
+ * the transcript visible instead of a centred box with two useless slivers.
  *
  * @param {{width: number, height: number}} size the box size
  * @param {{width: number, height: number}} screen the terminal size
@@ -89,7 +109,7 @@ export function contentModalOrigin(size, screen) {
   const boxHeight = Math.min(Number(size?.height) || rows, rows);
   return {
     top: Math.max(0, Math.floor((rows - boxHeight) / 2)),
-    left: Math.max(0, Math.floor((cols - boxWidth) / 2)),
+    left: Math.max(0, Math.floor(cols - boxWidth)),
   };
 }
 
@@ -137,6 +157,40 @@ export function documentLabel(doc, index, count) {
   return ` ${name} (${at}/${total}) `;
 }
 
+/**
+ * The documents a viewer can really show: the ones carrying text, in the order given.
+ *
+ * One rule, used twice — when the viewer opens and on every re-read — so a file that has
+ * since been deleted is dropped by the same code that filtered the first list rather than
+ * by a second, subtly different one.
+ *
+ * @param {Array<object>} documents
+ * @returns {Array<object>}
+ */
+export function visibleDocuments(documents = []) {
+  return (Array.isArray(documents) ? documents : [])
+    .filter((doc) => doc && typeof doc.text === 'string');
+}
+
+/**
+ * Whether two document lists say different things.
+ *
+ * Compared on the **bytes of the documents** and never on object identity, because the caller
+ * builds a fresh array on every re-read: identity would report a change on every tick and
+ * repaint the box three times a minute for nothing. A document that appears, disappears or is
+ * edited is a change; a re-read that finds the same text is not.
+ *
+ * @param {Array<object>} before
+ * @param {Array<object>} after
+ * @returns {boolean}
+ */
+export function documentsChanged(before = [], after = []) {
+  const a = visibleDocuments(before);
+  const b = visibleDocuments(after);
+  if (a.length !== b.length) return true;
+  return a.some((doc, i) => doc.text !== b[i].text || (doc.name ?? '') !== (b[i].name ?? ''));
+}
+
 /** The footer hint, naming the keys that actually work. */
 export function contentHint(count = 1) {
   const base = '↑↓ scroll · PgUp/PgDn page · Home/End · Enter/Esc close';
@@ -154,6 +208,10 @@ export function contentHint(count = 1) {
  * @param {string} [options.title] the box's outer title
  * @param {Function} [options.refresh] repaint hook
  * @param {Function} [options.onOpenChange] told when the modal opens and closes
+ * @param {Function} [options.reload] re-reads the documents; a viewer with one follows the
+ *   files while it is open instead of showing the snapshot it was opened with
+ * @param {number} [options.refreshMs] how often `reload` runs
+ * @param {{set: Function, clear: Function}} [options.timer] the interval, injectable
  * @param {Function} [options.copy] `(text) => report` — the clipboard writer
  *   (`app/tui-clipboard.js`); absent leaves the modal readable but not copyable
  * @param {Function} [options.notify] `(report, text)` — told what the copy did
@@ -167,9 +225,11 @@ export function openContentModal({
   onOpenChange = null,
   copy = null,
   notify = null,
+  reload = null,
+  refreshMs = CONTENT_MODAL_REFRESH_MS,
+  timer = { set: setInterval, clear: clearInterval },
 } = {}) {
-  const docs = (Array.isArray(documents) ? documents : [])
-    .filter((doc) => doc && typeof doc.text === 'string');
+  let docs = visibleDocuments(documents);
   if (docs.length === 0) return Promise.resolve(null);
 
   const repaint = typeof refresh === 'function' ? refresh : () => screen?.render?.();
@@ -273,9 +333,54 @@ export function openContentModal({
       repaint();
     };
 
+    /**
+     * Take a re-read of the files and repaint **only when something really changed**.
+     *
+     * Four rules keep a viewer left open cheap and honest:
+     *
+     *  - a caller with no `reload` (a bare call, the unit tests) never re-reads, so the timer
+     *    is not even armed;
+     *  - a re-read that throws — a file deleted between the read and the paint — is not news
+     *    the viewer can act on: the documents already on screen stay, and the next tick retries;
+     *  - the documents that actually arrived replace the ones on screen and the document index
+     *    is clamped to them, because a file can disappear while the box is open (`paint()`
+     *    clamps the scroll offset itself, so a file that shrinks cannot leave an empty box);
+     *  - a re-read that says nothing new repaints nothing: the pair is read every
+     *    `refreshMs` for as long as the box is open, and blinking the screen each time would
+     *    be worse than the staleness it fixes.
+     */
+    const refreshNow = () => {
+      if (done || typeof reload !== 'function') return false;
+      let next = null;
+      try {
+        next = reload();
+      } catch {
+        return false;
+      }
+      if (!documentsChanged(docs, next)) return false;
+      const arrived = visibleDocuments(next);
+      // Everything gone: keep showing what was there rather than an empty box.
+      if (arrived.length === 0) return false;
+      docs = arrived;
+      index = Math.min(index, docs.length - 1);
+      paint();
+      return true;
+    };
+
+    let refreshHandle = null;
+    if (typeof reload === 'function') {
+      refreshHandle = timer.set(() => refreshNow(), refreshMs);
+      // An interval would otherwise hold the process open for as long as the viewer is up.
+      refreshHandle?.unref?.();
+    }
+
     function close(reason) {
       if (done) return;
       done = true;
+      if (refreshHandle) {
+        timer.clear(refreshHandle);
+        refreshHandle = null;
+      }
       screen?.program?.removeListener?.('keypress', onKey);
       // The gesture bindings outlive no one: disposed before the box they were made for.
       gestures.dispose();

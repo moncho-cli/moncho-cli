@@ -241,6 +241,9 @@ export async function handleCommand(input, {
  * @param {object} options.abortManager the AbortManager
  * @param {Function} [options.saveSession] called with the reason ('turn'/'exit')
  * @param {Function} [options.onTurnLanded] hook after a successful turn
+ * @param {object|null} [options.designReview] the `design` checklist reviewer
+ *   (`app/design-review.js`); the loop shows its block the moment thinking stops and the
+ *   session is waiting for a person again — after a turn lands, or after an abort
  * @returns {Promise<'exit'>} how the loop ended
  */
 export async function runSessionLoop({
@@ -254,6 +257,7 @@ export async function runSessionLoop({
   drive = null,
   skinSubchat = null,
   contentView = null,
+  designReview = null,
   abortManager = null,
   saveSession = () => null,
   autosave = null,
@@ -313,6 +317,10 @@ export async function runSessionLoop({
       continue;
     }
 
+    // True once this turn stopped for a reason that hands the session back to the user — a
+    // landed turn or an abort — which is exactly when a `design` review is worth showing. A
+    // failure that propagates is not that moment, so it leaves the flag where it is.
+    let settled = false;
     abortManager?.startTask();
     try {
       tui?.startSpinner();
@@ -323,15 +331,23 @@ export async function runSessionLoop({
       // longer worth showing (main.js drops the retry notice here).
       if (typeof onTurnLanded === 'function') onTurnLanded();
       commit('turn');
+      settled = true;
     } catch (error) {
       if (isAbortError(error)) {
         log('\n[Info] Task was aborted.');
+        // An abort is still thinking stopping and the session waiting for a person
+        // again, so a `design` review belongs here too (`docs/interface/design-review`).
+        settled = true;
         continue;
       }
       throw error;
     } finally {
       tui?.stopSpinner();
       abortManager?.endTask();
+      // The one moment the review is useful: reasoning has stopped and the keyboard is
+      // back. Deterministic host code, presentation only — never a chunk, never in the
+      // request sent to the provider (`app/design-review.js`).
+      if (settled) designReview?.maybeShow?.();
     }
   }
 }

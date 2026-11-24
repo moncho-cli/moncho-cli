@@ -24,12 +24,27 @@ remembering the session folder.
 
 ## The modal
 
-- The box is **read-only and verbatim**: it is built with `tags: false`, so a checklist
-  containing `{braced}` text or a table shows its own bytes instead of being interpreted as
-  a colour tag. `/task` is the view of what is really on disk, so a second, lossy rendering
-  would defeat it.
-- It fills **most** of the screen, never all of it: `contentModalSize()` subtracts a margin
-  from each side and clamps to the terminal, so the conversation stays visible behind it.
+- The box is **read-only and verbatim**: a checklist containing `{braced}` text or a table
+  shows its own bytes instead of being interpreted as a colour tag. `/task` is the view of
+  what is really on disk, so a second, lossy rendering would defeat it. The document reaches
+  the widget through `escapeTags()`, so the box parses tags while what is drawn stays the
+  file's own bytes; why the box is not `tags: false` is stated below, with the selection. It
+  is nonetheless **read-only**: nothing it draws can be changed from it.
+- It takes **nine tenths of the width and is anchored to the right edge**: `contentModalSize()`
+  computes the width from the live terminal and `contentModalOrigin()` pins the box to the
+  right, so the columns left over stay on the *left*, where the conversation is — an open
+  `/task` leaves a live strip of the transcript visible instead of a centred box with two
+  useless slivers. The height keeps a margin on each side, and both are clamped to the
+  terminal so the box is never bigger than the screen.
+- **It follows the files while it is open.** The command hands the viewer a `reload()` that
+  re-reads the same documents through the same store, and the box calls it every
+  `CONTENT_MODAL_REFRESH_MS` (three seconds), repainting **only when the bytes really
+  changed** — `documentsChanged()` compares the text, never the object identity the caller
+  rebuilds on every tick. So a session that is writing its checklist as the user watches
+  shows the writes rather than the snapshot taken when `/task` was typed. A caller with no
+  `reload` (a bare call, the unit tests) re-reads nothing and arms no timer; a re-read that
+  throws leaves the documents already on screen alone; and the interval is `unref`'d, so an
+  open viewer can never be the reason the process stays alive.
 - One box holds **both** documents; `tab` moves to the next one and the label says which
   document and its position (`task.md (1/2)`). Opening two boxes would stack two overlays
   for one question.

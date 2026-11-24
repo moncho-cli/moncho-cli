@@ -4,17 +4,19 @@ title: The /task read-only tracking viewer
 status: active
 summary: >
   /task opens the session's own task.md and implementation_plan.md in a read-only modal,
-  verbatim and as they are on disk. The box fills most of the terminal but never all of it,
-  holds both documents behind one keyboard lease (tab moves between them, the label names
-  the position), and closes on escape, enter or ctrl-c. The command reads through the same
-  store the tracking tools use, refuses an unknown document name, and refuses a session
-  with no pair without creating one. A front end without a screen gets the documents as
-  plain lines, so the command is never a no-op.
+  verbatim and as they are on disk. The box takes nine tenths of the width, anchored to the
+  right edge so a live strip of the conversation stays visible on the left, and follows the
+  files on a timer, repainting only when the bytes really changed. It holds both documents
+  behind one keyboard lease (tab moves between them, the label names the position), and
+  closes on escape, enter or ctrl-c. The command reads through the same store the tracking
+  tools use, refuses an unknown document name, and refuses a session with no pair without
+  creating one. A front end without a screen gets the documents as plain lines, so the
+  command is never a no-op.
 code:
   - path: app/task-command.js
     symbols: [taskCommand, parseTaskArg, readDocuments, TASK_DOCUMENTS]
   - path: app/content-modal.js
-    symbols: [openContentModal, contentModalSize, contentModalOrigin, nextDocumentIndex, clampScroll, documentLabel, contentHint]
+    symbols: [openContentModal, contentModalSize, contentModalOrigin, nextDocumentIndex, clampScroll, documentLabel, contentHint, visibleDocuments, documentsChanged]
   - path: app/commands.js
     symbols: [createDefaultCommands]
   - path: app/tui-surface.js
@@ -24,18 +26,21 @@ code:
 tests:
   - path: tests/task-viewer.test.js
     cases:
-      - "the box takes most of the screen but never all of it"
-      - "the box is centred, and never placed off the screen"
+      - "the box takes most of the width, and the height it always did"
+      - "the box is anchored right and vertically centred, and never off the screen"
+      - "a re-read is a change only when the documents really differ"
       - "the document cursor wraps, and a single document stays put"
       - "the scroll offset is clamped to the lines that are really there"
       - "the label names the document and its position, and the hint names the keys"
       - "the modal shows the document verbatim and closes on Escape"
       - "the modal cycles between documents and keeps the keyboard lease"
       - "the modal resolves null when there is nothing to show"
+      - "an open viewer follows the files, repainting only when the bytes change"
       - "a drag inside the viewer copies the selected document text"
       - "/task ships in the default registry, so the user can type it"
       - "/task reads the session pair through the same store the tools use"
       - "/task opens the viewer with both documents and reports the close"
+      - "/task hands the viewer a live re-read of the same files"
       - "/task names a document, and refuses an unknown one"
       - "/task prints the documents when the front end has no screen"
       - "/task refuses a session with no tracking files instead of seeding them"

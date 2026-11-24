@@ -20,6 +20,7 @@ import { createToolEcho } from './app/tool-echo.js';
 import { formatUserEcho } from './app/tui-render.js';
 import { runSessionLoop, handleCommand } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
+import { createDesignReview } from './app/design-review.js';
 import { createBusyCommandRunner } from './app/busy-command.js';
 import { registerSession, registerTrackingNotifier, registerCollapseNotifier, registerLogger } from './utils/host.js';
 import { createLogger, logEvent } from './utils/logger.js';
@@ -280,6 +281,17 @@ async function main() {
   // restart and no second conversation.
   const drive = createWorkDrive({ mode: sessionMode, log });
 
+  // The `design` review (app/design-review.js): the moment a turn stops and the session waits
+  // for a person again, the checklist the design turn was writing is put on screen by the
+  // **host**, not by the model — deterministic code, at the one moment it is useful. It reads
+  // the live mode, so `Tab` moves the behaviour with the mode, and it is presentation only:
+  // the block goes to the transcript's own sink, never to the model's context. With no TUI
+  // there is no block sink, so the review is a no-op on the line CLI.
+  const designReview = createDesignReview({
+    mode: sessionMode,
+    logBlock: tui ? (block) => tui.logBlock(block) : null,
+  });
+
   // Mid-turn commands (app/busy-command.js): a slash command typed while a turn runs is
   // not a message for the model, so it must not enter the pending-message queue. A
   // read-only one (`/help`, `/usage`, `/task`) is answered at once — it runs through the
@@ -344,6 +356,9 @@ async function main() {
     // `/task` opens the read-only viewer when there is a screen; without one the command
     // returns the documents as lines and the host prints them.
     contentView: tui ? (view) => tui.contentView(view) : null,
+    // The `design` checklist review, shown when thinking stops and the session is waiting
+    // for the user again (app/design-review.js). Declared above, beside the drive.
+    designReview,
     abortManager,
     saveSession,
     autosave,

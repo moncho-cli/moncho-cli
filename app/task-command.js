@@ -101,9 +101,17 @@ export function taskCommand() {
       // The documents with content, in the order they were asked for. A missing one is
       // named in the result rather than shown as an empty box.
       const shown = documents.filter((doc) => doc.text !== null);
+      // The documents in the shape the viewer takes, and a `reload()` that re-reads the very
+      // same kinds through the very same store. The viewer calls it on a timer while the box
+      // is open, so a session that is *writing* its checklist shows the writes instead of the
+      // snapshot taken when `/task` was typed (`docs/interface/task-viewer`).
+      const asView = (list) => list
+        .filter((doc) => doc.text !== null)
+        .map((doc) => ({ name: doc.name, path: doc.path, text: doc.text }));
       const view = {
         title: 'Task',
-        documents: shown.map((doc) => ({ name: doc.name, path: doc.path, text: doc.text })),
+        documents: asView(documents),
+        reload: () => asView(readDocuments(parsed.kinds)),
       };
 
       // A front end with a screen opens the read-only modal; one without gets the lines.

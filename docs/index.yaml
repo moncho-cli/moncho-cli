@@ -86,4 +86,5 @@ specs:
   - interface/markdown-tables
   - interface/clipboard-selection
   - interface/skins
+  - interface/design-review
   - maintainer/version-bump
