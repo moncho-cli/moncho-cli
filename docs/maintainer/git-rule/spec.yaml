@@ -1,0 +1,41 @@
+id: maintainer/git-rule
+domain: maintainer
+title: The maintainer flow's own rules, appended only there
+status: active
+summary: >
+  config/prompt.md is the system prompt of every install — scripts/install.sh copies it into
+  ~/.config/moncho-cli and bin/lib/image.sh bakes it into moncho-agent — so the session
+  reading it usually stands in someone else's project, which makes a rule about this tree
+  advice about a repository the session is not in. The version-bump bookkeeping stays out of
+  the prompt for the same reason, and mode-policy states the principle for the modes: an
+  instruction about a state the model cannot observe is prose it has to ignore. So the
+  maintainer's rule lives in its own fragment, config/maintainer-prompt.md, and is
+  concatenated at the end of the prompt by api/ollama.js#maintainerGuidance only when
+  config/constants.js#maintainerMode says the tree is the maintainer's own. The rule itself:
+  do not commit and do not stage, because a commit the model makes is a commit the maintainer
+  did not make, in their voice, before they have read the change; the working tree stays the
+  model's to edit, git stash is available when debugging a test needs a clean tree and the
+  tree is put back afterwards, and reading (status, log, diff, show, blame) stays
+  unrestricted, because a rule that only forbids teaches the model to stop reading the
+  repository. Absence is silence, the contract project-rules keeps: a missing, empty or
+  unreadable fragment answers the empty string and the request goes out as it did before.
+  The switch is read at call time, not at import, for the reason hostFenceEnabled gives — the
+  suite runs inside the maintainer's container where the variable is ambient. It is a prompt
+  rule and not enforcement: the model is asked, not stopped, and a model that is asked not to
+  commit will sometimes commit anyway.
+code:
+  - path: api/ollama.js
+    symbols: [maintainerGuidance, projectLanguageGuidance, loadSystemPrompt]
+  - path: config/constants.js
+    symbols: [maintainerMode, hostFenceEnabled]
+  - path: config/maintainer-prompt.md
+  - path: config/prompt.md
+tests:
+  - path: tests/maintainer-prompt.test.js
+    cases:
+      - the fragment is appended in the maintainer flow and is silence otherwise
+      - the shipped prompt never carries the rule, so a user flow is unaffected
+      - the fragment states the rule, and names what is still allowed
+      - "absence is silence: an unreadable fragment appends nothing"
+      - maintainer mode and the host fence are the two readings of one switch
+      - the fragment is read at call time, so the switch is not frozen at import

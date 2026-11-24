@@ -1,4 +1,4 @@
-import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, OLLAMA_MAX_TOKENS, THINKING_FILE as THINKING_TARGET, FILE_LINE_LIMIT, USER_AGENT } from '../config/constants.js';
+import { BASE_URL, API_KEY, MODEL, MODEL_TEMPERATURE, OLLAMA_MAX_TOKENS, THINKING_FILE as THINKING_TARGET, FILE_LINE_LIMIT, USER_AGENT, maintainerMode } from '../config/constants.js';
 import { logEvent } from '../utils/logger.js';
 import { resolveProjectPath } from '../utils/path-safety.js';
 import { recordProviderFailure } from './provider-diagnostics.js';
@@ -34,6 +34,40 @@ export function projectLanguageGuidance(value) {
   return language ? `\n\nProject artifact language preference: ${JSON.stringify(language)}. Follow project rules and existing conventions when applying it.` : '';
 }
 
+/**
+ * The maintainer flow's own rules, appended to the prompt when this is the maintainer's
+ * checkout — and **nothing at all** otherwise.
+ *
+ * `config/prompt.md` is the system prompt of every install, so it is read by a session
+ * standing in a user's project. A rule about *this* tree ("do not commit, do not stage")
+ * belongs there no more than the version-bump bookkeeping does (`docs/maintainer/version-bump`),
+ * and `tests/mode-policy.test.js` states the same principle for the modes: an instruction
+ * about a state the model cannot observe is prose it has to ignore. So the rule lives in its
+ * own fragment (`config/maintainer-prompt.md`) and is concatenated at the end of the prompt
+ * only when `config/constants.js#maintainerMode` says the tree is the maintainer's own.
+ *
+ * Absence is silence, the same contract `utils/project-rules.js` keeps: no fragment, an empty
+ * one or an unreadable one answers `''`, and the request goes out exactly as it did before
+ * the fragment existed.
+ *
+ * The path is a parameter so the absence rule can be proved against a file that really does
+ * not exist — a test that deleted the shipped fragment to observe this would leave the tree
+ * broken if it were interrupted between the delete and the restore.
+ *
+ * @param {boolean} [enabled] whether this is the maintainer's checkout
+ * @param {{path?: string}} [options] the fragment to read; defaults to the shipped one
+ * @returns {string} the fragment, introduced by a blank line, or `''`
+ */
+export function maintainerGuidance(enabled = maintainerMode(), { path: fragmentPath = path.join(__dirname, '..', 'config', 'maintainer-prompt.md') } = {}) {
+  if (!enabled) return '';
+  try {
+    const text = fs.readFileSync(fragmentPath, 'utf-8').trim();
+    return text ? `\n\n${text}` : '';
+  } catch {
+    return '';
+  }
+}
+
 async function loadSystemPrompt() {
   // config/prompt.md, not the module root: the prompt is agent *data*, and keeping
   // every shipped asset inside a directory means the image copies it with the rest
@@ -52,7 +86,9 @@ async function loadSystemPrompt() {
         placeholders: unresolved,
       });
     }
-    return prompt + projectLanguageGuidance(process.env.PROJECT_LANGUAGE);
+    return prompt
+      + projectLanguageGuidance(process.env.PROJECT_LANGUAGE)
+      + maintainerGuidance();
   } catch (error) {
     // The agent answers without its prompt from here on, which is exactly the kind
     // of silent degradation this log exists to make findable.
