@@ -226,6 +226,20 @@ export function hostFenceEnabled() {
   return process.env.MONCHO_MAINTAINER !== '1';
 }
 
+/**
+ * Whether this process is the **maintainer flow**: the developer's own checkout, run through
+ * `./start.sh`, which passes `MONCHO_MAINTAINER=1` into the container.
+ *
+ * The exact inverse of `hostFenceEnabled()`, and deliberately a separate name. That one asks
+ * "should the host fence apply?", a question about *paths*; this one asks "whose checkout is
+ * this?", a question about *whose tree it is*. They read the same variable today because one
+ * flow has one meaning, but naming both keeps each call site saying which it means — so a
+ * later change to one cannot silently move the other.
+ */
+export function maintainerMode() {
+  return process.env.MONCHO_MAINTAINER === '1';
+}
+
 // ---------------------------------------------------------------------------
 // The chunkpaction collapse switch
 // ---------------------------------------------------------------------------

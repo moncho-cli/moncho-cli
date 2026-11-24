@@ -239,6 +239,7 @@ Every write that means something is also **shown to the user** as a green `[Trac
 row in the conversation, so completing an item, starting the next one, moving the
 `status:` line or ticking a step is visible without opening the files — the harness
 announces it in your stead.
+
 ### 9. Lock in a plan instead of looping over research
 
 Your model calls are budgeted, and **you cannot read the count**: the budget is spent by
@@ -254,9 +255,8 @@ not wandering, and refreshed by finishing an item. Everything below follows from
   `update_task` with `action: "complete"` the moment it is verified, which starts the
   next stretch fresh and finishes what the plan promised.
 
-
 ### 10. STRICT: Planning rules
-- When investigating to create the task.md contents and implementation-plan.md prefer shorter planning rounds to lock in sooner rather than later.
+- When investigating to create the `task.md` contents and the `implementation_plan.md`, prefer shorter planning rounds to lock in sooner rather than later.
 - Thinking loops should be less than 10 iterations for 90% of the cases.
 
 ## Response Format

@@ -88,3 +88,4 @@ specs:
   - interface/skins
   - interface/design-review
   - maintainer/version-bump
+  - maintainer/git-rule
