@@ -118,6 +118,9 @@ container can always be inspected and removed.
 | `--env <path>` | Read this env file instead of `./.env.moncho` |
 | `--version <v>` | Run this installed version (default: the newest installed) |
 | `--continue` | Open the newest session of this version instead of starting a fresh one |
+| `--exec <file>` | Run the agent with this file's contents as its one prompt, then stop (non-interactive) |
+| `--turns <n>` | Take at most `n` turns in this process, then stop |
+| `--mode <name>` | Start the session in this mode (`chat`, `design`, `work`) |
 | `--state-in-repo` | Keep the state in `./agent` instead of a named volume |
 | `--do-not-mount` | No bind mount: `/app` is what the image contains |
 | `--copy-files` | Copy the workspace into the image at build time |
@@ -159,8 +162,8 @@ cp .env.moncho.example .env.moncho
 | `CHUNKPACTION_ENABLED` | off | Collapse a solved item's section into a summary and keep its raw chunks as a capture; set `1`, `true`, `on`, `yes` or `y` to turn it on (worth it under local inference, where the window is the cost; a cloud provider caches the verbatim prefix instead) |
 | `PULSE_LIMIT` | `30` | Model calls before the pulse notice |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `off` |
-| `LOG_MAX_BYTES` | `524288` | Rotation threshold |
-| `LOG_MAX_FILES` | `3` | Rotation chain length |
+| `LOG_MAX_BYTES` | `524288` | Rotation threshold; `0` turns rotation off |
+| `LOG_MAX_FILES` | `5` | Rotation chain length, the live file included; `0` turns rotation off |
 | `CLIPBOARD_FILE_KEEP` | `single` | What a saved selection leaves behind: `single` keeps only the last copy, `all` keeps a timestamped history |
 | `TZ` | the host's zone | Passed into the container |
 

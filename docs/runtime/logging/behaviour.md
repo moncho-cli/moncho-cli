@@ -66,8 +66,29 @@ level under it.
 | -------- | ------- | ------- |
 | `LOG_LEVEL` | `info` | The threshold (`error`, `warn`, `info`, or `warning`/`off`). |
 | `LOG_FILE` | `agent/logs/moncho.log` | Project-relative path of the live file. |
-| `LOG_MAX_BYTES` | `524288` (512 KiB) | Rotate when the next line would pass this. |
+| `LOG_MAX_BYTES` | `524288` (512 KiB) | Rotate when the next line would pass this. `0` turns rotation off. |
 | `LOG_MAX_FILES` | `5` | Files kept in the chain, the live one included. |
+
+### `0` is a value, not a mistake
+
+Both budgets accept an explicit **`0`, which means "off"** — the log keeps growing in one
+file rather than rotating. It is the only way to say that: there is no separate flag, and
+a very large number is not the same answer, because it still rotates eventually.
+
+This is the distinction the two knobs have to keep, and the reason the parse step may not
+simply demand a positive number:
+
+- **unset** — nobody had an opinion, so the default applies;
+- **`0`** — somebody did, and the opinion is "no limit";
+- **junk, empty, or negative** — nobody had a *usable* opinion, so the default applies. A
+  typo must not silently disable rotation, which would leave a log growing without bound
+  in a workspace the user believed was capped.
+
+So a limit resolves in exactly one place, and `0` survives it. An earlier version applied
+`> 0` at the parse step as well, which quietly rewrote an explicit `0` into the default:
+the documented behaviour was unreachable, `LOG_MAX_BYTES=0` meant "512 KiB" rather than
+"off", and the rotation guard downstream — written for a zero budget — was dead code.
+A primitive that cannot express a legal value is the bug, not the caller who sets it.
 
 The defaults live in `config/constants.js`, next to the other environment-driven
 settings, and the file defaults into the gitignored `agent/` tree for the same reason
@@ -93,6 +114,12 @@ means the live file plus four archives. Two consequences are worth stating:
   still lands instead of rotating on every write and keeping nothing;
 - `LOG_MAX_FILES=1` *restarts* the log (the file is deleted) rather than archiving it,
   because a chain of one archive would double the budget rather than respect it.
+- `LOG_MAX_FILES=0` (or `LOG_MAX_BYTES=0`) **turns rotation off**: the live file keeps
+  every line and no archive is ever written. It is not the same as `1`, which keeps one
+  file by discarding the previous contents; `0` keeps everything, which is what someone
+  asking for "no rotation" wants. It is the setting to reach for when the log is being
+  captured by something else — a container's stdout, an outer collector — and rotating
+  inside the workspace would destroy the very history that is being read.
 
 The rotation announces itself as an `info` line scoped to `logger`, so
 reading the file answers why the history starts where it does.

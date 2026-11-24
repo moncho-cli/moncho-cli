@@ -1,0 +1,43 @@
+id: runtime/cli-subcommands
+domain: runtime
+title: Companion tools — `moncho-cli <word> …` reaches `moncho-<word>`
+status: active
+summary: >
+  moncho-cli runs the agent, and it is also the front door for companion tools that live
+  beside it — a bench, a dashboard, a site-specific script — which must be reachable
+  without this program carrying a list of them. A first word that is neither a flag nor
+  one of this program's own commands is taken to name a companion, and moncho-cli runs
+  `moncho-<word>` with the rest of the command line handed over verbatim: flags and
+  built-ins are never treated as companions, so a companion can never shadow `run`,
+  `build` or `--version`, and bare `moncho-cli` stays `run`. The seam knows nothing about
+  any companion: no table of names and no per-tool behaviour, because `bin/` ships in
+  every install and one of them has `node main.js` as its entrypoint inside a container,
+  so a companion name here would be a capability the agent carries but does not own, and
+  every entry would be a name to keep in step with something outside this repository.
+  Resolution requires an executable on PATH, and a name that is not one is a refusal
+  rather than a fallthrough — the word *was* recognised as a companion request, so
+  "unknown command" would suggest this program might have owned it. The seam is reached
+  before the workspace is resolved, because a companion has its own idea of what a
+  workspace is. The exit status is the companion's, so a caller scripting
+  `moncho-cli bench run` can depend on it.
+code:
+  - path: bin/lib/subcommand.sh
+    symbols: [is_external_subcommand, external_subcommand_name, external_subcommand_path, run_external_subcommand]
+  - path: bin/moncho-cli
+tests:
+  - path: tests/cli-subcommands.test.js
+    cases:
+      - a first word that is not a command is a companion request
+      - a flag is never a companion request
+      - a built-in command is never a companion request
+      - an empty first word is not a companion request
+      - no first word at all is not a companion request
+      - the companion a word names is moncho-word
+      - resolution finds an executable on PATH
+      - resolution refuses a file that exists but is not executable
+      - resolution refuses a name that is not on PATH
+      - moncho-cli hands the rest of the command line over verbatim
+      - a companion's exit status is the invocation's exit status
+      - a missing companion is refused, naming the moncho-word it looked for
+      - the seam is reached before the workspace and the env file are resolved
+      - moncho-cli still runs its own commands with a companion on PATH

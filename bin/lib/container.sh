@@ -12,6 +12,13 @@ RUN_ARGS=()
 # usable on its own — a probe, a test — without the argument parser having run first.
 MOUNT_MODE="${MOUNT_MODE:-bind}"
 STATE_MODE="${STATE_MODE:-volume}"
+# The agent's own arguments (`--exec`, `--turns`, `--mode`), defaulted the same way. The
+# runner fills this array from its command line, but the library must also work when it is
+# sourced on its own — by a test, or by a probe — and an unset array is a hard error under
+# `set -u`, which would take the whole script down rather than simply mean "no arguments".
+if [ "${AGENT_ARGS+set}" != "set" ]; then
+  AGENT_ARGS=()
+fi
 build_run_args() {
   RUN_ARGS=(
     --name "$CONTAINER_NAME"
@@ -112,7 +119,16 @@ build_run_args() {
     RUN_ARGS+=(-e "MONCHO_CONTINUE=1")
   fi
 
+  # The image comes before the agent's arguments, because that is docker's own grammar:
+  # everything after the image name is the *command*, and the entrypoint
+  # (`node /opt/moncho-cli/main.js`) receives it as its argv. That is what makes
+  # `--exec`, `--turns` and `--mode` reach the agent's own parser instead of being
+  # interpreted here (docs/runtime/run-flags). The runner validates nothing about them:
+  # it is a courier, and the agent is the only thing that knows its own grammar.
   RUN_ARGS+=("$PROJECT_IMAGE")
+  if [ "${#AGENT_ARGS[@]}" -gt 0 ]; then
+    RUN_ARGS+=("${AGENT_ARGS[@]}")
+  fi
 }
 
 # The state volume is created by docker **root-owned and empty**, while the agent runs as
@@ -137,6 +153,22 @@ ensure_state_writable() {
     || warn "could not make $STATE_VOLUME writable; the agent may fail to save its state"
 }
 
+# Is nobody watching this run?
+#
+# `--exec` and `--turns` are the two agent arguments that say so, and this is the only
+# thing the runner knows about the agent's grammar: it does not otherwise interpret those
+# arguments, because the agent is the only thing that knows what they mean
+# (docs/runtime/run-flags).
+is_headless_run() {
+  local arg
+  for arg in ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"}; do
+    case "$arg" in
+      --exec|--exec=*|--turns|--turns=*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
 # `run`: foreground, disposable, and it refuses to fight a container that is already
 # up for this workspace — start.sh's behaviour, one workspace at a time.
 run_container() {
@@ -149,6 +181,17 @@ run_container() {
        or stop it with 'moncho-cli stop'"
   fi
   if container_exists; then
+    # A container that already exists is started, not created, so there is no command line
+    # left to hand the agent's arguments to: `docker start` replays the argv the container
+    # was created with. Silently ignoring `--exec` here would produce exactly the wrong run
+    # — an interactive one — while the caller believed a prompt had been named, so this
+    # refuses and says which command clears the way.
+    if [ "${#AGENT_ARGS[@]}" -gt 0 ]; then
+      die "a container for this project already exists ($CONTAINER_NAME)
+       the agent's own arguments (${AGENT_ARGS[*]}) can only be given when the container
+       is created, because 'docker start' replays the argv it was created with.
+       remove it with 'moncho-cli stop' and run again."
+    fi
     log "Reusing the existing container $CONTAINER_NAME"
     clipboard_watch_start "$WORKSPACE" "$WATCH_PIDFILE" 0
     docker start -ai "$CONTAINER_NAME"
@@ -162,8 +205,13 @@ run_container() {
   if [ "$SYNC_FILES" = "1" ]; then
     disposable=()
   fi
+  # A tty gets the TUI, which is right for a person at a keyboard and wrong for a headless
+  # run: the screen would paint its escape sequences into whatever captured the output.
+  # `--exec` and `--turns` are the two agent arguments that say "nobody is watching"
+  # (docs/runtime/run-flags), so they turn the tty off — the agent then takes its own line
+  # CLI, which is the same path a detached run already uses.
   local -a tty=(-i)
-  if [ -t 0 ]; then
+  if [ -t 0 ] && ! is_headless_run; then
     tty=(-it)
   fi
 
