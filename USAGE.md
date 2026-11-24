@@ -119,6 +119,8 @@ container can always be inspected and removed.
 | `--version <v>` | Run this installed version (default: the newest installed) |
 | `--continue` | Open the newest session of this version instead of starting a fresh one |
 | `--exec <file>` | Run the agent with this file's contents as its one prompt, then stop (non-interactive) |
+| `--exec -` | The same, taking the prompt from stdin: `moncho-cli run --exec - < task.md` |
+| `--prompt <text>` | Run the agent with this text as its one prompt, then stop (verbatim, newlines included) |
 | `--turns <n>` | Take at most `n` turns in this process, then stop |
 | `--mode <name>` | Start the session in this mode (`chat`, `design`, `work`) |
 | `--state-in-repo` | Keep the state in `./agent` instead of a named volume |

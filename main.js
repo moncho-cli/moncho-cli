@@ -34,7 +34,8 @@ import { ensureTrackingFiles } from './utils/tracking-store.js';
 import { resolveContextSize, formatContextLimit } from './utils/context-size.js';
 import { describeCompactionSplit } from './utils/compaction.js';
 import { readFileSync } from 'node:fs';
-import { parseRunFlags, isHeadless, turnBudget, createFilePrompt } from './utils/run-flags.js';
+import { parseRunFlags, isHeadless, turnBudget, createPromptSource, STDIN_PATH } from './utils/run-flags.js';
+import { readStdinPrompt } from './utils/stdin-prompt.js';
 
 /**
  * Startup wiring.
@@ -61,7 +62,8 @@ const logger = registerLogger(createLogger());
 let activeTui = null;
 
 async function main() {
-  // The run flags (`--exec`, `--turns`, `--mode`; docs/runtime/run-flags) are parsed once
+  // The run flags (`--exec`, `--prompt`, `--turns`, `--mode`; docs/runtime/run-flags) are
+  // parsed once
   // here, because this is the process that owns its own argv — a runner passes a command
   // line into the container, not a parsed configuration. A malformed flag is fatal on
   // purpose: each one is a silently wrong run rather than a cosmetic problem, and a run
@@ -77,11 +79,31 @@ async function main() {
   }
   const headless = isHeadless(flags);
   const maxTurns = turnBudget(flags);
-  // The prompt source is built here rather than deep in the loop: with `--exec` the file
-  // is the whole task, and the loop only ever sees a source of prompts.
-  const exec = flags.exec
-    ? createFilePrompt({ file: flags.exec, readFile: (path) => readFileSync(path, 'utf8') })
-    : null;
+  // `--exec -` reads the pipe **before** the session is wired, so a bad stdin is reported
+  // beside the other argument errors and the process is never left waiting on a stream in
+  // the middle of a turn. A terminal is refused rather than read: it would never end.
+  let pipedPrompt = null;
+  if (flags.exec === STDIN_PATH) {
+    try {
+      pipedPrompt = await readStdinPrompt();
+    } catch (error) {
+      console.error(`moncho: --exec ${STDIN_PATH}: ${error.message}`);
+      process.exitCode = 2;
+      return;
+    }
+  }
+
+  // The prompt source is built here rather than deep in the loop: the flags name where the
+  // task lives — a file, stdin (`--exec -`) or the argument itself (`--prompt`) — and the
+  // loop only ever sees a source of prompts. The pipe's bytes are already in hand, so the
+  // source stays synchronous, which is what `askForPrompt()` needs to tell a real prompt
+  // from a spent one.
+  const exec = createPromptSource({
+    exec: flags.exec,
+    prompt: flags.prompt,
+    readFile: (path) => readFileSync(path, 'utf8'),
+    readStdin: () => pipedPrompt,
+  });
 
   // The provider/model label is read from the environment (OPENAI_BASE_URL /
   // OPENAI_MODEL) once at startup and shown in the TUI model row.
@@ -362,9 +384,9 @@ async function main() {
   log(`Context window budget: ${formatContextLimit(contextSize)} tokens (compaction keeps the newest ${describeCompactionSplit().keepLabel} and the last user message)`);
 
   // The interactive instructions are printed for a person at a keyboard. A headless run
-  // (`--exec`/`--turns`) has neither, and telling it to type `exit` would be noise in the
-  // record it leaves behind — while the provider, session-file and budget lines above
-  // stay, because those are what a caller reading the output actually needs to see.
+  // (`--exec`/`--prompt`/`--turns`) has neither, and telling it to type `exit` would be
+  // noise in the record it leaves behind — while the provider, session-file and budget
+  // lines above stay, because those are what a caller reading the output needs to see.
   if (!headless) {
     log("\nChat initialized. Type 'exit' to quit.");
     log("ESC or Ctrl+C cancels a running task (press twice to confirm) and quits when idle.");
@@ -392,9 +414,10 @@ async function main() {
     // for the user again (app/design-review.js). Declared above, beside the drive.
     designReview,
     abortManager,
-    // The named prompt and the turn budget (`--exec`/`--turns`, docs/runtime/run-flags).
-    // The loop does not need to know where a prompt came from: a file is simply another
-    // source of the same thing `nextPrompt()` already accepted.
+    // The named prompt and the turn budget (`--exec`/`--prompt`/`--turns`,
+    // docs/runtime/run-flags). The loop does not need to know where a prompt came from: a
+    // file, a pipe and an argument are simply other sources of the same thing
+    // `nextPrompt()` already accepted.
     exec,
     maxTurns,
     saveSession,

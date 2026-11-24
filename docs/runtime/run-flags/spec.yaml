@@ -1,24 +1,28 @@
 id: runtime/run-flags
 domain: runtime
-title: The headless one-shot — a prompt from a file, and a bounded number of turns
+title: The headless one-shot — a prompt from a file, stdin or an argument, and a bounded number of turns
 status: active
 summary: >
   The agent runs either with a pty (the TUI) or without one (the line CLI), and both
   ask for a prompt and end when the user types exit — so neither can be driven by
-  another program. Three flags close that: `--exec <file>` takes the prompt from a
-  file's whole contents verbatim and makes the process non-interactive, `--turns <n>`
-  bounds how many turns one process may take, and `--mode <name>` sets the mode the
-  session opens in. Every refusal is an error reported before the session starts rather
-  than something ignored, because each one is a silently wrong run: a caller who typed
-  `--turn 5` asked for a bounded run and would otherwise get an unbounded one. A named
-  prompt composes with the budget as an upper bound, since a file is not a queue and
-  re-reading it would repeat the same task rather than continue it. The module is pure,
-  terminal-free and takes its argv and its file reader as parameters, which is what lets
-  the whole contract be proved without a pty, a provider or a sandbox. It is a general
+  another program. The flags close that: `--exec <file>` takes the prompt from a file's
+  whole contents verbatim, `--exec -` takes it from stdin so it can be piped,
+  `--prompt <text>` takes the argument itself, `--turns <n>` bounds how many turns one
+  process may take, and `--mode <name>` sets the mode the session opens in. Every refusal
+  is an error reported before the session starts rather than something ignored, because
+  each one is a silently wrong run: a caller who typed `--turn 5` asked for a bounded run
+  and would otherwise get an unbounded one, and a caller who gave two prompt sources has
+  asked for two different tasks in the one turn the run has. A named prompt composes with
+  the budget as an upper bound, since neither a file nor a pipe is a queue and re-reading
+  it would repeat the same task rather than continue it. The module is pure, terminal-free,
+  and takes its argv, its file reader and its stdin reader as parameters, which is what
+  lets the whole contract be proved without a pty, a provider or a sandbox. It is a general
   capability of the agent: nothing in the module, the spec or the tests names a caller.
 code:
   - path: utils/run-flags.js
-    symbols: [parseRunFlags, isHeadless, turnBudget, createFilePrompt, EXEC_FLAG, TURNS_FLAG, MODE_FLAG]
+    symbols: [parseRunFlags, isHeadless, turnBudget, createFilePrompt, createPromptSource, EXEC_FLAG, PROMPT_FLAG, TURNS_FLAG, MODE_FLAG, STDIN_PATH]
+  - path: utils/stdin-prompt.js
+    symbols: [readStdinPrompt]
   - path: app/session-loop.js
     symbols: [askForPrompt, runSessionLoop]
   - path: main.js
@@ -29,6 +33,9 @@ tests:
       - --exec takes the next argument as the path to the prompt
       - --exec= accepts the path in the same argument
       - "--exec with no value is refused, and does not swallow the flag after it"
+      - --prompt takes the argument itself as the prompt, verbatim
+      - --prompt with no value is refused, and does not swallow the flag after it
+      - --exec and --prompt together are refused as two prompts for one turn
       - --turns accepts a positive whole number and refuses zero, a negative and a fraction
       - "--turns with no value is refused, and does not swallow the flag after it"
       - --mode names the mode the session opens in
@@ -40,5 +47,10 @@ tests:
       - a named prompt is read verbatim, newlines and all
       - the prompt file is read once, so a second call reports nothing left to run
       - an empty prompt file is refused instead of sending a turn with nothing in it
+      - createPromptSource() answers the source the flags name, and null when they name none
+      - --exec - takes the prompt from stdin, and an empty pipe is refused
+      - a prompt source is read once and reports nothing left on the second call
+      - readStdinPrompt() reads a pipe to the end, verbatim
+      - readStdinPrompt() refuses a terminal, which would never end the read
       - runSessionLoop() stops after the turn budget is spent
       - runSessionLoop() asks the named prompt source before the front end

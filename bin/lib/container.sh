@@ -163,7 +163,7 @@ is_headless_run() {
   local arg
   for arg in ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"}; do
     case "$arg" in
-      --exec|--exec=*|--turns|--turns=*) return 0 ;;
+      --exec|--exec=*|--turns|--turns=*|--prompt|--prompt=*) return 0 ;;
     esac
   done
   return 1
@@ -207,9 +207,11 @@ run_container() {
   fi
   # A tty gets the TUI, which is right for a person at a keyboard and wrong for a headless
   # run: the screen would paint its escape sequences into whatever captured the output.
-  # `--exec` and `--turns` are the two agent arguments that say "nobody is watching"
+  # `--exec`, `--prompt` and `--turns` are the agent arguments that say "nobody is watching"
   # (docs/runtime/run-flags), so they turn the tty off — the agent then takes its own line
-  # CLI, which is the same path a detached run already uses.
+  # CLI, which is the same path a detached run already uses. `--exec -` is among them, and it
+  # is the one that makes stdin the *prompt* rather than the keyboard: `-i` without `-t` is
+  # exactly what a pipe needs.
   local -a tty=(-i)
   if [ -t 0 ] && ! is_headless_run; then
     tty=(-it)

@@ -75,7 +75,8 @@ PURGE="0"
 # session of that version instead of starting fresh (`--continue`).
 VERSION_ARG=""
 CONTINUE="0"
-# Arguments for the agent itself (`--exec <file>`, `--turns <n>`, `--mode <name>`). They
+# Arguments for the agent itself (`--exec <file>`, `--prompt <text>`, `--turns <n>`,
+# `--mode <name>`). They
 # are collected in the order they were given and appended to the container's command
 # line: the agent image's entrypoint is `node /opt/moncho-cli/main.js`, so anything after
 # the image name arrives at `main.js` as its argv (docs/runtime/run-flags). The runner
@@ -120,6 +121,10 @@ Options:
   --continue         open the newest session instead of starting a fresh one
   --exec <file>      run the agent with this file's contents as its one prompt, then
                      stop — no keyboard, so the process is non-interactive
+  --exec -           the same, taking the prompt from stdin, so it can be piped:
+                       moncho-cli run --exec - < task.md
+  --prompt <text>    run the agent with this text as its one prompt, then stop; the
+                     argument is taken verbatim, newlines included
   --turns <n>        take at most n turns in this process, then stop
   --mode <name>      start the session in this mode (chat, design, work)
   --env <path>       read this env file instead of ./.env.moncho (the only file read)
@@ -187,6 +192,14 @@ parse_args() {
       --exec|--turns|--mode)
         [ $# -ge 2 ] || die "$1 needs a value"
         AGENT_ARGS+=("$1" "$2"); shift 2 ;;
+      --prompt)
+        # The prompt is prose, so it may legitimately begin with a dash or be the empty
+        # string a shell hands over for "". Both are taken verbatim: the agent's parser is
+        # the thing that refuses an empty one, and it can only do that if this courier did
+        # not quietly decide it was a flag or a missing value first.
+        [ $# -ge 2 ] || die "--prompt needs the prompt text"
+        AGENT_ARGS+=(--prompt "$2"); shift 2 ;;
+      --prompt=*) AGENT_ARGS+=("$1"); shift ;;
       --exec=*|--turns=*|--mode=*) AGENT_ARGS+=("$1"); shift ;;
       -h|--help) COMMAND="help"; shift ;;
       *) die "unknown argument '$1' (try 'moncho-cli help')" ;;

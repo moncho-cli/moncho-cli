@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 
 import {
-  parseRunFlags, isHeadless, turnBudget, createFilePrompt,
-  EXEC_FLAG, TURNS_FLAG, MODE_FLAG,
+  parseRunFlags, isHeadless, turnBudget, createFilePrompt, createPromptSource,
+  EXEC_FLAG, PROMPT_FLAG, TURNS_FLAG, MODE_FLAG, STDIN_PATH,
 } from '../utils/run-flags.js';
 import { runSessionLoop, askForPrompt } from '../app/session-loop.js';
 import { createCommandRegistry } from '../app/commands.js';
+import { readStdinPrompt } from '../utils/stdin-prompt.js';
 
 /**
  * The headless one-shot (`docs/runtime/run-flags`).
@@ -65,6 +67,39 @@ test('--exec with no value is refused, and does not swallow the flag after it', 
 
   assert.equal(parseRunFlags([EXEC_FLAG]).errors.length, 1);
   assert.equal(parseRunFlags([`${EXEC_FLAG}=`]).errors.length, 1);
+});
+
+test('--prompt takes the argument itself as the prompt, verbatim', () => {
+  const text = 'line one\n\n  indented two\n';
+  const flags = parseRunFlags([PROMPT_FLAG, text]);
+  assert.equal(flags.prompt, text, 'not trimmed, not split, not re-joined');
+  assert.equal(flags.exec, null);
+  assert.deepEqual(flags.errors, []);
+
+  // An inline value splits on the first `=` only, so the prompt keeps its own.
+  assert.equal(parseRunFlags([`${PROMPT_FLAG}=a=b`]).prompt, 'a=b');
+});
+
+test('--prompt with no value is refused, and does not swallow the flag after it', () => {
+  const flags = parseRunFlags([PROMPT_FLAG, TURNS_FLAG, '3']);
+  assert.equal(flags.prompt, null);
+  assert.equal(flags.turns, 3, 'the flag after it is still parsed as itself');
+  assert.equal(flags.errors.length, 1);
+  assert.match(flags.errors[0], /needs the prompt text/);
+
+  // An empty argument was offered as the value, so it is consumed and refused — an empty
+  // prompt is not a task either way.
+  assert.equal(parseRunFlags([PROMPT_FLAG, '']).errors.length, 1);
+  assert.equal(parseRunFlags([`${PROMPT_FLAG}=`]).errors.length, 1);
+});
+
+test('--exec and --prompt together are refused as two prompts for one turn', () => {
+  const flags = parseRunFlags([EXEC_FLAG, '/tmp/task.md', PROMPT_FLAG, 'do it']);
+  assert.equal(flags.errors.length, 1, 'reported rather than resolved by a precedence rule');
+  assert.match(flags.errors[0], /both name a prompt/);
+  // Both values survive, so the message can name what the caller actually gave.
+  assert.equal(flags.exec, '/tmp/task.md');
+  assert.equal(flags.prompt, 'do it');
 });
 
 test('--turns accepts a positive whole number and refuses zero, a negative and a fraction', () => {
@@ -128,6 +163,7 @@ test('the flags parse in any order and repeated flags take the last value', () =
 // ---------------------------------------------------------------------------
 test('a run is headless when a prompt is named, and also when only a budget is given', () => {
   assert.equal(isHeadless(parseRunFlags([EXEC_FLAG, '/a.md'])), true);
+  assert.equal(isHeadless(parseRunFlags([PROMPT_FLAG, 'do it'])), true, 'a literal prompt is headless too');
   assert.equal(isHeadless(parseRunFlags([TURNS_FLAG, '3'])), true);
   assert.equal(isHeadless(parseRunFlags([MODE_FLAG, 'chat'])), false, 'a mode alone is not a headless run');
   assert.equal(isHeadless(parseRunFlags([])), false);
@@ -138,6 +174,8 @@ test('--exec bounds a process to one turn whatever --turns says', () => {
   // it, so the named prompt is the bound and `--turns` cannot raise it.
   assert.equal(turnBudget(parseRunFlags([EXEC_FLAG, '/a.md'])), 1);
   assert.equal(turnBudget(parseRunFlags([EXEC_FLAG, '/a.md', TURNS_FLAG, '5'])), 1);
+  assert.equal(turnBudget(parseRunFlags([PROMPT_FLAG, 'do it', TURNS_FLAG, '5'])), 1,
+    'a literal prompt is one prompt, so the budget cannot raise it');
   assert.equal(turnBudget(parseRunFlags([TURNS_FLAG, '5'])), 5);
 });
 
@@ -171,6 +209,77 @@ test('an empty prompt file is refused instead of sending a turn with nothing in 
     const source = createFilePrompt({ file: '/task.md', readFile: () => empty });
     assert.throws(() => source(), /is empty/);
   }
+});
+
+// ---------------------------------------------------------------------------
+// createPromptSource
+// ---------------------------------------------------------------------------
+test('createPromptSource() answers the source the flags name, and null when they name none', () => {
+  const readFile = (path) => `from ${path}`;
+  const readStdin = () => 'from stdin';
+
+  assert.equal(createPromptSource({ exec: '/task.md', readFile, readStdin })(), 'from /task.md');
+  assert.equal(createPromptSource({ exec: STDIN_PATH, readFile, readStdin })(), 'from stdin');
+  assert.equal(createPromptSource({ prompt: 'do it', readFile, readStdin })(), 'do it');
+
+  // No prompt named at all is `null`, not an empty source: the caller must be able to tell
+  // "there is nothing to run" from "the run has not started yet".
+  assert.equal(createPromptSource({ readFile, readStdin }), null);
+  assert.equal(createPromptSource(), null);
+});
+
+test('--exec - takes the prompt from stdin, and an empty pipe is refused', () => {
+  const source = createPromptSource({ exec: STDIN_PATH, readStdin: () => 'line one\n\nline three\n' });
+  assert.equal(source(), 'line one\n\nline three\n', 'verbatim, as a file would be');
+  assert.equal(source(), null, 'read once');
+
+  for (const empty of ['', '   \n\t\n']) {
+    const refused = createPromptSource({ exec: STDIN_PATH, readStdin: () => empty });
+    assert.throws(() => refused(), /nothing was piped/, 'an empty pipe is not a task');
+  }
+});
+
+test('--prompt is the argument itself, and an empty argument is refused', () => {
+  const text = 'do the thing\n\nand this too\n';
+  assert.equal(createPromptSource({ prompt: text })(), text, 'not trimmed');
+
+  // Refused on the first call, never at construction: a throw in the wiring would crash
+  // startup before the session exists to report it.
+  const source = createPromptSource({ prompt: '   ' });
+  assert.equal(typeof source, 'function', 'constructing is not the refusal');
+  assert.throws(() => source(), /is empty/);
+});
+
+test('a prompt source is read once and reports nothing left on the second call', () => {
+  let reads = 0;
+  const source = createPromptSource({ prompt: 'do it', readStdin: () => { reads += 1; return ''; } });
+  assert.equal(source(), 'do it');
+  assert.equal(source(), null);
+  assert.equal(reads, 0, 'a literal prompt never touches stdin');
+});
+
+// ---------------------------------------------------------------------------
+// readStdinPrompt
+// ---------------------------------------------------------------------------
+test('readStdinPrompt() reads a pipe to the end, verbatim', async () => {
+  const text = 'line one\n\n  indented two\n';
+  // Two chunks, because a pipe really does arrive in pieces and the answer must not depend
+  // on where the boundaries fell.
+  const stdin = Readable.from([Buffer.from(text.slice(0, 5)), Buffer.from(text.slice(5))]);
+  assert.equal(await readStdinPrompt({ stdin, isTTY: false }), text);
+});
+
+test('readStdinPrompt() refuses a terminal, which would never end the read', async () => {
+  // The hang this prevents: `readFileSync(0)` on a tty blocks until Ctrl+D, so a one-shot
+  // run would sit there with nothing on screen saying what it was waiting for.
+  const stdin = Readable.from(['never read']);
+  await assert.rejects(
+    () => readStdinPrompt({ stdin, isTTY: true }),
+    /cannot be read from a terminal/,
+  );
+
+  // The default answers the same way for a stream that says it is a terminal.
+  await assert.rejects(() => readStdinPrompt({ stdin: { isTTY: true, on() {} } }), /terminal/);
 });
 
 // ---------------------------------------------------------------------------

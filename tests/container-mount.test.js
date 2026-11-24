@@ -304,3 +304,68 @@ test('copy mode mounts nothing at all, so there is nothing to shadow', () => {
   assert.ok(!args.some((arg) => arg.includes(':/app/.git')), 'copy mode mounts no workspace');
   assert.ok(args.includes('GIT_OPTIONAL_LOCKS=0'));
 });
+
+test('every prompt source turns the tty off, and the arguments reach the agent verbatim', () => {
+  // A headless run must not paint a screen into whatever captured its output, so the tty is
+  // only granted when there is one *and* nobody is driving (`is_headless_run`). The three
+  // prompt sources are all "nobody is driving" — including `--exec -`, which is the one that
+  // reads its prompt from the very stdin `-i` forwards.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-mount-'));
+  const script = [
+    'set -euo pipefail',
+    'log() { :; }',
+    'die() { printf "DIE %s\\n" "$*" >&2; exit 1; }',
+    'warn() { :; }',
+    `WORKSPACE=${JSON.stringify(dir)}`,
+    'CONTAINER_NAME=moncho-test',
+    'STATE_VOLUME=moncho-state-test',
+    'MOUNT_MODE=bind',
+    'STATE_MODE=volume',
+    'PROJECT_IMAGE=moncho-test:latest',
+    'ENV_FLAGS=()',
+    'RUN_VERSION=1.0.0',
+    'LATEST_VERSION=1.0.0',
+    'CONTINUE=0',
+    `source ${JSON.stringify(envLibrary)}`,
+    `source ${JSON.stringify(library)}`,
+    'for agent_args in "--exec -" "--exec /tmp/task.md" "--prompt do it" "--turns 2"; do',
+    '  read -r -a AGENT_ARGS <<< "$agent_args"',
+    '  if is_headless_run; then echo "HEADLESS $agent_args"; else echo "INTERACTIVE $agent_args"; fi',
+    'done',
+  ].join('\n');
+  const result = spawnSync('bash', ['-c', script], { encoding: 'utf-8', cwd: dir });
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const line of ['HEADLESS --exec -', 'HEADLESS --exec /tmp/task.md', 'HEADLESS --prompt do it', 'HEADLESS --turns 2']) {
+    assert.ok(result.stdout.includes(line), `expected "${line}", got:\n${result.stdout}`);
+  }
+});
+
+test('the runner forwards --prompt to the agent untouched, even one that begins with a dash', () => {
+  // The courier must not reinterpret the prompt: `--prompt --debug` is a task whose first
+  // word happens to look like a flag, and rewriting it would silently change the task. An
+  // empty `--prompt=` value is still forwarded, because refusing it is the agent's job —
+  // one parser, one answer.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-prompt-'));
+  const libraryDir = path.join(root, 'bin/lib');
+  const parse = spawnSync('bash', ['-c', [
+    'set -euo pipefail',
+    'die() { printf "DIE %s\\n" "$*" >&2; exit 1; }',
+    `source ${JSON.stringify(path.join(libraryDir, 'common.sh'))}`,
+    'COMMAND=""',
+    'AGENT_ARGS=()',
+    'ENV_FILE_ARG=""',
+    'REBUILD=0; BUILD_BASE=0; BASE_ONLY=0; ASSUME_YES=0; SYNC_FILES=0; SYNC_DELETE=0',
+    'SKIP_GIT=0; MOUNT_MODE=bind; STATE_MODE=volume; PURGE=0; VERSION_ARG=""; CONTINUE=0',
+    // Only the argument-collecting half of the runner is under test here.
+    `PARSE=$(awk '/^parse_args\\(\\) \\{/,/^}/' ${JSON.stringify(path.join(root, 'bin/moncho-cli'))})`,
+    'eval "$PARSE"',
+    'parse_args --prompt "--debug the thing"',
+    'printf "AGENT_ARGS:%s\\n" "${AGENT_ARGS[*]}"',
+    'for arg in "${AGENT_ARGS[@]}"; do printf "ARG=[%s]\\n" "$arg"; done',
+  ].join('\n')], { encoding: 'utf-8' });
+  assert.equal(parse.status, 0, parse.stderr);
+  assert.match(parse.stdout, /AGENT_ARGS:--prompt --debug the thing/);
+  assert.match(parse.stdout, /ARG=\[--prompt\]/);
+  assert.match(parse.stdout, /ARG=\[--debug the thing\]/, 'the prompt is one argument, not split');
+});
