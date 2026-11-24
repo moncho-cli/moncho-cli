@@ -56,6 +56,34 @@ that is where it should run: `/app/node_modules` is a volume seeded from the ima
 the suite resolves exactly the dependencies the agent does. Keeping the two the same is
 what makes a green suite mean something.
 
+### Configuration: `.env`, and not `.env.moncho`
+
+`./start.sh` reads **`./.env`** in this checkout. Start from the example:
+
+```bash
+cp .env.example .env    # then fill in the provider
+```
+
+That is the one thing this flow and the user flow deliberately do differently, and it is
+worth being precise about, because the axis is *which script runs where* — not who the
+person is:
+
+| Flow | Entry point | Env file |
+| ---- | ----------- | -------- |
+| **Maintainer** (this page) | `./start.sh` in this checkout | `./.env` |
+| **User** (USAGE.md) | `moncho-cli` in their project's directory | that project's `./.env.moncho` |
+
+The two names exist so that a checkout's `.env` and a user's project `.env` never mean the
+same thing. `moncho-cli` deliberately ignores a generic `.env`, so a project's own credentials
+cannot become the agent's provider; and this loop never reads `.env.moncho`, because the file
+it is looking at is its own checkout's config rather than some project's.
+
+`start.sh` forwards **every name** the file defines, as `-e NAME`, so there is no list to
+keep in step: a new setting only has to be declared in `.env` and read by the app. (This is
+why `-e NAME` rather than `-e NAME=value` — docker reads the value from the process, so a key
+never appears in the host process list.) Both example files declare the same names, and
+`tests/env-files.test.js` fails when one gains a setting the other lacks.
+
 ### The host fence is off in this loop
 
 `./start.sh` runs *this* checkout, so it passes `MONCHO_MAINTAINER=1` into the container and

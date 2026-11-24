@@ -21,36 +21,37 @@ done
 START_DIR="$(cd "$(dirname "$START_SOURCE")" && pwd -P)"
 # shellcheck source=bin/lib/clipboard-watch.sh
 . "$START_DIR/bin/lib/clipboard-watch.sh"
+# The env-file rule is shared with the runner (`bin/lib/env.sh`): the file is *sourced* as
+# shell, and the names it defines are what cross into the container. Sourcing the library
+# rather than repeating it is the point — this script used to carry its own allow-list, and
+# an allow-list is a second place for the env grammar to drift: a name added to the app and
+# not to the list simply never arrived, silently (`CHUNKPACTION_ENABLED` was lost that way).
+# shellcheck source=bin/lib/env.sh
+. "$START_DIR/bin/lib/env.sh"
 # Where the watcher's pid is recorded, so `stop` can end it. Named after this checkout.
 WATCH_PIDFILE="$START_DIR/.moncho/clipboard-watch.pid"
 
-# Load local .env (if present) so provider settings are available to pass into the container.
-if [ -f .env ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
+# Moncho's configuration lives in `./.env` here, and **only** here — this is the maintainer
+# flow, which runs from the checkout. `.env.moncho` is the *other* flow's file: `moncho-cli`
+# reads it in whatever project directory it is invoked from, and this script never looks at
+# it. See CONTRIBUTING.md (maintainer) and USAGE.md (user); the two names are deliberately
+# different so a project's own credentials can never become the agent's provider.
+#
+# Nothing below enumerates the variables. `resolve_env_file` picks the file (an explicit
+# `--env` would win, but this flow has no flag for it — the file is the convention),
+# `load_env_file` sources it and records the names it defines, and `build_env_flags` turns
+# each name into `-e NAME`, so docker reads the value out of this process's environment
+# rather than out of the command line. A name the file mentions but this shell does not
+# export is simply unset in the container, which is docker's own behaviour for a bare `-e`.
+MONCHO_ENV_FILE=".env"
+# `-r`, not `-f`: `resolve_env_file` refuses an unreadable file with `die`, which belongs to
+# the runner's library (`bin/lib/common.sh`) and is not sourced here. Guarding on readability
+# keeps that branch unreachable, so this script depends on nothing it does not load.
+if [ -r "$MONCHO_ENV_FILE" ]; then
+  resolve_env_file "$MONCHO_ENV_FILE"
+  load_env_file
 fi
-
-# Forward supported settings only when they are set.
-ENV_FLAGS=()
-[ -n "${OPENAI_BASE_URL:-}" ] && ENV_FLAGS+=(-e "OPENAI_BASE_URL=$OPENAI_BASE_URL")
-[ -n "${OPENAI_API_KEY:-}" ]  && ENV_FLAGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY")
-[ -n "${OPENAI_MODEL:-}" ]    && ENV_FLAGS+=(-e "OPENAI_MODEL=$OPENAI_MODEL")
-[ -n "${MODEL_TEMPERATURE:-}" ] && ENV_FLAGS+=(-e "MODEL_TEMPERATURE=$MODEL_TEMPERATURE")
-[ -n "${MONCHO_USER_AGENT:-}" ] && ENV_FLAGS+=(-e "MONCHO_USER_AGENT=$MONCHO_USER_AGENT")
-[ -n "${WEB_SEARCH_API_KEY:-}" ] && ENV_FLAGS+=(-e "WEB_SEARCH_API_KEY=$WEB_SEARCH_API_KEY")
-[ -n "${WEB_SEARCH_ENDPOINT:-}" ] && ENV_FLAGS+=(-e "WEB_SEARCH_ENDPOINT=$WEB_SEARCH_ENDPOINT")
-[ -n "${CONTEXT_MAX_LENGTH:-}" ] && ENV_FLAGS+=(-e "CONTEXT_MAX_LENGTH=$CONTEXT_MAX_LENGTH")
-[ -n "${COMPACTION_OLD_RATIO:-}" ] && ENV_FLAGS+=(-e "COMPACTION_OLD_RATIO=$COMPACTION_OLD_RATIO")
-[ -n "${FILE_LINE_LIMIT:-}" ] && ENV_FLAGS+=(-e "FILE_LINE_LIMIT=$FILE_LINE_LIMIT")
-[ -n "${PROJECT_LANGUAGE:-}" ] && ENV_FLAGS+=(-e "PROJECT_LANGUAGE=$PROJECT_LANGUAGE")
-[ -n "${PULSE_LIMIT:-}" ]     && ENV_FLAGS+=(-e "PULSE_LIMIT=$PULSE_LIMIT")
-[ -n "${LOG_LEVEL:-}" ]       && ENV_FLAGS+=(-e "LOG_LEVEL=$LOG_LEVEL")
-[ -n "${LOG_FILE:-}" ]        && ENV_FLAGS+=(-e "LOG_FILE=$LOG_FILE")
-[ -n "${LOG_MAX_BYTES:-}" ]   && ENV_FLAGS+=(-e "LOG_MAX_BYTES=$LOG_MAX_BYTES")
-[ -n "${LOG_MAX_FILES:-}" ]   && ENV_FLAGS+=(-e "LOG_MAX_FILES=$LOG_MAX_FILES")
-[ -n "${CLIPBOARD_FILE_KEEP:-}" ] && ENV_FLAGS+=(-e "CLIPBOARD_FILE_KEEP=$CLIPBOARD_FILE_KEEP")
+build_env_flags
 
 # Build the application image from ./Dockerfile (installs deps incl. `diff`).
 build_image() {

@@ -140,11 +140,20 @@ of them, because a bind mount already writes straight through.
 
 ## Configuration
 
-Moncho reads **one** env file: `./.env.moncho`, or whatever `--env` points at. A generic
-`.env` is deliberately ignored, so a project's own credentials never become the agent's
-provider. The file is sourced as shell, so quoting and comments behave the way you
-expect, and the values travel into the container as `-e NAME` — never as `-e NAME=value`
-— so a key does not appear in the host process list.
+Moncho reads **one** env file per flow, and the two flows use different names on purpose.
+
+| Flow | Entry point | Env file | Why |
+| ---- | ----------- | -------- | --- |
+| **User** | `moncho-cli` in *your* project's directory | `./.env.moncho` (or `--env <path>`) | A generic `.env` is deliberately ignored, so your project's own credentials never become the agent's provider |
+| **Maintainer** | `./start.sh` inside the agent's own checkout | `./.env` | You own that tree and read its diffs; `start.sh` forwards every name the file defines |
+
+**This page documents the user flow.** If you are running `./start.sh` in the agent's own
+checkout, none of the below applies — that flow reads `./.env` instead, and CONTRIBUTING.md
+says so.
+
+The file is sourced as shell, so quoting and comments behave the way you expect, and the
+values travel into the container as `-e NAME` — never as `-e NAME=value` — so a key does
+not appear in the host process list.
 
 Start from the example:
 
@@ -159,15 +168,20 @@ cp .env.moncho.example .env.moncho
 | `OPENAI_MODEL` | `qwen3.6:35b` | Model name |
 | `MODEL_TEMPERATURE` | unset | Sampling temperature (`0`–`2`); unset leaves the key out of the request |
 | `MONCHO_USER_AGENT` | unset | `User-Agent` header sent with every provider call and every `web_fetch`; unset sends none to the provider and presents `moncho-cli` when fetching |
+| `WEB_SEARCH_API_KEY` | — | Key the `web_search` tool sends; absent is a `MISSING_API_KEY` refusal |
+| `WEB_SEARCH_ENDPOINT` | the provider's own | Point `web_search` at a mirror or a stub |
 | `CONTEXT_MAX_LENGTH` | the provider's real total | Context budget override |
 | `COMPACTION_OLD_RATIO` | `0.7` | Share of the window summarised on compaction (`0.7`, `70` or `70%`) |
 | `CHUNKPACTION_ENABLED` | off | Collapse a solved item's section into a summary and keep its raw chunks as a capture; set `1`, `true`, `on`, `yes` or `y` to turn it on (worth it under local inference, where the window is the cost; a cloud provider caches the verbatim prefix instead) |
+| `PROJECT_LANGUAGE` | unset | Language for tasks, docs and comments; the conversation still follows the user |
+| `FILE_LINE_LIMIT` | `600` | Lines a file may hold before it must be split |
 | `PULSE_LIMIT` | `30` | Model calls before the pulse notice |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `off` |
+| `LOG_FILE` | `agent/logs/moncho.log` | Where the operational log is written |
 | `LOG_MAX_BYTES` | `524288` | Rotation threshold; `0` turns rotation off |
 | `LOG_MAX_FILES` | `5` | Rotation chain length, the live file included; `0` turns rotation off |
 | `CLIPBOARD_FILE_KEEP` | `single` | What a saved selection leaves behind: `single` keeps only the last copy, `all` keeps a timestamped history |
-| `TZ` | the host's zone | Passed into the container |
+| `TZ` | the host's zone | Passed into the container; read by the C library, not the app, for local times |
 
 ### Reaching a host Ollama from the container
 

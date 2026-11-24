@@ -76,3 +76,9 @@ here, because the rest of this tree assumes them:
   project directory; nothing is cloned;
 - a **maintainer** works on this checkout through `./start.sh` (or `make dev`), and
   `moncho-cli` refuses to prepare the agent's own checkout as if it were a project.
+
+The axis is the **script**, not the person: `moncho-cli` runs in another project's directory
+and `start.sh` runs in this one. Configuration follows the script for that reason — `start.sh`
+reads `./.env`, `moncho-cli` reads its workspace's `./.env.moncho` and ignores a generic
+`.env`, so a project's own credentials never become the agent's provider. See `.env.example`
+and `.env.moncho.example`, plus CONTRIBUTING.md and USAGE.md for the two sides.
