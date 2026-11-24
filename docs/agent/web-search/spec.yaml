@@ -1,0 +1,64 @@
+id: agent/web-search
+domain: agent
+title: Searching the web through one provider seam, to find the URLs worth fetching
+status: active
+summary: >
+  web_search answers the question that comes before web_fetch — which URLs are worth
+  fetching — and it is the same door, one step wider. The provider is data, not code:
+  SEARCH_PROVIDERS maps a name to a record that says where to ask (endpoint), how to spell
+  the request (params), where the results live (resultsPath) and whether a key is needed
+  (requiresKey, keyEnv), with duckduckgo (DEFAULT_SEARCH_PROVIDER) as the default. Adding a
+  provider is one entry, because buildSearchUrl and parseSearchResults read the record
+  rather than hard-coding a provider's field names; an unknown name is UNKNOWN_PROVIDER
+  rather than a silent fallback. The key is the user's and its absence is a refusal, not a
+  crash: a provider that needs one answers MISSING_API_KEY naming SEARCH_API_KEY_ENV, and
+  SEARCH_ENDPOINT_ENV (WEB_SEARCH_ENDPOINT) points a provider at another endpoint, read
+  when a search runs so a stub can be pointed at. The transport is web_fetch's own — a GET
+  bounded by fetchUrl (scheme, redirects, downgrade, time) and readBounded
+  (MAX_SEARCH_BODY_BYTES) — so a search opens no second door out of the sandbox. The answer
+  is the command-document shape (renderYamlHeader, ---, payload): one numbered block per
+  result, the URL on its own line so a web_fetch call can be composed from it (formatResults).
+  The parse is defensive on purpose — a missing link falls back to url, a missing snippet to
+  description, and an entry with neither a title nor a URL is dropped (parseSearchResults) —
+  because a list that silently came back empty on a renamed key is worse than one that kept
+  what it could read. The list is windowed from the top (windowBody) and, when it is cut, the
+  whole text goes to the capture store with a capture: handle that read_capture pages — no
+  second paging grammar. A refusal before the request (an empty query, an unknown provider, a
+  missing key) and a failure during it (a timeout, a refused connection) answer the JSON
+  envelope with a stable code and guidance, a search that matched nothing is a document
+  because the request worked, a provider error field is PROVIDER_ERROR and a non-JSON body is
+  INVALID_RESPONSE with the status (searchErrorDocument). It is one GET and nothing else, so
+  it is a reader: READ_ONLY_TOOLS and the read family, offered in every mode, chat included —
+  the second branch PRIVACY.md states, beside web_fetch.
+code:
+  - path: utils/web-search.js
+    symbols: [DEFAULT_SEARCH_PROVIDER, DEFAULT_SEARCH_RESULTS, MAX_SEARCH_RESULTS, DEFAULT_SEARCH_TIMEOUT_MS, MAX_SEARCH_TIMEOUT_MS, DEFAULT_SEARCH_LINES, MAX_SEARCH_LINES, MAX_SEARCH_BODY_BYTES, SEARCH_API_KEY_ENV, SEARCH_ENDPOINT_ENV, SEARCH_PROVIDERS, WebSearchError, validateQuery, resolveProvider, providerEndpoint, searchApiKey, buildSearchUrl, parseSearchResults, formatResults, providerError, renderSearchDocument, searchErrorDocument]
+  - path: tools/web_search.js
+    symbols: [definition, execute, failure]
+  - path: utils/web-fetch.js
+    symbols: [fetchUrl, readBounded, decodeBody, WebFetchError, windowBody, shownRange]
+  - path: utils/command-output.js
+    symbols: [renderYamlHeader, OUTPUT_DELIMITER, EMPTY_OUTPUT, CAPTURE_HINT]
+  - path: utils/capture-store.js
+    symbols: [putCapture]
+  - path: app/mode-policy.js
+    symbols: [READ_ONLY_TOOLS, refusalForMode]
+  - path: app/tool-palette.js
+    symbols: [TOOL_FAMILIES, toolFamily, toolColorFor]
+  - path: config/prompt.md
+    symbols: []
+tests:
+  - path: tests/web-search.test.js
+    cases:
+      - validateQuery refuses an empty query and trims a real one
+      - resolveProvider defaults to duckduckgo and refuses an unknown name
+      - buildSearchUrl spells the query, engine, key and count the way the provider declares
+      - parseSearchResults normalises the field names and drops an empty entry
+      - formatResults lays out one numbered block per result
+      - windowBody shows a list from the top and reports what it cut
+      - web_search answers a result list as a document of numbered blocks
+      - "web_search reports zero results as a document, not an error"
+      - web_search hands a long list to the capture store for read_capture
+      - web_search refuses an empty query, an unknown provider and a missing key with a stable code
+      - web_search reports a provider error and a non-JSON body without pretending they are transport failures
+      - web_search is a read-only tool in the read family

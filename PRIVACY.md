@@ -17,17 +17,18 @@ instead of guessing.
 
 ## What leaves the machine
 
-Three calls, the first two always to the base URL in `OPENAI_BASE_URL`:
+Four calls, the first two always to the base URL in `OPENAI_BASE_URL`:
 
 | Call | When | What it carries |
 | ---- | ---- | --------------- |
 | The chat completion | Every turn | The system prompt, the conversation so far, and the tool definitions |
 | The context-length probe | At startup | A request for the model's metadata, not the conversation |
 | A `web_fetch` GET | Only when the agent calls the tool | The URL, and the headers `utils/web-fetch.js` sends — no conversation, no key, no local file |
+| A `web_search` GET | Only when the agent calls the tool | The query, and the key `WEB_SEARCH_API_KEY` when one is configured — no conversation, no local file |
 
-The first two happen by existing. The third happens because the agent *chose* to retrieve a
-URL, which is what `web_fetch` is for; the user sees the call in the transcript. Nothing else
-is fetched. `scripts/install.sh` downloads the release tarball once, from
+The first two happen by existing. The third and fourth happen because the agent *chose* to
+retrieve a URL — `web_fetch` reads one it was given, `web_search` finds the ones worth
+reading — and the user sees each call in the transcript. Nothing else is fetched. `scripts/install.sh` downloads the release tarball once, from
 the repository named in `MONCHO_REPO`; that request happens at install time and not
 again. The agent does not check for updates.
 
@@ -44,7 +45,8 @@ The context sent to the provider is what the agent knows at that moment:
 
 A `web_fetch` result is part of the conversation too: **whatever the agent fetched is sent
 to the provider on the next turn**. A page pulled from a URL the agent chose is a page the
-provider then reads.
+provider then reads. The same holds for a `web_search` result: the titles, URLs and snippets
+it returns travel to the provider with the next turn.
 
 The agent reads what its tools are asked to read. It does not crawl the workspace. If a
 file should never leave the machine, do not let the agent read it.
@@ -115,6 +117,7 @@ sourced on the host; keep that file out of version control — it is ignored by 
 | The model | A provider's model may have different retention than another's |
 | The workspace | The agent reads only what its tools are asked to read |
 | `web_fetch` | A `Chat` session may fetch; the tool is a reader, one GET, and it writes nothing |
+| `web_search` | A `Chat` session may search; the tool is a reader, one GET, and it writes nothing |
 | `--state-in-repo` | Keeps the state in the repository instead of a volume |
 | The tracking files | `task.md` and the plan are prose you wrote and the agent updated |
 
@@ -140,7 +143,7 @@ policy, and this repository cannot delete it for you.
 ## Questions
 
 The behaviour described here is implemented in `api/ollama.js` (the provider calls),
-`utils/web-fetch.js` (the only other outbound request), `utils/session-store.js` (what a
-session holds), `utils/logger.js` (what the log holds)
+`utils/web-fetch.js` (the outbound GET), `utils/web-search.js` (the search provider seam),
+`utils/session-store.js` (what a session holds), `utils/logger.js` (what the log holds)
 and `bin/lib/env.sh` (how the key reaches the container). If a change makes one of those
 statements false, the document and the code are both wrong until they agree.

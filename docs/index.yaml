@@ -37,6 +37,7 @@ specs:
   - agent/line-paging
   - agent/project-rules
   - agent/web-fetch
+  - agent/web-search
   - context/token-accounting
   - context/compaction
   - context/context-size

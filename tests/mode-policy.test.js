@@ -21,6 +21,7 @@ const ALL = [
   tool('read_file'), tool('hint_file'), tool('blob'), tool('grep'), tool('read_capture'),
   tool('read_chunkpaction'),
   tool('web_fetch'),
+  tool('web_search'),
   tool('compact_context'),
   tool('update_task'), tool('write_plan_md'), tool('edit_plan_md'),
   tool('write_file'), tool('edit_file'), tool('delete_file'),

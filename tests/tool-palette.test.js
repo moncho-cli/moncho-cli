@@ -31,6 +31,7 @@ test('each tool name maps to its operation family, and an unknown name to other'
     read_capture: 'read',
     read_chunkpaction: 'read',
     web_fetch: 'read',
+    web_search: 'read',
     write_file: 'write',
     edit_file: 'write',
     delete_file: 'write',

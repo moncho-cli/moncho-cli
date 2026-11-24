@@ -62,8 +62,12 @@ import { TOOL_GUARD_REFUSAL } from './tool-guard.js';
  * is a **GET** over http(s) and nothing else (`utils/web-fetch.js`). A fetch reads a
  * remote resource exactly as `read_file` reads a local one — it cannot post, upload,
  * delete or write — so it is a reader and the read-only set is where it belongs.
+ *
+ * `web_search` is the same kind of member, one step earlier: it is a **GET** of a search
+ * provider's JSON index (`utils/web-search.js`), so it discovers the URLs `web_fetch` then
+ * reads. It cannot post, upload, delete or write either, so it is a reader too.
  */
-export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 'grep', 'read_capture', 'read_chunkpaction', 'web_fetch', 'compact_context']);
+export const READ_ONLY_TOOLS = Object.freeze(['read_file', 'hint_file', 'blob', 'grep', 'read_capture', 'read_chunkpaction', 'web_fetch', 'web_search', 'compact_context']);
 
 /**
  * The one tool that authors the tracking files. It is a writer, but a *scoped* one:
