@@ -12,29 +12,6 @@ $ cd swe-lite && moncho-cli bench build && moncho-cli bench select && moncho-cli
 
 One command makes a bench in a directory. Everything after that is that bench's own.
 
-## What the host must provide
-
-A bench drives **containers**, so it needs more of the machine than the agent does. The
-list is worth stating plainly, because a missing item does not look like a missing item: it
-looks like a broken bench, and the two are fixed in completely different places.
-
-| Needed | By | Without it |
-| ------ | -- | ---------- |
-| `docker` **and a reachable daemon** | `build`, `select`, `run`, `grade`, `shell` | nothing runs: every stage is a container |
-| `curl` or `wget` | `build` (payload, runtime), `select` (the dataset) | the payload and the subset cannot be fetched |
-| `tar` | `build` (unpacking both archives) | the fetched tarballs cannot be opened |
-| `git` | `run` (seeding a checkout, diffing the workspace) | no patch can be produced |
-| network access to the dataset viewer and to the release archive | `build`, `select` | no instances, no agent |
-| `python3` with the `swebench` package | `grade` | patches are produced and never scored |
-
-Everything except `grade` is the framework's own business and is checked by the framework
-before it starts work. `grade` is the one stage that depends on a *third-party* toolchain,
-and it says so when the harness is missing rather than reporting zero resolved.
-
-Nothing here is needed to **read** a bench — `status`, `explain` and `report` are host-side
-and answer from `plan.json` and the run store. A machine with no docker can still describe a
-bench and read the results another machine produced.
-
 ## Why this is a separate thing
 
 The installer stages the **agent**, and it does so from an allow-list
