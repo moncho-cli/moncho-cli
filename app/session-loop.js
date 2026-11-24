@@ -31,17 +31,36 @@ import { rememberAppliedSkin, restoreSessionSkin } from './skin-host.js';
  */
 
 /**
- * The third source of a prompt: the `work:on` self-drive, or the front end's question.
+ * The prompt for the next turn: the named file's, the `work:on` self-drive's, or the
+ * front end's question.
  *
  * The order is the whole contract of the lock (`docs/interface/modes`): `nextPrompt()`
  * drains the pending-message queue *before* calling this, so a message typed mid-run
  * steers the next turn; when nothing is queued and the lock is engaged, the next
  * `task.md` item becomes the prompt; otherwise the user types.
  *
+ * A prompt named on the command line (`--exec`, docs/runtime/run-flags) comes first,
+ * ahead of the drive: a caller that named a file asked for that file, and an explicit
+ * prompt outranking an implicit one is the only order that makes `--exec` predictable
+ * on a session whose lock happens to be on.
+ *
  * The drive prints its own progress line, so the hand-out is visible without the loop
  * knowing what a checklist is.
  */
-export function askForPrompt({ drive = null, cli = null, tui = null } = {}) {
+export function askForPrompt({ drive = null, cli = null, tui = null, exec = null } = {}) {
+  if (typeof exec === 'function') {
+    const named = exec();
+    if (named != null && String(named).trim()) return named;
+    // The named prompt has been used. A caller that named a file asked for that file and
+    // nothing else, so there is no further turn to take — and it must NOT fall through
+    // to the drive or the keyboard, because with `--exec` there is usually no front end
+    // to ask: falling through would either raise on a null `cli` or turn a one-shot run
+    // into an interactive one. The `exit` sentinel is the loop's own way of being told
+    // to stop, so it stops through the ordinary save — the literal, as in the three other
+    // places this module reads the sentinel, rather than importing a TUI module for one
+    // constant (`app/input-hint.js` owns it for the input box, not for the loop).
+    return 'exit';
+  }
   const next = typeof drive?.next === 'function' ? drive.next() : null;
   if (next && String(next.prompt ?? '').trim()) return next.prompt;
   return cli.question(tui ? '> ' : '\n> ');
@@ -244,7 +263,10 @@ export async function handleCommand(input, {
  * @param {object|null} [options.designReview] the `design` checklist reviewer
  *   (`app/design-review.js`); the loop shows its block the moment thinking stops and the
  *   session is waiting for a person again — after a turn lands, or after an abort
- * @returns {Promise<'exit'>} how the loop ended
+ * @param {Function} [options.exec] the named prompt source (`--exec`,
+ *   docs/runtime/run-flags): answers once, then `null`, which ends the run
+ * @param {number} [options.maxTurns] how many turns this process may take; 0 is unbounded
+ * @returns {Promise<'exit'|'turns'>} how the loop ended
  */
 export async function runSessionLoop({
   cli,
@@ -259,6 +281,8 @@ export async function runSessionLoop({
   contentView = null,
   designReview = null,
   abortManager = null,
+  exec = null,
+  maxTurns = 0,
   saveSession = () => null,
   autosave = null,
   onTurnLanded = null,
@@ -281,6 +305,11 @@ export async function runSessionLoop({
     closing = true;
   };
 
+  // How many turns this process has taken (`--turns`, docs/runtime/run-flags). Counted
+  // here rather than by the caller, because "a turn" is the loop's own unit: a slash
+  // command is answered without one, and an aborted turn leaves the count where it was.
+  let turnsTaken = 0;
+
   while (true) {
     // Between two turns -- and only there -- the pending-message queue is drained
     // (app/message-queue.js#nextPrompt): a message typed while the last turn was in
@@ -293,7 +322,7 @@ export async function runSessionLoop({
       // item, so the session keeps walking the checklist in its own conversation instead
       // of waiting for a keystroke. A typed message still wins, which is what makes live
       // steering work.
-      ask: () => askForPrompt({ drive, cli, tui }),
+      ask: () => askForPrompt({ drive, cli, tui, exec }),
     });
 
     if (isExitInput(userInput)) {
@@ -330,8 +359,17 @@ export async function runSessionLoop({
       // The turn landed: whatever the provider recovered from on the way is no
       // longer worth showing (main.js drops the retry notice here).
       if (typeof onTurnLanded === 'function') onTurnLanded();
-      commit('turn');
       settled = true;
+      turnsTaken += 1;
+
+      // The budget is spent, so this process is done and the loop leaves now. The turn is
+      // saved exactly once, through the same `commit` every turn uses — `commit` holds the
+      // whole window, so a second write for one turn would only supersede the first.
+      // Returning the loop's own reason lets a caller tell "the budget ran out" from
+      // "nothing was left to run".
+      const spent = maxTurns > 0 && turnsTaken >= maxTurns;
+      commit('turn');
+      if (spent) return 'turns';
     } catch (error) {
       if (isAbortError(error)) {
         log('\n[Info] Task was aborted.');

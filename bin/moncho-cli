@@ -55,6 +55,8 @@ SCRIPT_DIR="$(cd "$(dirname "$ENTRY_SOURCE")" && pwd -P)"
 . "$SCRIPT_DIR/lib/git.sh"
 # shellcheck source=lib/uninstall.sh
 . "$SCRIPT_DIR/lib/uninstall.sh"
+# shellcheck source=lib/subcommand.sh
+. "$SCRIPT_DIR/lib/subcommand.sh"
 
 # --- defaults ---------------------------------------------------------------
 COMMAND=""
@@ -73,6 +75,19 @@ PURGE="0"
 # session of that version instead of starting fresh (`--continue`).
 VERSION_ARG=""
 CONTINUE="0"
+# Arguments for the agent itself (`--exec <file>`, `--turns <n>`, `--mode <name>`). They
+# are collected in the order they were given and appended to the container's command
+# line: the agent image's entrypoint is `node /opt/moncho-cli/main.js`, so anything after
+# the image name arrives at `main.js` as its argv (docs/runtime/run-flags). The runner
+# never parses them — it is a courier, and a runner that re-implemented the agent's
+# argument grammar would be a second place for that grammar to drift.
+AGENT_ARGS=()
+
+# A companion tool's name and its arguments, when the first word names one
+# (docs/runtime/cli-subcommands). Defaulted to empty so the ordinary path through
+# `parse_args` never has to ask whether they were set.
+EXTERNAL_WORD=""
+EXTERNAL_ARGS=()
 
 usage() {
   cat <<'EOF'
@@ -91,9 +106,22 @@ Commands:
             images and state volumes too)
   help      this text
 
+A word that is not one of the commands above and does not begin with `-` is taken to
+name a companion tool, and runs `moncho-<word>` from PATH with the rest of the command
+line handed over untouched:
+
+  moncho-cli bench build     runs moncho-bench build
+
+Companions are separate programs: they are not part of this installation, and this
+program keeps no list of them.
+
 Options:
   --version <v>      run this installed version (default: the newest installed)
   --continue         open the newest session instead of starting a fresh one
+  --exec <file>      run the agent with this file's contents as its one prompt, then
+                     stop — no keyboard, so the process is non-interactive
+  --turns <n>        take at most n turns in this process, then stop
+  --mode <name>      start the session in this mode (chat, design, work)
   --env <path>       read this env file instead of ./.env.moncho (the only file read)
   --state-in-repo    keep the agent's state in ./agent instead of a named volume
   --do-not-mount     no bind mount: /app is what the project image contains
@@ -153,6 +181,13 @@ parse_args() {
         VERSION_ARG="$2"; shift 2 ;;
       --version=*) VERSION_ARG="${1#--version=}"; shift ;;
       --continue) CONTINUE="1"; shift ;;
+      # The agent's own arguments, passed through untouched (docs/runtime/run-flags).
+      # `set --` is avoided: the pair is appended verbatim so the agent's parser, not this
+      # one, decides what is valid — including refusing a missing value.
+      --exec|--turns|--mode)
+        [ $# -ge 2 ] || die "$1 needs a value"
+        AGENT_ARGS+=("$1" "$2"); shift 2 ;;
+      --exec=*|--turns=*|--mode=*) AGENT_ARGS+=("$1"); shift ;;
       -h|--help) COMMAND="help"; shift ;;
       *) die "unknown argument '$1' (try 'moncho-cli help')" ;;
     esac
@@ -160,6 +195,24 @@ parse_args() {
 }
 
 main() {
+  # The companion seam, reached before anything else (docs/runtime/cli-subcommands).
+  #
+  # It is checked first, and on the *first* word only, for three reasons that all amount
+  # to not having to decide anything later: an unrecognised word must never reach
+  # `parse_args`, which would refuse it as an unknown argument and so report *this*
+  # program's error for a word that names another program; the word is examined before
+  # any option is read, so a companion's own flags can never be reinterpreted here; and
+  # the hand-over happens before `resolve_workspace`, because a companion has its own
+  # idea of what a workspace is — a bench is a directory of its own, and
+  # `moncho-cli bench init` must work in one whose git repository this program would
+  # refuse.
+  if is_external_subcommand "$@"; then
+    EXTERNAL_WORD="$1"
+    shift
+    EXTERNAL_ARGS=("$@")
+    run_external_subcommand
+  fi
+
   parse_args "$@"
   [ -n "$COMMAND" ] || COMMAND="run"
   [ "$COMMAND" = "help" ] && { usage; return 0; }

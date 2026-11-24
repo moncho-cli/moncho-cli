@@ -92,9 +92,19 @@ test('the threshold and the budgets come from the environment with safe defaults
   assert.match(ignore, /^\/agent\/$/m, 'the default log directory must stay gitignored');
 
   assert.equal(normalizeLogLimit('1024', 1), 1024);
-  assert.equal(normalizeLogLimit('0', 7), 7, '0 cannot disable a configured budget by accident');
+  // An explicit `0` is a *value*, not a missing one: it is how rotation is turned off
+  // (docs/runtime/logging). Rewriting it into the fallback would make the documented
+  // "off" unreachable and leave the sink's zero-budget guard as dead code.
+  assert.equal(normalizeLogLimit('0', 7), 0, '0 disables the limit rather than falling back');
+  assert.equal(normalizeLogLimit(0, 7), 0);
+  // Junk, empty and a negative are not opinions, so the fallback still applies: a typo
+  // must not silently remove the cap.
   assert.equal(normalizeLogLimit('abc', 7), 7);
+  assert.equal(normalizeLogLimit('', 7), 7);
+  assert.equal(normalizeLogLimit('-5', 7), 7);
+  assert.equal(normalizeLogLimit('12abc', 7), 7, 'a mangled number is not half a number');
   assert.equal(normalizeLogLimit(undefined, undefined), 0, 'no fallback means no limit');
+  assert.equal(normalizeLogLimit(undefined, 7), 7, 'an unset value takes the fallback');
 });
 
 test('formatLogLine() writes one line with the stamp, the level, the scope and JSON details', () => {
@@ -220,6 +230,35 @@ test('a single kept file restarts the log instead of archiving it', () => {
   assert.equal(result.rotated, true);
   assert.equal(result.archives.length, 0);
   assert.equal(fs.existsSync(file), false, 'the log is restarted, not renamed');
+
+  cleanup(file);
+});
+
+test('a zero budget or count turns rotation off, keeping every line in one file', () => {
+  // `0` is the documented way to say "off" (docs/runtime/logging). It is deliberately not
+  // the same as `1`: `1` restarts the log by discarding it, while `0` keeps everything.
+  // Reading `0` as "keep no files" would make the *most* destructive setting out of the
+  // one that means "none" — and it did, because `keep <= 1` was one branch.
+  const file = tempLogFile('off');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'old content\n', 'utf-8');
+
+  const untouched = rotateLog(file, { maxFiles: 0 });
+  assert.equal(untouched.rotated, false, 'rotation off means nothing happens');
+  assert.equal(fs.existsSync(file), true, 'the log is not deleted');
+  assert.equal(fs.readFileSync(file, 'utf-8'), 'old content\n', 'its contents survive');
+  assert.equal(fs.existsSync(`${file}.1`), false, 'no archive is written');
+
+  // And through the sink: a zero byte budget never rotates, however much is written.
+  const logger = createLogger({ file, level: 'info', maxBytes: 0, maxFiles: 0 });
+  for (let index = 1; index <= 8; index += 1) {
+    logger.info('probe', `line number ${index} padded out to be comfortably long`);
+  }
+  assert.equal(fs.existsSync(`${file}.1`), false, 'no rotation happened');
+  const written = fs.readFileSync(file, 'utf-8');
+  assert.match(written, /old content/, 'the earlier content is still there');
+  assert.match(written, /line number 8/, 'and every new line landed');
+  assert.doesNotMatch(written, /rotated/, 'a rotation that did not happen is not announced');
 
   cleanup(file);
 });

@@ -58,6 +58,7 @@ tests:
       - "the file rotates when the next line would pass the byte budget"
       - "rotation keeps at most maxFiles files, newest first, without losing the live one"
       - "a single kept file restarts the log instead of archiving it"
+      - "a zero budget or count turns rotation off, keeping every line in one file"
       - "a log path that cannot be written never throws and reports why"
       - "logEvent() writes through the registered logger and is silent without one"
   - path: tests/logging-sites.test.js

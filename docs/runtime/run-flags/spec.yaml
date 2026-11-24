@@ -1,0 +1,44 @@
+id: runtime/run-flags
+domain: runtime
+title: The headless one-shot — a prompt from a file, and a bounded number of turns
+status: active
+summary: >
+  The agent runs either with a pty (the TUI) or without one (the line CLI), and both
+  ask for a prompt and end when the user types exit — so neither can be driven by
+  another program. Three flags close that: `--exec <file>` takes the prompt from a
+  file's whole contents verbatim and makes the process non-interactive, `--turns <n>`
+  bounds how many turns one process may take, and `--mode <name>` sets the mode the
+  session opens in. Every refusal is an error reported before the session starts rather
+  than something ignored, because each one is a silently wrong run: a caller who typed
+  `--turn 5` asked for a bounded run and would otherwise get an unbounded one. A named
+  prompt composes with the budget as an upper bound, since a file is not a queue and
+  re-reading it would repeat the same task rather than continue it. The module is pure,
+  terminal-free and takes its argv and its file reader as parameters, which is what lets
+  the whole contract be proved without a pty, a provider or a sandbox. It is a general
+  capability of the agent: nothing in the module, the spec or the tests names a caller.
+code:
+  - path: utils/run-flags.js
+    symbols: [parseRunFlags, isHeadless, turnBudget, createFilePrompt, EXEC_FLAG, TURNS_FLAG, MODE_FLAG]
+  - path: app/session-loop.js
+    symbols: [askForPrompt, runSessionLoop]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/run-flags.test.js
+    cases:
+      - --exec takes the next argument as the path to the prompt
+      - --exec= accepts the path in the same argument
+      - "--exec with no value is refused, and does not swallow the flag after it"
+      - --turns accepts a positive whole number and refuses zero, a negative and a fraction
+      - "--turns with no value is refused, and does not swallow the flag after it"
+      - --mode names the mode the session opens in
+      - an unknown argument is refused rather than ignored
+      - the flags parse in any order and repeated flags take the last value
+      - a run is headless when a prompt is named, and also when only a budget is given
+      - --exec bounds a process to one turn whatever --turns says
+      - a turn budget with no named prompt is passed through unchanged
+      - a named prompt is read verbatim, newlines and all
+      - the prompt file is read once, so a second call reports nothing left to run
+      - an empty prompt file is refused instead of sending a turn with nothing in it
+      - runSessionLoop() stops after the turn budget is spent
+      - runSessionLoop() asks the named prompt source before the front end

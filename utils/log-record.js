@@ -42,15 +42,39 @@ export function normalizeLogLevel(value, fallback = 'info') {
 }
 
 /**
- * A positive integer for a budget or a file count, or `fallback` when the value is
- * not one. `0` (a junk fallback as well) means "no limit", which is how a byte
- * budget is turned off without a second flag.
+ * A budget or a file count, or `fallback` when the value cannot be read as one.
+ *
+ * Three answers, and the middle one is why this is not a "positive integer" helper:
+ *
+ *  - **a positive integer** is the limit;
+ *  - **an explicit `0` stays `0`, which means "no limit"** — the one way to turn rotation
+ *    off without a second flag (docs/runtime/logging). `0` is a *value somebody chose*,
+ *    not a missing one, so it must not be rewritten into the default;
+ *  - **junk, empty, or negative** falls back, because a typo must not silently remove the
+ *    cap and leave a log growing without bound in a workspace the user believed was
+ *    bounded.
+ *
+ * The `0` case is the one that was wrong before: `> 0` was applied here as well as at the
+ * sink, so an explicit `0` was quietly replaced by the default, the documented "off" was
+ * unreachable, and the rotation guard downstream — written for a zero budget — was dead
+ * code. A primitive that cannot express a legal value is the bug.
  */
 export function normalizeLogLimit(value, fallback) {
-  const parsed = Number.parseInt(String(value ?? ''), 10);
-  if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  const safe = Number.parseInt(String(fallback ?? ''), 10);
-  return Number.isFinite(safe) && safe > 0 ? safe : 0;
+  // A fallback is itself a limit, so it follows the same rule — including being `0`.
+  const asLimit = (input) => {
+    // Strict, because `Number.parseInt` is not: it reads `abc` as NaN but `12abc` as 12,
+    // and a limit silently taken from a mangled value is worse than the default.
+    const raw = String(input ?? '').trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const chosen = asLimit(value);
+  if (chosen !== null) return chosen;
+
+  const safe = asLimit(fallback);
+  return safe === null ? 0 : safe;
 }
 
 /** True when `candidate` is at or below the threshold; `silent` allows nothing. */

@@ -65,15 +65,22 @@ export {
  * The oldest archive is dropped, never the newest one. Deterministic: the same call
  * on the same directory always produces the same set of files.
  *
+ * `maxFiles = 0` means rotation is **off** (docs/runtime/logging) and nothing is
+ * touched. That is deliberately distinct from `1`: `1` restarts the log by discarding
+ * its contents, while `0` keeps every line in the live file. Reading `0` as "keep no
+ * files" would make the *most* aggressive setting out of the one that means "none".
+ *
  * @returns {{rotated: boolean, file: string, archives: string[]}}
  */
 export function rotateLog(file, { maxFiles = LOG_MAX_FILES, resolvePath = resolveProjectPath } = {}) {
   const absolute = resolvePath(file);
   const keep = normalizeLogLimit(maxFiles, LOG_MAX_FILES);
+  // Rotation off: no chain to shift, and no file to lose.
+  if (keep === 0) return { rotated: false, file, archives: [] };
   if (!fs.existsSync(absolute)) return { rotated: false, file, archives: [] };
 
   // A single file kept means the log is simply restarted, not archived.
-  if (keep <= 1) {
+  if (keep === 1) {
     fs.unlinkSync(absolute);
     return { rotated: true, file, archives: [] };
   }

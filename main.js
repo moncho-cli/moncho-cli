@@ -33,6 +33,8 @@ import {
 import { ensureTrackingFiles } from './utils/tracking-store.js';
 import { resolveContextSize, formatContextLimit } from './utils/context-size.js';
 import { describeCompactionSplit } from './utils/compaction.js';
+import { readFileSync } from 'node:fs';
+import { parseRunFlags, isHeadless, turnBudget, createFilePrompt } from './utils/run-flags.js';
 
 /**
  * Startup wiring.
@@ -59,6 +61,28 @@ const logger = registerLogger(createLogger());
 let activeTui = null;
 
 async function main() {
+  // The run flags (`--exec`, `--turns`, `--mode`; docs/runtime/run-flags) are parsed once
+  // here, because this is the process that owns its own argv — a runner passes a command
+  // line into the container, not a parsed configuration. A malformed flag is fatal on
+  // purpose: each one is a silently wrong run rather than a cosmetic problem, and a run
+  // that ignored `--turn 5` would report a number obtained under a budget nobody chose.
+  // `process.exitCode` is set rather than `process.exit()` so the record of the startup
+  // failure is flushed first.
+  const flags = parseRunFlags(process.argv.slice(2));
+  if (flags.errors.length) {
+    for (const message of flags.errors) console.error(`moncho: ${message}`);
+    console.error("moncho: run 'moncho help' for the arguments this build accepts");
+    process.exitCode = 2;
+    return;
+  }
+  const headless = isHeadless(flags);
+  const maxTurns = turnBudget(flags);
+  // The prompt source is built here rather than deep in the loop: with `--exec` the file
+  // is the whole task, and the loop only ever sees a source of prompts.
+  const exec = flags.exec
+    ? createFilePrompt({ file: flags.exec, readFile: (path) => readFileSync(path, 'utf8') })
+    : null;
+
   // The provider/model label is read from the environment (OPENAI_BASE_URL /
   // OPENAI_MODEL) once at startup and shown in the TUI model row.
   const { label } = describeModel();
@@ -78,7 +102,9 @@ async function main() {
   // decides what may touch a file, so the TUI paints it and Tab walks it. Both hooks
   // are late-bound: the key only reports a direction, and app/mode-controller.js turns
   // that into a cycle() plus a routed refusal, which needs the notice sink built below.
-  const sessionMode = createSessionMode();
+  // `--mode` sets the mode the session opens in; an unrecognised name resolves the way an
+  // unrecognised name always does, rather than becoming a new failure mode here.
+  const sessionMode = createSessionMode({ mode: flags.mode ?? undefined });
   let modeController = null;
   // Slash commands: an iterable registry, so adding a command later needs no change in
   // the loop. Anything that is not `/<name>` stays a prompt. Built **before** the screen
@@ -335,10 +361,16 @@ async function main() {
   log(`Session file: ${sessions.path} (saved after every turn)`);
   log(`Context window budget: ${formatContextLimit(contextSize)} tokens (compaction keeps the newest ${describeCompactionSplit().keepLabel} and the last user message)`);
 
-  log("\nChat initialized. Type 'exit' to quit.");
-  log("ESC or Ctrl+C cancels a running task (press twice to confirm) and quits when idle.");
-  log(`Commands: ${commands.list().map((command) => `/${command.name}`).join(', ')} (try /help)`);
-  if (activeSkin && activeSkin.name !== 'default') log(`Skin: ${activeSkin.name} (change it with /skins)`);
+  // The interactive instructions are printed for a person at a keyboard. A headless run
+  // (`--exec`/`--turns`) has neither, and telling it to type `exit` would be noise in the
+  // record it leaves behind — while the provider, session-file and budget lines above
+  // stay, because those are what a caller reading the output actually needs to see.
+  if (!headless) {
+    log("\nChat initialized. Type 'exit' to quit.");
+    log("ESC or Ctrl+C cancels a running task (press twice to confirm) and quits when idle.");
+    log(`Commands: ${commands.list().map((command) => `/${command.name}`).join(', ')} (try /help)`);
+    if (activeSkin && activeSkin.name !== 'default') log(`Skin: ${activeSkin.name} (change it with /skins)`);
+  }
 
   await runSessionLoop({
     cli,
@@ -360,6 +392,11 @@ async function main() {
     // for the user again (app/design-review.js). Declared above, beside the drive.
     designReview,
     abortManager,
+    // The named prompt and the turn budget (`--exec`/`--turns`, docs/runtime/run-flags).
+    // The loop does not need to know where a prompt came from: a file is simply another
+    // source of the same thing `nextPrompt()` already accepted.
+    exec,
+    maxTurns,
     saveSession,
     autosave,
     // The turn landed, so whatever the provider recovered from on the way is no
