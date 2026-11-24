@@ -167,11 +167,28 @@ export class ContextWindow {
     return stampRepeated(at, 1)[0] ?? null;
   }
 
-  add(chunk) {
+  /**
+   * Append one chunk.
+   *
+   * The attribution is normally the item in flight (`#currentItem`). A caller that has already
+   * decided what a chunk belongs to may **pin** it instead, and this is not a convenience: a
+   * tool batch appends its chunks at two different moments — the assistant chunk carrying the
+   * calls *before* the batch runs, the results *after* it — while a tool that completes an item
+   * moves the item in flight in between (`tools/update_task.js`). Reading the item once and
+   * pinning it to every chunk of the batch is what keeps one stretch of work on one item
+   * (`app/tool-batch.js`); without it an item's run ends on half a tool pair, which is exactly
+   * the shape the item collapse must refuse (`utils/item-collapse.js#cutsToolBatch`).
+   *
+   * `item: undefined` means "not specified" and keeps the item in flight; `item: null` means
+   * "provably no item", which is the `NO_ITEM` a collapse never touches. The value is
+   * normalised the way the attribution array normalises one (`normalizeItems`), so a pinned
+   * attribution cannot be junkier than an in-flight one.
+   */
+  add(chunk, { item = undefined } = {}) {
     this.#chunks.push(chunk);
     this.#journal.push(chunk);
     this.#stamps.push(this.#nowStamp());
-    this.#items.push(this.#currentItem);
+    this.#items.push(item === undefined ? this.#currentItem : normalizeItems([item], 1)[0]);
     // The provenance is taken *once*, as the chunk enters: the version that produced it
     // and what it weighed are facts about this moment, and neither can be recovered later.
     this.#journalMeta.push(buildChunkMeta(chunk, { moncho: this.monchoVersion }));
@@ -200,6 +217,12 @@ export class ContextWindow {
    * `stamps` carries the append times the record kept beside the same chunks; a record
    * written before they existed (or a caller that only knows the chunks) yields no
    * marks, which is what a stored conversation shows when its times were never written.
+   *
+   * `items` carries the `task.md` item each chunk belongs to, index-aligned with the
+   * chunks and never on them (`utils/item-collapse.js#normalizeItems`). Without it a resumed
+   * conversation arrives with every chunk attributed to `NO_ITEM`, which is the safe direction
+   * — a collapse needs an attribution to exist — but it also means every resumed conversation
+   * would be uncollapsible, so a record that kept them hands them back.
    *
    * `meta` carries the provenance the record kept beside the *journal* (`utils/chunk-meta.js`),
    * so a resumed conversation goes on saying which build wrote each chunk. A record written

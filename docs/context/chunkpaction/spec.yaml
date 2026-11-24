@@ -20,6 +20,8 @@ code:
     symbols: [CHUNKPACTION_FILE, chunkpactionPath]
   - path: tools/read_chunkpaction.js
     symbols: [definition, execute]
+  - path: config/constants.js
+    symbols: [chunkpactionEnabled]
 tests:
   - path: tests/chunkpaction.test.js
     cases:
@@ -44,3 +46,6 @@ tests:
       - a collapse with no capture writer names no id rather than inventing one
       - the runner collapses through the live window and writes a capture the reader can open
       - the runner is a no-op with no window or no session
+      - the collapse switch is off unless CHUNKPACTION_ENABLED reads as a yes
+      - with the switch off, a completing update_task asks for no collapse and none runs
+      - a request recorded while on does not collapse once the switch is turned off

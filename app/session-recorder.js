@@ -159,6 +159,11 @@ export function createSessionRecorder({
           // chunk: the chunks are sent to the provider verbatim (utils/chunk-stamps.js,
           // docs/interface/session-stamps). Absent for a caller that only knows the window.
           stamps: Array.isArray(extra.stamps) ? extra.stamps : null,
+          // The `task.md` item each chunk belongs to, index-aligned with them and never on a
+          // chunk (utils/item-collapse.js, docs/context/item-collapse). It is carried in the
+          // record so a resumed conversation can still collapse a solved section; absent for a
+          // caller that only knows the window.
+          items: Array.isArray(extra.items) ? extra.items : null,
           stats: extra.stats || {},
           usage: extra.usage || {},
           taskContent,

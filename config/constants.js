@@ -227,6 +227,41 @@ export function hostFenceEnabled() {
 }
 
 // ---------------------------------------------------------------------------
+// The chunkpaction collapse switch
+// ---------------------------------------------------------------------------
+/**
+ * Whether a solved item's section is collapsed into a summary and its raw chunks kept
+ * as a chunkpaction capture (`docs/context/item-collapse`, `docs/context/chunkpaction`).
+ *
+ * **Off by default**, because the collapse trades *prefix stability* for window size, and
+ * which of the two is worth more depends on where the model runs:
+ *
+ *  - **Locally**, the window is the cost. KV memory and prefill compute both grow with the
+ *    tokens sent, nothing discounts a repeated prefix, and a small window is simply faster
+ *    and cheaper. Collapsing is the win, so the operator sets `CHUNKPACTION_ENABLED=1`.
+ *  - **On a cloud provider**, a *stable growing prefix* is the cost centre: providers cache
+ *    it and bill the cached share at a discount, so every token kept verbatim that was
+ *    already sent is close to free, while a rewrite invalidates the cache from the point of
+ *    change onward. A collapse is exactly such a rewrite, so leaving the section verbatim
+ *    usually costs less than shrinking it — hence the default.
+ *
+ * So the flag is **opt-in**: unset means the collapse does not run, and the verbatim section
+ * stays in the window. Anything that reads as "yes" (`1`, `true`, `on`, `yes`, `y`) turns it
+ * on; a blank or unrecognised value stays off, because a typo must not silently rewrite the
+ * window. (Turning it off never un-collapses anything already collapsed: the raw chunks are
+ * still in `chunkpaction.json` and `read_chunkpaction` still reads them.)
+ *
+ * Like `hostFenceEnabled()` it is read **when the collapse is asked**, not once at import:
+ * the suite runs in one process and needs to flip the switch per case, and a switch frozen
+ * at module load would make the on path untestable. A production process never changes its
+ * environment mid-run, so reading late costs nothing there.
+ */
+export function chunkpactionEnabled() {
+  const raw = String(process.env.CHUNKPACTION_ENABLED ?? '').trim().toLowerCase();
+  return ['1', 'true', 'on', 'yes', 'y'].includes(raw);
+}
+
+// ---------------------------------------------------------------------------
 // run_npm allow-list
 // ---------------------------------------------------------------------------
 export const NPM_ALLOWED_SUBCOMMANDS = [

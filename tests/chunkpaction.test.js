@@ -22,8 +22,9 @@ import { readChunkpaction, writeChunkpactionCapture, hasChunkpaction } from '../
 import { execute as readChunkpactionExecute } from '../tools/read_chunkpaction.js';
 import { registerSession, clearSession, registerContextWindow, clearContextWindow } from '../utils/host.js';
 import { collapseCompletedItems } from '../utils/item-collapse.js';
-import { runItemCollapse } from '../app/item-collapse-runner.js';
+import { requestItemCollapse, runItemCollapse } from '../app/item-collapse-runner.js';
 import { ContextWindow } from '../app/context-window.js';
+import { chunkpactionEnabled } from '../config/constants.js';
 
 /**
  * Proof for the chunkpaction capture (docs/context/chunkpaction, task-backlog item 75).
@@ -338,7 +339,14 @@ test('the runner collapses through the live window and writes a capture the read
   window.setCurrentItem(null);
   window.add(chunks[3]);
 
-  const report = runItemCollapse(['item one']);
+  // `update_task` only *asks* for the collapse; the batch that carries the call drains the
+  // request once every chunk of the batch is in the window (app/tool-batch.js). Called
+  // outside a batch, the pair is the same rewrite the tool would have triggered. The
+  // collapse is opt-in, so the switch is turned on around the pair.
+  const report = withSwitch('1', () => {
+    requestItemCollapse(['item one']);
+    return runItemCollapse();
+  });
   assert.equal(report.collapsed.length, 1);
   assert.equal(report.chunks, 2, 'the three-chunk section became one, plus the untouched tail');
 
@@ -356,12 +364,104 @@ test('the runner collapses through the live window and writes a capture the read
 test('the runner is a no-op with no window or no session', () => {
   clearContextWindow();
   registerSession({ id: SESSION_ID });
-  assert.equal(runItemCollapse(['item one']), null, 'no window, nothing to rewrite');
+  assert.equal(requestItemCollapse(['item one']), false, 'no window, nothing to rewrite');
+  assert.equal(runItemCollapse(), null, 'and nothing to drain');
 
   const window = new ContextWindow({ maxTokens: 1_000_000 });
   registerContextWindow(window);
   clearSession();
-  assert.equal(runItemCollapse(['item one']), null, 'no session, no folder to capture into');
+  assert.equal(requestItemCollapse(['item one']), false, 'no session, no folder to capture into');
+  assert.equal(runItemCollapse(), null, 'and nothing to drain');
+
+  // A drained request cannot be drained twice: the second call finds nothing.
+  registerSession({ id: SESSION_ID });
+  withSwitch('1', () => {
+    requestItemCollapse(['item one']);
+    runItemCollapse();
+    assert.equal(runItemCollapse(), null, 'one request is one collapse');
+  });
+
+  clearContextWindow();
+});
+
+// ---------------------------------------------------------------------------
+// The switch
+// ---------------------------------------------------------------------------
+
+/** Run `body` with CHUNKPACTION_ENABLED set to `value`, restoring whatever was there. */
+function withSwitch(value, body) {
+  const previous = process.env.CHUNKPACTION_ENABLED;
+  if (value === undefined) delete process.env.CHUNKPACTION_ENABLED;
+  else process.env.CHUNKPACTION_ENABLED = value;
+  try {
+    return body();
+  } finally {
+    if (previous === undefined) delete process.env.CHUNKPACTION_ENABLED;
+    else process.env.CHUNKPACTION_ENABLED = previous;
+  }
+}
+
+test('the collapse switch is off unless CHUNKPACTION_ENABLED reads as a yes', () => {
+  // Unset is the default: the collapse does NOT run without a variable being set, because
+  // a verbatim growing prefix is what a cloud provider caches and bills at a discount.
+  withSwitch(undefined, () => assert.equal(chunkpactionEnabled(), false));
+  // A blank or unrecognised value stays off, so a typo cannot silently rewrite the window.
+  withSwitch('', () => assert.equal(chunkpactionEnabled(), false));
+  withSwitch('maybe', () => assert.equal(chunkpactionEnabled(), false));
+  withSwitch('no', () => assert.equal(chunkpactionEnabled(), false));
+  withSwitch('0', () => assert.equal(chunkpactionEnabled(), false));
+  // The five spellings that read as a yes turn it on, in any case.
+  for (const on of ['1', 'true', 'on', 'yes', 'y', 'ON', 'True', ' yes ']) {
+    withSwitch(on, () => assert.equal(chunkpactionEnabled(), true, `${on} turns the collapse on`));
+  }
+});
+
+test('with the switch off, a completing update_task asks for no collapse and none runs', () => {
+  // Off is the default, so an unset variable is itself the off case.
+  assert.equal(chunkpactionEnabled(), false);
+  registerSession({ id: SESSION_ID });
+  const window = new ContextWindow({ maxTokens: 1_000_000 });
+  registerContextWindow(window);
+
+  window.setCurrentItem('item one');
+  window.addMany([
+    { role: 'user', content: `${'x'.repeat(400)} do it` },
+    { role: 'assistant', content: 'reasoning' },
+  ]);
+  window.setCurrentItem(null);
+
+  withSwitch(undefined, () => {
+    assert.equal(requestItemCollapse(['item one']), false, 'off means the request is refused');
+    assert.equal(runItemCollapse(), null, 'and there is nothing to drain');
+  });
+
+  assert.equal(window.chunks.length, 2, 'the section stays verbatim in the window');
+  assert.equal(window.chunks[0].collapsed, undefined, 'nothing was collapsed');
+  assert.equal(hasChunkpaction(SESSION_ID), false, 'and no capture file was written');
+
+  clearContextWindow();
+});
+
+test('a request recorded while on does not collapse once the switch is turned off', () => {
+  registerSession({ id: SESSION_ID });
+  const window = new ContextWindow({ maxTokens: 1_000_000 });
+  registerContextWindow(window);
+
+  window.setCurrentItem('item one');
+  window.addMany([
+    { role: 'user', content: `${'x'.repeat(400)} do it` },
+    { role: 'assistant', content: 'reasoning' },
+  ]);
+  window.setCurrentItem(null);
+
+  // The tool asks while the switch is on; the batch drains after it was turned off.
+  assert.equal(withSwitch('1', () => requestItemCollapse(['item one'])), true, 'the request is taken while on');
+  withSwitch(undefined, () => {
+    assert.equal(runItemCollapse(), null, 'the drain re-checks and refuses');
+  });
+
+  assert.equal(window.chunks.length, 2, 'the window is left alone');
+  assert.equal(hasChunkpaction(SESSION_ID), false, 'and no capture was written');
 
   clearContextWindow();
 });

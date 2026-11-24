@@ -10,7 +10,7 @@ import {
   createCollapseNotifier,
 } from '../app/collapse-notice.js';
 import { ContextWindow } from '../app/context-window.js';
-import { runItemCollapse } from '../app/item-collapse-runner.js';
+import { requestItemCollapse, runItemCollapse } from '../app/item-collapse-runner.js';
 import {
   registerSession, clearSession, registerContextWindow, clearContextWindow,
   registerCollapseNotifier, notifyCollapse, clearCollapseNotifier,
@@ -38,6 +38,23 @@ test.after(() => {
   process.chdir(ORIGINAL_CWD);
   fs.rmSync(ROOT, { recursive: true, force: true });
 });
+
+/**
+ * Run `body` with the collapse switch on, restoring whatever was there.
+ *
+ * The collapse is opt-in (`config/constants.js#chunkpactionEnabled`), so every case that
+ * expects a real rewrite has to turn it on; the off case is the unset default.
+ */
+function withSwitchOn(body) {
+  const previous = process.env.CHUNKPACTION_ENABLED;
+  process.env.CHUNKPACTION_ENABLED = '1';
+  try {
+    return body();
+  } finally {
+    if (previous === undefined) delete process.env.CHUNKPACTION_ENABLED;
+    else process.env.CHUNKPACTION_ENABLED = previous;
+  }
+}
 
 test.afterEach(() => {
   clearSession();
@@ -129,7 +146,12 @@ test('a real collapse announces itself once, with the id the summary names', () 
   const shown = [];
   registerCollapseNotifier(createCollapseNotifier({ log: (line) => shown.push(line) }));
 
-  const report = runItemCollapse(['wire the reader']);
+  // `update_task` only asks for the collapse and the tool batch drains it
+  // (app/item-collapse-runner.js); outside a batch the pair is that same rewrite.
+  const report = withSwitchOn(() => {
+    requestItemCollapse(['wire the reader']);
+    return runItemCollapse();
+  });
 
   assert.equal(report.collapsed.length, 1);
   assert.equal(shown.length, 1, 'exactly one row for one collapse');
@@ -150,7 +172,10 @@ test('a collapse the guards refuse shows nothing', () => {
   registerCollapseNotifier(createCollapseNotifier({ log: (line) => shown.push(line) }));
 
   // An item that is not completed is never collapsed, so there is nothing to announce.
-  const report = runItemCollapse([]);
+  const report = withSwitchOn(() => {
+    requestItemCollapse([]);
+    return runItemCollapse();
+  });
 
   assert.deepEqual(report.collapsed, []);
   assert.deepEqual(shown, [], 'no rewrite, no row');
@@ -161,7 +186,10 @@ test('with no sink registered the collapse is silent, not a throw', () => {
   registerContextWindow(windowWithOneSection());
   clearCollapseNotifier();
 
-  const report = runItemCollapse(['wire the reader']);
+  const report = withSwitchOn(() => {
+    requestItemCollapse(['wire the reader']);
+    return runItemCollapse();
+  });
   assert.equal(report.collapsed.length, 1, 'the collapse still happened');
   assert.deepEqual(notifyCollapse(report), [], 'and reporting it is a no-op');
 });

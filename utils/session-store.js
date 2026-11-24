@@ -12,6 +12,7 @@ import {
   sessionModeState,
   sessionSkin,
   sessionChunks,
+  sessionItems,
   sessionPlanContent,
   sessionStamps,
   sessionTaskContent,
@@ -72,6 +73,7 @@ export const CHUNKPACTION_FILE = 'chunkpaction.json';
 
 export { SESSION_FORMAT_VERSION, SessionStoreError, sessionId, formatSession, parseSession };
 export { countRoles, serializeSession, sessionChunks, sessionStamps, sessionModeState, sessionSkin, sessionPlanContent, sessionTaskContent, sessionUsage };
+export { sessionItems };
 
 /** A session id, or `INVALID_ID`: the single rule both path helpers below obey. */
 function safeSessionName(id) {

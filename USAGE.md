@@ -156,6 +156,7 @@ cp .env.moncho.example .env.moncho
 | `MONCHO_USER_AGENT` | unset | `User-Agent` header sent with every provider call and every `web_fetch`; unset sends none to the provider and presents `moncho-cli` when fetching |
 | `CONTEXT_MAX_LENGTH` | the provider's real total | Context budget override |
 | `COMPACTION_OLD_RATIO` | `0.7` | Share of the window summarised on compaction (`0.7`, `70` or `70%`) |
+| `CHUNKPACTION_ENABLED` | off | Collapse a solved item's section into a summary and keep its raw chunks as a capture; set `1`, `true`, `on`, `yes` or `y` to turn it on (worth it under local inference, where the window is the cost; a cloud provider caches the verbatim prefix instead) |
 | `PULSE_LIMIT` | `30` | Model calls before the pulse notice |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `off` |
 | `LOG_MAX_BYTES` | `524288` | Rotation threshold |

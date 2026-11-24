@@ -10,6 +10,7 @@ import { MAX_PARALLEL_TOOL_CALLS, TOO_MANY_TOOL_CALLS } from '../config/constant
 import { loadTools } from '../utils/tool-loader.js';
 import { parseToolChunk } from '../app/tool-call-format.js';
 import { formatRefusalLine, isRefusalLine } from '../app/refusal-line.js';
+import { cutsToolBatch } from '../utils/item-collapse.js';
 import {
   planToolBatch,
   dispatchToolCalls,

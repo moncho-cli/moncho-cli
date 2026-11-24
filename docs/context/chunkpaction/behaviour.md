@@ -70,6 +70,18 @@ chunks with the same `chunkToText()` the summariser was given, and
 over a chunkpaction behaves exactly like one over a command capture, and the model reads
 back the record it lost rather than a second interpretation of it.
 
+## The switch
+
+The capture only exists because a collapse produced one, so the switch that gates the
+collapse (`CHUNKPACTION_ENABLED`, `config/constants.js#chunkpactionEnabled`) also decides
+whether captures are written at all: a section that is never collapsed has no summary to
+name an id and nothing to keep. The collapse is **off by default** — a verbatim growing
+prefix is what a cloud provider caches and bills at a discount, so on a cloud provider the
+section is usually cheaper kept than shrunk, and only a local deployment (where KV memory
+and prefill compute are the cost) turns it on. The file is still *read* whatever the switch
+says — a session that collapsed while it was on keeps its captures and can still open them —
+and a missing file is still the ordinary answer for a session that never collapsed anything.
+
 ## See also
 
 - The collapse that writes a capture: `docs/context/item-collapse`

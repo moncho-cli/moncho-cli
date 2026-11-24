@@ -1,5 +1,6 @@
 import { normalizeModelUsage } from './usage-stats.js';
 import { isStamp, normalizeStamps } from './chunk-stamps.js';
+import { normalizeItems } from './item-collapse.js';
 import { runningVersion } from './session-version.js';
 
 /**
@@ -49,6 +50,7 @@ export function serializeSession({
   cwd = null,
   chunks = [],
   stamps = null,
+  items = null,
   stats = {},
   usage = {},
   taskContent = null,
@@ -97,6 +99,16 @@ export function serializeSession({
   // file written before the field existed still parses, because the marks are optional.
   if (Array.isArray(stamps) && stamps.some(isStamp)) {
     record.stamps = normalizeStamps(stamps, record.chunks.length);
+  }
+
+  // The `task.md` item each chunk belongs to, beside the chunks and never on them
+  // (utils/item-collapse.js, docs/context/item-collapse). Written only when the conversation
+  // carries at least one attribution, so a record with nothing to say is byte-for-byte what it
+  // always was — and a file written before the field existed still parses, because it is
+  // optional. Without it a resumed conversation would come back with every chunk attributed to
+  // nothing, and would therefore never collapse again.
+  if (Array.isArray(items) && items.some((item) => typeof item === 'string' && item.trim() !== '')) {
+    record.items = normalizeItems(items, record.chunks.length);
   }
 
   if (taskContent !== null) record.taskContent = taskContent;
@@ -196,6 +208,21 @@ export function sessionChunks(session) {
 export function sessionStamps(session) {
   const parsed = parseSession(formatSession(session));
   return normalizeStamps(Array.isArray(parsed.stamps) ? parsed.stamps : [], parsed.chunks.length);
+}
+
+/**
+ * The `task.md` item each chunk of the session belongs to, index-aligned with the chunks
+ * (`utils/item-collapse.js`, `docs/context/item-collapse`).
+ *
+ * A record written before the field existed answers one `NO_ITEM` (`null`) per chunk, so every
+ * later reader can index the list without a length check, and re-attributing nothing is the safe
+ * direction — a collapse needs an attribution to exist. What it must not do is answer "nothing"
+ * for a record that *did* store attributions: that is what makes a resumed conversation
+ * collapsible again.
+ */
+export function sessionItems(session) {
+  const parsed = parseSession(formatSession(session));
+  return normalizeItems(Array.isArray(parsed.items) ? parsed.items : [], parsed.chunks.length);
 }
 
 /** The per-model token table of a session, ready to seed a usage meter. */

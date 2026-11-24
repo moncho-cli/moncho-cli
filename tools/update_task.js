@@ -3,7 +3,7 @@ import { readTaskContent, readPlanContent, writeTaskContent, writePlanContent, t
 import { completeStep, refusal } from '../utils/tracking-step.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { resetTaskPulse, notifyTrackingUpdate, setCurrentItem } from '../utils/host.js';
-import { runItemCollapse } from '../app/item-collapse-runner.js';
+import { requestItemCollapse } from '../app/item-collapse-runner.js';
 import { parseCheckboxItems, findCheckboxItem, readStatusLine, planProgress } from '../utils/plan-file.js';
 import {
   renderTaskFile, renderPlanFile, readTitle, extractNotes, normalizeStatus, trackingTemplate,
@@ -218,7 +218,18 @@ const { definition, execute } = defineTool({
     // `complete` triggers it: `start` opens an item, `step` ticks one still in flight,
     // and `status` is a metadata edit — none of them finishes a section. With no window
     // or no session registered (a bare tool call) the runner is a no-op.
-    const collapse = action === 'complete' ? runItemCollapse(done.filter((item) => item.done).map((item) => item.text)) : null;
+    //
+    // The collapse is only *asked for* here and runs in the batch that carries this call
+    // (app/tool-batch.js). This call is half of what the batch appends: the assistant chunk
+    // with the `tool_calls` is already in the window, its `tool` result is not yet, so
+    // collapsing now would rewrite a section that is still missing its result — and the run
+    // the rule would see ends on a tool call whose result sits outside it, which is exactly
+    // what it must refuse. Only `complete` asks: `start` opens an item, `step` ticks one
+    // still in flight, and `status` is a metadata edit, so none of them finishes a section.
+    // With no window or no session registered (a bare tool call) the request is refused.
+    const collapseRequested = action === 'complete'
+      ? requestItemCollapse(done.filter((item) => item.done).map((item) => item.text))
+      : false;
 
     // The user watches the conversation, not the two files, so a milestone the tool just
     // wrote is announced in the transcript as a `[Tracking]` row (app/tracking-notice.js),
@@ -263,16 +274,11 @@ const { definition, execute } = defineTool({
       planWritten: Boolean(planWrite),
       // True when this call put the live model-call pulse back to 0.
       pulseReset,
-      // What the collapse of the finished item's section did: the captures it kept (each
-      // with the id its summary names) and the window size it left. `null` when there was
-      // nothing to collapse into — no window or no session registered.
-      collapse: collapse
-        ? {
-          collapsed: collapse.collapsed.length,
-          captures: collapse.collapsed.map((entry) => entry.capture),
-          chunks: collapse.chunks
-        }
-        : null,
+      // True when this call asked for the finished item's section to be collapsed. The
+      // rewrite runs in the batch that carries the call (app/item-collapse-runner.js),
+      // once every chunk of the section is in the window, so the capture ids come back
+      // through the collapse report rather than this reply.
+      collapseRequested,
       // The item the next chunk will be attributed to, and whether a live window took
       // it. `null` means the checklist is finished, so nothing more belongs to an item.
       itemInFlight,

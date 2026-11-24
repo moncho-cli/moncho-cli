@@ -115,6 +115,28 @@ With no window registered (a bare tool call, the tool-level suites) or no sessio
 folder to write a capture into) the runner is a **silent no-op**, which is the same shape
 every other registry-backed step has.
 
+## The switch
+
+The collapse is **off by default**, because it trades *prefix stability* for window size and
+which of the two is worth more depends on where the model runs. On a **cloud provider** a
+stable, growing prefix is the cost centre: it is cached and the cached share is billed at a
+discount, so tokens already sent are close to free, while a collapse is a rewrite that
+invalidates the cache from the point of change onward — the verbatim section is usually
+cheaper than the smaller one. **Locally** there is no such discount and the window itself is
+the cost (KV memory, prefill compute), so a small window is the win.
+
+`CHUNKPACTION_ENABLED` (`config/constants.js#chunkpactionEnabled`) therefore turns it **on**:
+set it to `1`, `true`, `on`, `yes` or `y` and a solved section is collapsed while its raw
+chunks are kept as a capture. Unset, blank or anything else leaves it off, so a typo cannot
+silently rewrite the window. Turning it off never un-collapses what was already collapsed:
+the raw chunks are still in `chunkpaction.json` and `read_chunkpaction` still reads them.
+
+The switch is read **when a collapse is asked for**, not once at import: the suite runs in
+one process and flips it per case, and a value frozen at module load would make the on
+path untestable. `requestItemCollapse()` refuses while it is off, and
+`runItemCollapse()` re-checks at drain time, so a switch turned off between the call and
+its batch leaves the window alone rather than collapsing it one chunk later.
+
 ## See also
 
 - Implementation: `utils/item-collapse.js`, `app/context-window.js`,

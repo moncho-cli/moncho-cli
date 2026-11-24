@@ -4,6 +4,7 @@ import { guardToolCall, formatGuardRefusal } from './tool-guard.js';
 import { formatRefusalLine } from './refusal-line.js';
 import { logEvent } from '../utils/logger.js';
 import { captureIds, expireCaptures, capturesRequestedBy } from '../utils/capture-store.js';
+import { clearItemCollapseRequest, runItemCollapse } from './item-collapse-runner.js';
 import {
   formatCallLines,
   formatCallSignature,
@@ -152,6 +153,10 @@ export async function handleToolBatch({
 } = {}) {
   const plan = planToolBatch(toolCalls, { max });
   const notifyChange = typeof notify === 'function' ? notify : () => {};
+  // A collapse an earlier batch asked for but never drained belongs to nobody: this batch
+  // must not rewrite the window for a request it did not receive (`app/item-collapse-runner.js`).
+  // The drain at the end of this function picks up whatever *this* batch's calls request.
+  clearItemCollapseRequest();
   // The prose route (docs/interface/prose-bands): prose next to the calls is piped
   // through it so a front end can band it, and anything other than a real return
   // (no hook, a throwing one) falls back to the generic log.
@@ -159,12 +164,32 @@ export async function handleToolBatch({
   let lastStoredIntent = null;
   let lastLoggedIntent = null;
 
+  // The item this batch belongs to, read **once** and pinned to every chunk below: a batch is
+  // one stretch of work and is attributed to whichever item was in flight when it began.
+  //
+  // It has to be a single read, taken here. A batch appends its chunks at two moments — the
+  // assistant chunk carrying the calls below, the results after the calls have run — while a
+  // tool that finishes an item moves the item in flight *in between* (`tools/update_task.js`).
+  // Reading the item per chunk splits one batch across two items, and the half-open shape that
+  // leaves behind (a run ending on a tool call whose results sit outside it, or starting on a
+  // result whose call does) is exactly what the item collapse must refuse
+  // (`utils/item-collapse.js#cutsToolBatch`). One read keeps every run whole.
+  //
+  // `null` is pinned as itself, not skipped: a batch that ran while no item was open belongs to
+  // nothing (`NO_ITEM`), and pinning it explicitly is what stops the batch that opens an item
+  // from straddling the boundary — its own chunks stay with the section that just ended and the
+  // new item's run begins clean at the next batch.
+  //
+  // `undefined` means "no window to pin through", and `adding()` is then a no-op — a call with
+  // no window behaves exactly as it did before.
+  const pin = window ? { item: window.currentItem ?? null } : undefined;
+  const adding = (chunk) => window?.add(chunk, pin);
   // Emit a single, OpenAI-compatible assistant chunk carrying all tool calls.
   // `content` is the prose the model wrote next to them: keeping it on the *same*
   // chunk is what puts an announced approach in the model's context (the provider
   // shape pairs prose and calls in one message) and in the reader's transcript, and
   // it is why nothing has to be duplicated into a second message.
-  window?.add({
+  adding({
     role: 'assistant',
     content: content ?? null,
     tool_calls: plan.accepted.concat(plan.refused).map(({ call }) => ({
@@ -226,7 +251,7 @@ export async function handleToolBatch({
     // context (task.md item 6) instead of only being printed to the terminal.
     // Deduplicate: if intent matches previously stored intent, store with empty intent to avoid repetition
     const storedIntent = outcome.intent === lastStoredIntent ? '' : outcome.intent;
-    window?.add({
+    adding({
       role: 'tool',
       tool_call_id: outcome.id,
       content: batchChunk({
@@ -251,7 +276,7 @@ export async function handleToolBatch({
     lastLoggedIntent = null;
     lastStoredIntent = null; // Reset for refused calls
     log(formatRefusalLine({ name: call.name, reason: formatBatchRefusalReason({ requested: plan.total, max: plan.max }) }));
-    window?.add({
+    adding({
       role: 'tool',
       tool_call_id: call.id,
       content: batchChunk({
@@ -265,6 +290,14 @@ export async function handleToolBatch({
     order.push(call.id);
   }
 
+  // Every chunk this batch owns is in the window now, so a collapse a tool asked for can
+  // finally see the whole section it rewrites — the assistant chunk carrying the calls *and*
+  // the `tool` results answering them. Draining here rather than inside the tool is the point
+  // of the deferral (`app/item-collapse-runner.js`): mid-call, the result chunk a completing
+  // `update_task` is about to get does not exist yet, and the run the rule would see ends on a
+  // tool call whose result sits outside it.
+  const collapse = runItemCollapse();
+
   return {
     compactionRequested,
     executed: outcomes.length,
@@ -274,5 +307,7 @@ export async function handleToolBatch({
     refused: plan.refused.length,
     simultaneous: plan.simultaneous,
     order,
+    // What a completing `update_task` collapsed once this batch was complete, or `null`.
+    collapse,
   };
 }

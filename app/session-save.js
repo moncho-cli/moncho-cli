@@ -59,6 +59,11 @@ export function createSessionSave({
         // block was written instead of the time the file was reopened
         // (utils/chunk-stamps.js, docs/interface/session-stamps).
         stamps: manager.contextWindow.stamps,
+        // The `task.md` item each chunk belongs to, index-aligned with them and never on a
+        // chunk (utils/item-collapse.js, docs/context/item-collapse). The chunks are sent to
+        // the provider verbatim, so like the marks this rides beside them — and it is saved so
+        // a resumed conversation can still collapse a solved section.
+        items: manager.contextWindow.items,
         stats: manager.contextWindow.stats(),
         // What each model consumed so far, so the session file is the accounting
         // record and `/usage` survives a restart.

@@ -22,7 +22,9 @@ code:
   - path: tools/update_task.js
     symbols: [definition, execute]
   - path: app/item-collapse-runner.js
-    symbols: [runItemCollapse]
+    symbols: [requestItemCollapse, runItemCollapse, clearItemCollapseRequest]
+  - path: config/constants.js
+    symbols: [chunkpactionEnabled]
 tests:
   - path: tests/item-collapse.test.js
     cases:
@@ -39,3 +41,8 @@ tests:
       - a run that would cut a tool batch is skipped, and the rest still collapses
       - summarizeRun names the item, the size and the tools, and is stable
       - buildCollapsedChunk marks the chunk as collapsed and names its item
+  - path: tests/chunkpaction.test.js
+    cases:
+      - the collapse switch is off unless CHUNKPACTION_ENABLED reads as a yes
+      - with the switch off, a completing update_task asks for no collapse and none runs
+      - a request recorded while on does not collapse once the switch is turned off
