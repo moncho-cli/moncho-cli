@@ -19,37 +19,6 @@ results are reported.
   so a command cannot be pointed outside the project.
 - The default timeout is 60s; `timeoutMs` overrides it.
 
-## The palette is configurable, and what that does not change
-
-The allow-list is a **default**, not a constant. `RUN_BASH_ALLOWED` names the binaries the
-palette holds, as a comma- or space-separated list, and an unset or unusable value leaves
-the built-in list alone.
-
-This is deliberately the *weakest* kind of configuration, because the palette is the most
-dangerous knob in the harness. Two properties keep it honest:
-
-- **It can only be narrowed by accident, never widened by one.** A value that parses to
-  nothing — empty, or only separators — is not an empty palette; it is an unset knob, and
-  the defaults stand. A harness that answered "no commands at all" to a typo would look
-  like a broken sandbox rather than a configured one.
-- **A name is a bare word.** A token containing a slash, a metacharacter or whitespace is
-  dropped rather than kept, because the palette is matched against the *first token* of a
-  command line and a name like `../bin/sh` could never be matched there anyway. Dropping it
-  is the difference between a knob that does nothing and a knob that pretends to work.
-
-**The palette is not a security boundary.** It is a *capability* boundary at most, and
-nothing more: the agent runs with the permissions of its own uid, in a workspace it is
-meant to change, and no allow-list decides what the harness may do to itself. The fence
-that matters is the container and the mount set (`docs/agent/host-fence`), and the palette
-sits inside it. Widening the palette therefore widens what the agent can *conveniently* do,
-not what it is *permitted* to do — which is why the knob exists at all, and why it is
-documented as configuration rather than as a security control.
-
-A knob that is set is part of *how a measurement was made*, not only what it measured:
-anything that records a run's configuration should record this one too, so a run made
-under a widened palette is comparable with another only when both used the same one. The
-agent neither reads nor writes such a record — it only reports which palette it resolved.
-
 ## A command can never freeze the UI
 
 A command runs **asynchronously, with no terminal and no prompt**: the run is a promise,

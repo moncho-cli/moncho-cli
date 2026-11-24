@@ -14,16 +14,10 @@ summary: >
   from either end without a pipe; a failing command keeps a structured JSON
   envelope with a windowed stdout. run_npm allows only a fixed set of npm
   subcommands, rejects global/prefix flags, and reports failures as structured
-  JSON. Both resolve cwd through the project path sandbox. The palette itself is
-  a default rather than a constant: RUN_BASH_ALLOWED names its binaries, and a
-  value that parses to nothing is treated as unset, so a typo can never answer
-  "no commands at all". It is a capability boundary and explicitly not a security
-  one — the fence is the container and the mount set (agent/host-fence).
+  JSON. Both resolve cwd through the project path sandbox.
 code:
   - path: tools/run_bash.js
     symbols: [CommandError, tokenizeCommand, validateCommand, displayCwd, shownRange, definition, execute]
-  - path: utils/command-palette.js
-    symbols: [resolveCommandPalette, paletteIsConfigured]
   - path: utils/command-runner.js
     symbols: [DEFAULT_MAX_BUFFER, KILL_GRACE_MS, childEnvironment, runCommand]
   - path: utils/command-output.js
@@ -31,16 +25,10 @@ code:
   - path: tools/run_npm.js
     symbols: [NpmError, validateNpmArgs, splitNpmArgs, npmFailure, definition, execute]
   - path: config/constants.js
-    symbols: [ALLOWED_COMMANDS, COMMAND_PALETTE, NPM_ALLOWED_SUBCOMMANDS, NPM_DEFAULT_TIMEOUT_MS, NPM_MAX_TIMEOUT_MS]
+    symbols: [ALLOWED_COMMANDS, NPM_ALLOWED_SUBCOMMANDS, NPM_DEFAULT_TIMEOUT_MS, NPM_MAX_TIMEOUT_MS]
 tests:
   - path: tests/command-sandbox.test.js
     cases:
-      - resolveCommandPalette keeps the defaults when nothing usable is configured
-      - resolveCommandPalette reads a comma-separated and a space-separated list
-      - resolveCommandPalette drops a name that could not be a first token
-      - resolveCommandPalette never answers an empty palette, whatever it is given
-      - paletteIsConfigured distinguishes the defaults from a configured palette
-      - run_bash rejects a binary the configured palette omits and accepts one it adds
       - run_bash rejects shell metacharacters and non-approved binaries
       - run_bash keeps quoted glob patterns usable
       - run_bash executes an approved command and reports failures structurally

@@ -1,5 +1,3 @@
-import { resolveCommandPalette } from '../utils/command-palette.js';
-
 export const ALLOWED_COMMANDS = [
   'ls',
   'mkdir',
@@ -14,12 +12,6 @@ export const ALLOWED_COMMANDS = [
   'git',
   'wc'
 ];
-
-// `RUN_BASH_ALLOWED` names the binaries the palette holds, as a comma- or space-separated
-// list; unset or unusable keeps the list above (utils/command-palette.js). It is a
-// *capability* knob and not a security boundary: the fence is the container and the mount
-// set (docs/agent/host-fence), and this only decides what is convenient inside it.
-export const COMMAND_PALETTE = resolveCommandPalette(process.env.RUN_BASH_ALLOWED, ALLOWED_COMMANDS);
 
 // ---------------------------------------------------------------------------
 // Provider configuration
@@ -150,26 +142,6 @@ export const MISSING_INTENT_PLACEHOLDER = "(no intent provided)";
 function toPositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-/**
- * Like `toPositiveInt`, but an explicit **`0` is a value**: it passes through instead of
- * being rewritten into the fallback.
- *
- * This exists because two settings use `0` to mean "off" — the log budgets, where it
- * turns rotation off (docs/runtime/logging). `toPositiveInt` cannot express that: it
- * applies `> 0`, so a deliberate `0` becomes the default and the documented "off" is
- * unreachable. Unset still falls back (nobody had an opinion), and junk or a negative
- * still falls back too (nobody had a *usable* one), so a typo cannot silently remove a
- * limit and leave a log growing without bound.
- */
-function toNonNegativeInt(value, fallback) {
-  const raw = String(value ?? "").trim();
-  // Strict: `Number.parseInt` would read `12abc` as 12, and a limit taken from a mangled
-  // value is worse than the default.
-  if (!/^\d+$/.test(raw)) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 /**
@@ -326,12 +298,12 @@ export const NPM_MAX_TIMEOUT_MS = 900000;
 export const LOG_FILE = process.env.LOG_FILE || "agent/logs/moncho.log";
 /** The raw threshold; utils/logger.js#normalizeLogLevel maps `warning` → `warn`, `off` → silent. */
 export const LOG_LEVEL = process.env.LOG_LEVEL || "info";
-/** Bytes the live file may hold before the next line rotates it (512 KiB). `0` turns rotation off. */
+/** Bytes the live file may hold before the next line rotates it (512 KiB). */
 export const LOG_MAX_BYTES_DEFAULT = 512 * 1024;
-export const LOG_MAX_BYTES = toNonNegativeInt(process.env.LOG_MAX_BYTES, LOG_MAX_BYTES_DEFAULT);
-/** Files kept in the rotation chain, the live one included. `0` turns rotation off. */
+export const LOG_MAX_BYTES = toPositiveInt(process.env.LOG_MAX_BYTES, LOG_MAX_BYTES_DEFAULT);
+/** Files kept in the rotation chain, the live one included. */
 export const LOG_MAX_FILES_DEFAULT = 5;
-export const LOG_MAX_FILES = toNonNegativeInt(process.env.LOG_MAX_FILES, LOG_MAX_FILES_DEFAULT);
+export const LOG_MAX_FILES = toPositiveInt(process.env.LOG_MAX_FILES, LOG_MAX_FILES_DEFAULT);
 // ---------------------------------------------------------------------------
 // Streaming thinking capture (api/ollama.js)
 // ---------------------------------------------------------------------------

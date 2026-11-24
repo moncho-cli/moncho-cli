@@ -71,8 +71,6 @@ specs:
   - interface/tracking-block
   - runtime/provider-calls
   - runtime/provider-diagnostics
-  - runtime/run-flags
-  - runtime/cli-subcommands
   - runtime/startup-wiring
   - runtime/session-store
   - runtime/session-version

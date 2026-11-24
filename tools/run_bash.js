@@ -1,4 +1,4 @@
-import { COMMAND_PALETTE } from '../config/constants.js';
+import { ALLOWED_COMMANDS } from '../config/constants.js';
 import { runCommand } from '../utils/command-runner.js';
 import { defineTool } from '../utils/tool-schema.js';
 import {
@@ -96,7 +96,7 @@ export function tokenizeCommand(command) {
  * @param {string[]} allowList
  * @returns {string[]}
  */
-export function validateCommand(command, allowList = COMMAND_PALETTE) {
+export function validateCommand(command, allowList = ALLOWED_COMMANDS) {
   const raw = String(command ?? '');
 
   // Quoted segments are removed before the metacharacter scan so glob patterns in
@@ -136,7 +136,7 @@ const { definition, execute } = defineTool({
     properties: {
       command: {
         type: 'string',
-        description: `The command line to execute. First token must be one of: ${COMMAND_PALETTE.join(', ')}. Quoting is supported; shell metacharacters are not.`
+        description: `The command line to execute. First token must be one of: ${ALLOWED_COMMANDS.join(', ')}. Quoting is supported; shell metacharacters are not.`
       },
       cwd: {
         type: 'string',
