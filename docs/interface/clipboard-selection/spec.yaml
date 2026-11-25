@@ -40,10 +40,12 @@ code:
     symbols: [wrapWidthOf, SELECTION_TAG_OPEN, SELECTION_TAG_CLOSE, highlightCells, selectionRange, lineCellRange, highlightRows]
   - path: app/transcript-mouse.js
     symbols: [bindSelectionGestures]
+  - path: app/paint-coalescer.js
+    symbols: [createPaintCoalescer]
   - path: app/clipboard-file.js
     symbols: [CLIPBOARD_FILE_PREFIX, CLIPBOARD_FILE_GLOB, CLIPBOARD_MAX_ATTEMPTS, clipboardFileName, createClipboardFile]
   - path: config/constants.js
-    symbols: [CLIPBOARD_FILE_KEEP, normalizeClipboardKeep]
+    symbols: [CLIPBOARD_FILE_KEEP, normalizeClipboardKeep, nativeSelectionEnabled]
   - path: app/toast.js
     symbols: [TOAST_TTL_MS, TOAST_MAX_CHARS, savedToastText, SAVED_TOAST_TEXT, formatToastText, createToast]
   - path: app/tui-toast.js
@@ -102,6 +104,20 @@ tests:
       - "a pointer moving with no button held selects nothing"
       - "a release outside the transcript still finishes the gesture, and a drag over the edge saves to the end"
       - "a press outside the pane never starts a selection"
+      - "the app asks for SGR, so a release carrying a modifier still reads as a mouseup"
+      - "a burst of drag steps paints once per turn, not once per report"
+      - "the final position of a burst is the one painted, and the release paints at once"
+  - path: tests/clipboard-coalescer.test.js
+    cases:
+      - "request() coalesces a burst into one paint, and a second turn paints again"
+      - "flush() paints at once and drops the pending paint, so nothing paints twice"
+      - "cancel() drops a pending paint without painting, and is idempotent"
+  - path: tests/clipboard-native-selection.test.js
+    cases:
+      - "nativeSelectionEnabled() is off by default, and an explicit yes turns it on"
+      - "by default the app asks for the mouse, so its own interactions work"
+      - "opted in, the app never asks for the mouse and the terminal keeps it"
+      - "opted in, a drag belongs to the terminal, so this program saves nothing"
   - path: tests/clipboard-watch.test.js
     cases:
       - "pick_clipboard_tool() chooses the host tool by platform and display"

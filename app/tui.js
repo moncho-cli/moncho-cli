@@ -1,5 +1,5 @@
 import { createScreen } from './tui-screen.js';
-import { describeModel } from '../config/constants.js';
+import { describeModel, nativeSelectionEnabled } from '../config/constants.js';
 import { SPINNER_FRAMES, SPINNER_INTERVAL_MS } from './status-row.js';
 import { createWiredStatusRows } from './status-rows.js';
 import {
@@ -80,8 +80,17 @@ export function createTui(options = {}) {
   // each block appeared. Injected so a test can freeze it and `null` marks nothing.
   const stamp = options.stamp === undefined ? createStamper() : options.stamp;
 
+  // Who owns the mouse, decided **once** here so the screen and the pane cannot disagree
+  // (`docs/interface/clipboard-selection`): off by default, so this program owns the mouse and
+  // its own selection works; `NATIVE_SELECTION_ENABLED=1` hands it to the terminal instead. A
+  // caller may state it outright, which is what the suite does — a test must not depend on the
+  // environment it happens to run in.
+  const nativeSelection = options.nativeSelection === undefined
+    ? nativeSelectionEnabled()
+    : Boolean(options.nativeSelection);
+
   // No screen means no TTY: the caller falls back to the line chat.
-  const terminal = createScreen({ input, output });
+  const terminal = createScreen({ input, output, nativeSelection });
   if (!terminal) return null;
   const { screen, refresh, isClosed: screenClosed, markClosed } = terminal;
 
@@ -144,6 +153,8 @@ export function createTui(options = {}) {
     // re-emits every mouse report on the screen and only the ones that land on a region
     // there, so the release edge is bound on the screen (app/transcript-mouse.js).
     screen,
+    // The same answer the screen was given, so the two cannot disagree about the mouse.
+    nativeSelection,
   });
   const view = pane.view;
 

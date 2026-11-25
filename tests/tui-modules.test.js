@@ -213,6 +213,11 @@ test('createTranscriptPane() owns the model, the click and the four operations',
     transcript,
     refresh: () => { refreshes += 1; },
     stamp: () => '09:05:07',
+    // This suite is about the pane's own click binding, which exists only while the program
+    // owns the mouse: the shipped default hands the mouse to the terminal
+    // (`docs/interface/clipboard-selection`), so the in-app path is asked for explicitly —
+    // the same reason the TUI harness defaults the other way.
+    nativeSelection: false,
   });
 
   // Appending prose marks it once, and a collapsible block is one header line.

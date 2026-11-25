@@ -173,6 +173,7 @@ cp .env.moncho.example .env.moncho
 | `CONTEXT_MAX_LENGTH` | the provider's real total | Context budget override |
 | `COMPACTION_OLD_RATIO` | `0.7` | Share of the window summarised on compaction (`0.7`, `70` or `70%`) |
 | `CHUNKPACTION_ENABLED` | off | Collapse a solved item's section into a summary and keep its raw chunks as a capture; set `1`, `true`, `on`, `yes` or `y` to turn it on (worth it under local inference, where the window is the cost; a cloud provider caches the verbatim prefix instead) |
+| `NATIVE_SELECTION_ENABLED` | off | Hand the mouse to the terminal, so its own drag-to-select and copy work instead of the in-app selection; set `1`, `true`, `on`, `yes` or `y` to turn it on. Off by default, because the two are mutually exclusive on a bare drag: turning it on gives up every mouse interaction in the app (the wheel, the scroll-to-copy band, the click-to-expand tool block and removing a queued message). The alternate screen means the terminal can select only what is drawn, not the scrollback |
 | `PROJECT_LANGUAGE` | unset | Language for tasks, docs and comments; the conversation still follows the user |
 | `FILE_LINE_LIMIT` | `600` | Lines a file may hold before it must be split |
 | `PULSE_LIMIT` | `30` | Model calls before the pulse notice |

@@ -40,6 +40,18 @@ Seven regions, laid out relatively so blessed relayouts them on resize:
   rendered.
 - The region layout lives in `createLayout()` (`app/tui-layout.js`), so the
   orchestration in `app/tui.js` stays about keys, questions and the public surface.
+- The mouse protocol is decided in `app/tui-screen.js`, which replaces blessed's
+  `enableMouse`. **By default this program keeps the mouse**, so its own interactions work:
+  the in-app selection, the wheel, the click-to-expand block and the click that removes a
+  queued message all depend on the reports being sent. `NATIVE_SELECTION_ENABLED=1` hands the
+  mouse to the terminal instead — no `?1000`/`?1002`/`?1003`/`?1006` is negotiated, so the
+  terminal's own drag-to-select and copy work and every mouse interaction here stops
+  (`docs/interface/clipboard-selection`). Keeping the mouse, this module asks for **?1006
+  (SGR)** instead of blessed's own ?1005 (the UTF-8 extended X10 encoding), which X10 cannot
+  use to carry a modifier on a release: its decoder does `b -= 32` and tests `b === 3`, so a
+  modified release decodes as `mousedown` — and a gesture that finishes on `mouseup` would
+  never finish, stranding the band. SGR puts the button, the modifiers and the edge in
+  distinct fields.
 - The input box is **armed by `question()` alone**. The region is created without
   blessed's `inputOnFocus`, so gaining focus (e.g. when the picker modal closes)
   never starts a read of its own; two overlapping read cycles would leave the box

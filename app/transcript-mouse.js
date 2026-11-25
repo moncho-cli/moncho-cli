@@ -1,3 +1,5 @@
+import { isSamePoint } from './transcript-select.js';
+
 /**
  * The mouse gestures that make a selection: press, drag, and the release that copies.
  *
@@ -49,16 +51,30 @@
  *    the block toggle when the gesture was a plain click, so one binding stays in charge of
  *    `click` and the two behaviours cannot race.
  *
+ * **No modifier opens the gesture, and Shift in particular cannot.** Shift+drag is the
+ * terminal's own chord: xterm, iTerm2, Kitty, Windows Terminal, Ghostty and Warp all use it
+ * to *suspend mouse reporting* so the reader can select with the terminal itself, and
+ * Ghostty's VT docs state it outright — "the running terminal program cannot detect
+ * shift-clicks because the terminal emulator captures the event". Gating a selection on
+ * Shift therefore hands the gesture to the terminal: this program never sees the press or
+ * the release, the band it painted is orphaned, and nothing is copied. A plain press opens
+ * the gesture instead, which leaves the two selections as complements — a bare drag copies
+ * into the file this program writes, a Shift+drag belongs to the terminal, and neither
+ * fights the other.
+ *
  * A bare widget with no screen — a unit test, a pane built without one — keeps the widget
  * bindings, which still cover a press, a drag and a release inside the pane, and the
  * out-of-bounds edge simply does not exist there.
  *
- * `repaint` is called after every change so the reverse-video band tracks the pointer and
- * disappears on release; the gesture state itself lives in `app/transcript-select.js`,
- * which is pure.
+ * `repaint` is called whenever the band must change, and for a mid-drag step the call goes
+ * through `repaintSoon` — a coalescer (`app/paint-coalescer.js`) that collapses a burst of
+ * drag reports into one paint per turn, because a paint re-renders the whole conversation and
+ * one per report is what makes a long transcript lag behind the pointer. The release paints
+ * `repaint` at once and cancels any pending coalesced one. The gesture state itself lives in
+ * `app/transcript-select.js`, which is pure.
  */
 export function bindSelectionGestures({
-  widget = null, screen = null, selection = null, repaint = () => {},
+  widget = null, screen = null, selection = null, repaint = () => {}, repaintSoon = null,
 } = {}) {
   if (!widget || typeof widget.on !== 'function' || !selection) {
     return { dispose() {}, get bound() { return false; } };
@@ -69,12 +85,35 @@ export function bindSelectionGestures({
   // place every report is guaranteed to arrive (fact 3).
   const releaseTarget = hasScreen ? screen : widget;
 
-  /** A press, or a drag step: open the gesture, or extend it from where it is. */
+  // The band's repaint during a drag is **coalesced** (app/paint-coalescer.js): a fast drag
+  // arrives as a burst of reports in one turn, and painting for each of them costs the sum
+  // of those paints — one full re-render of the conversation per report, which is the lag a
+  // long transcript reports. One request per turn is the same paint the last report of the
+  // turn would have produced, so the band lands on the pointer's final position either way.
+  // An injected coalescer is what lets a test drive it; without one, painting is immediate.
+  const bandSoon = typeof repaintSoon?.request === 'function'
+    ? () => repaintSoon.request()
+    : repaint;
+
+  /**
+   * A press, or a drag step: open the gesture, or extend it from where it is.
+   *
+   * Every press is honoured, with or without a modifier: no key opens the gesture (see the
+   * header — Shift belongs to the terminal). A press that no gesture is live for opens one,
+   * and a press while one *is* live extends it, which is how a real drag reaches us
+   * (fact 1 above). A press that the pointer reports as a plain click still opens a gesture,
+   * finishes on the same cell and answers `finish()` with null, so it falls through to the
+   * block toggle exactly as before.
+   *
+   * The band is repainted only when the point actually **changed** (`isSamePoint`, by value —
+   * the two points are distinct objects, so an identity test is always true and repainted for
+   * every duplicate report).
+   */
   const press = (data) => {
     const before = selection.focus;
     const point = selection.start(data);
     if (!point) return;
-    if (selection.dragging && point !== before) repaint();
+    if (selection.dragging && !isSamePoint(point, before)) bandSoon();
   };
 
   const onDown = (data) => press(data);
@@ -91,12 +130,16 @@ export function bindSelectionGestures({
     // A move with no gesture in flight is a hover: the pointer merely crossing the
     // conversation must not repaint it or select anything.
     if (!selection.dragging) return;
-    if (selection.move(data)) repaint();
+    if (selection.move(data)) bandSoon();
   };
 
-  // The release copies. It ends the gesture from wherever the button came up.
+  // The release copies. It ends the gesture from wherever the button came up, and it paints
+  // **at once** — any pending coalesced paint is dropped first, never run after it: the band
+  // has to leave the screen at that instant, and a late paint would re-draw the very band the
+  // release just cleared (or, worse, land after the reader began another gesture).
   const onUp = (data) => {
     if (!selection.dragging) return;
+    if (typeof repaintSoon?.cancel === 'function') repaintSoon.cancel();
     if (selection.finish(data)) repaint();
   };
 

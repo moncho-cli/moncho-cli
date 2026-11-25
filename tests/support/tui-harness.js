@@ -61,6 +61,11 @@ export async function withTui(fn, ttyOptions = {}) {
     output,
     clipboardDir,
     modelLabel: ttyOptions.modelLabel ?? DEFAULT_MODEL_LABEL,
+    // The shipped default: this program owns the mouse, so a drag selects in-app and the wheel,
+    // the block click and the queue click all work. The mouse suites therefore get what they
+    // were written for without overriding anything; a suite proving the native path passes
+    // `nativeSelection: true` and asserts the protocol is never negotiated.
+    nativeSelection: ttyOptions.nativeSelection ?? false,
   });
   // neo-blessed buffers writes; flush the first paint before asserting.
   await new Promise((resolve) => setImmediate(resolve));

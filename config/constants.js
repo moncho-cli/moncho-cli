@@ -313,6 +313,48 @@ export function chunkpactionEnabled() {
 }
 
 // ---------------------------------------------------------------------------
+// Native terminal selection, instead of the conversation's own
+// ---------------------------------------------------------------------------
+/**
+ * Whether the conversation **gives the mouse to the terminal**, so the terminal's own
+ * drag-to-select and copy are used instead of this program's
+ * (`docs/interface/clipboard-selection`).
+ *
+ * **Off by default, and opt-in.** Left unset — the normal case — this program owns the mouse:
+ * a drag selects in-app and saves a file, the wheel scrolls, a click expands a tool block and
+ * a click removes a message from the queue. Setting the variable to `1`, `true`, `on`, `yes`
+ * or `y` hands the mouse to the terminal instead, and the terminal's own drag-to-select and
+ * copy key take over.
+ *
+ * The two are mutually exclusive on a bare drag, because blessed turns mouse reporting on the
+ * moment any mouse listener is bound (`screen.js#_listenMouse` -> `program.enableMouse()`):
+ * while a terminal is reporting the mouse it sends drags to this program and keeps its own
+ * selection off. So the switch is not "disable our gesture" — a bare drag would then be
+ * answered by neither — but "do not ask for the mouse at all".
+ *
+ * **What turning it on costs, stated so nobody is surprised:** every mouse interaction in this
+ * program stops, because all of them are built on reports that are no longer sent — the
+ * scroll-to-copy band, the wheel, the click-to-expand tool block, and the click that removes a
+ * message from the queue. Keyboard scrolling survives (`pageup`/`S-up`, `pagedown`/`S-down`,
+ * `home`, `end` in `app/tui-keys.js`). A reader who wants native selection therefore trades
+ * those away deliberately, which is why it is opt-in rather than the default.
+ *
+ * **The alternate screen bounds it.** blessed draws into the terminal's alternate screen
+ * (`screen.js#enter` -> `program.alternateBuffer()`), so the terminal can select only what is
+ * *drawn* — its own scrollback of a long conversation does not exist. A reader wanting the
+ * older lines scrolls this program to them first, then selects.
+ *
+ * Read **late**, like `chunkpactionEnabled()`: the suite flips it per case, and a value frozen
+ * at import would make either path untestable. An explicit "yes" (`1`, `true`, `on`, `yes`,
+ * `y`) turns it **on**; anything else — unset, blank, or a value nobody intended — keeps the
+ * default, because a typo must not silently take the mouse away from the reader.
+ */
+export function nativeSelectionEnabled() {
+  const raw = String(process.env.NATIVE_SELECTION_ENABLED ?? '').trim().toLowerCase();
+  return ['1', 'true', 'on', 'yes', 'y'].includes(raw);
+}
+
+// ---------------------------------------------------------------------------
 // run_npm allow-list
 // ---------------------------------------------------------------------------
 export const NPM_ALLOWED_SUBCOMMANDS = [

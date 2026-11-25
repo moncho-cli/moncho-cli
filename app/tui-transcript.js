@@ -2,6 +2,8 @@ import { createTranscriptView } from './transcript-view.js';
 import { createTextSelection } from './transcript-select.js';
 import { bindSelectionGestures } from './transcript-mouse.js';
 import { highlightRows, wrapWidthOf } from './transcript-highlight.js';
+import { createPaintCoalescer } from './paint-coalescer.js';
+import { nativeSelectionEnabled } from '../config/constants.js';
 
 /**
  * The transcript *pane*: the model+view pair, the click that toggles a tool-result
@@ -25,6 +27,9 @@ export function createTranscriptPane({
   // one thing on screen whose *presence* depends on the offset, so it re-reads from here
   // (`app/sticky-bar.js`); absent in a front end with no such row.
   onPaint = null,
+  // Whether the terminal keeps the mouse (`docs/interface/clipboard-selection`). `null` asks
+  // the environment; `app/tui.js` passes its own answer so one decision covers the screen.
+  nativeSelection = null,
 } = {}) {
   // The mouse selection (docs/interface/clipboard-selection). It is created before the
   // view because the view paints *through* it: the decorator below is the one hook that
@@ -40,7 +45,20 @@ export function createTranscriptPane({
     repaint: () => view.repaintInPlace(),
   });
 
-  const decorate = (content, widget) => highlightRows({
+  // A drag step's band repaint is coalesced to one paint per turn (app/paint-coalescer.js).
+  // A fast drag arrives as a burst of reports decoded in a single turn, and one paint per
+  // report re-renders the whole conversation each time — the lag a long transcript shows.
+  // The release bypasses it and cancels it (app/transcript-mouse.js#onUp).
+  const bandPaint = createPaintCoalescer({ paint: () => view.repaintInPlace() });
+
+  // When the terminal owns the mouse — the default, `NATIVE_SELECTION_ENABLED`
+  // (docs/interface/clipboard-selection) — no report ever reaches this program, so the band
+  // decorator, the click and the gesture bindings are not installed at all. Binding them
+  // would be dead code *and* would arm blessed's mouse dispatcher, whose whole job is to
+  // negotiate the protocol the default avoids (`app/tui-screen.js`).
+  const nativeMouse = nativeSelection === null ? nativeSelectionEnabled() : Boolean(nativeSelection);
+
+  const decorate = nativeMouse ? null : (content, widget) => highlightRows({
     lines: String(content ?? '').split('\n'),
     anchor: selection.anchor,
     focus: selection.focus,
@@ -61,7 +79,7 @@ export function createTranscriptPane({
   // The release normally finishes the gesture first (app/transcript-mouse.js binds
   // `mouseup` for the terminals that report no motion), and `finish()` on an already
   // finished gesture answers null, so this is the fallback rather than the primary path.
-  if (typeof transcript?.on === 'function') {
+  if (!nativeMouse && typeof transcript?.on === 'function') {
     transcript.on('click', (data) => {
       // The block the gesture ended on, or null when the drag copied instead. The value
       // is returned rather than dropped: the pane's click handler is the same seam it
@@ -78,11 +96,12 @@ export function createTranscriptPane({
   // whatever region it is over and never reaches the transcript — while the screen
   // re-emits every report. Bound to the widget alone, a drag that left the pane stayed
   // stuck as a held press (app/transcript-mouse.js#bindSelectionGestures).
-  const gestures = bindSelectionGestures({
+  const gestures = nativeMouse ? null : bindSelectionGestures({
     widget: transcript,
     screen,
     selection,
     repaint: () => view.repaintInPlace(),
+    repaintSoon: bandPaint,
   });
 
   return {
@@ -119,7 +138,8 @@ export function createTranscriptPane({
       return view.content;
     },
     close: () => {
-      gestures.dispose();
+      gestures?.dispose();
+      bandPaint.cancel();
       view.close();
     },
   };

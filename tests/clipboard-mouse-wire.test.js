@@ -46,7 +46,9 @@ test('a drag as a terminal sends it saves what was dragged over, exactly once', 
     const { x, y } = origin(tui.transcript);
     const lines = tui.transcriptModel.lines;
 
-    // Press, drag with the button held (32), release on the second row.
+    // Press, drag with the button held (32), release on the second row. No modifier: a
+    // plain drag is what this program answers (Shift+drag is the terminal's own, see
+    // app/transcript-mouse.js).
     input.write(report(0, x, y, 'mousedown'));
     input.write(report(32, x + 5, y + 1, 'mousedown'));
     input.write(report(32, x + 5, y + 1, 'mouseup'));
@@ -142,5 +144,104 @@ test('a press outside the pane never starts a selection', async () => {
 
     assert.deepEqual(clipboardFiles(clipboardDir), [], 'a press on the input box saved nothing');
     assert.equal(tui.toastVisible, false);
+  });
+}, { columns: 80, rows: 24 });
+
+test('the app asks for SGR, so a release carrying a modifier still reads as a mouseup', async () => {
+  await withTui(async (tui, { input, chunks, clipboardDir }) => {
+    // The regression guard for the encoding. blessed picks the mouse protocol from $TERM and
+    // would ask for ?1005 (UTF-8 extended X10), whose button byte carries no *edge*: its
+    // decoder does `b -= 32`, tests `b === 3` and misses for any modifier, so a release with
+    // Shift (35 + 4 = 39 -> 7) arrives as `mousedown button:unknown`. The gesture finishes on
+    // `mouseup`, so such a release never finishes it and the band is left stranded on screen.
+    //
+    // The suite writes SGR reports, so it passes only while the app really asks for SGR.
+    // Asserting the modes is what ties the two together: without this line a revert to ?1005
+    // would leave every other case here green while a modified release stranded the band.
+    const negotiated = chunks.join('');
+    assert.match(negotiated, /\?1006h/, 'the app asks for SGR, which the tests then speak');
+    assert.doesNotMatch(negotiated, /\?1005h/, 'and not the X10 encoding whose release byte cannot carry a modifier');
+
+    tui.log('alpha bravo charlie');
+    await flush();
+
+    const { x, y } = origin(tui.transcript);
+    const lines = tui.transcriptModel.lines;
+
+    // A drag with the modifier bit set: cb 4 press, cb 36 drag, cb 7 release. Under SGR each
+    // is what it says — press, press, mouseup — so the gesture finishes and copies.
+    input.write(report(4, x, y, 'mousedown'));
+    input.write(report(36, x + 5, y, 'mousedown'));
+    await flush(2);
+    assert.match(tui.transcript.getContent(), /\x1b\[7m/, 'the drag painted the band');
+
+    input.write(report(7, x + 5, y, 'mouseup'));
+    await flush(2);
+
+    // The release finished it: the band is gone and the text was saved.
+    assert.doesNotMatch(tui.transcript.getContent(), /\x1b\[7m/, 'the modified release cleared the band');
+    assert.equal(tui.selectionRange, null, 'the gesture is over');
+    const saved = clipboardFiles(clipboardDir);
+    assert.equal(saved.length, 1, 'the modified release copied exactly once');
+    assert.equal(saved[0].text, sliceCells(lines[0], 0, 5), 'and copied what was dragged over');
+  });
+}, { columns: 80, rows: 24 });
+
+/**
+ * A drag burst is the reason the band is coalesced: blessed decodes a chunk of input and
+ * emits every report it held in the same turn, so one flick of the wrist is dozens of
+ * reports before the event loop turns. Counting `setContent()` is counting paints, and one
+ * paint re-renders the whole conversation — which is the lag a long transcript shows.
+ */
+test('a burst of drag steps paints once per turn, not once per report', async () => {
+  await withTui(async (tui, { input }) => {
+    for (let i = 0; i < 60; i += 1) tui.log(`line ${i} alpha bravo charlie delta echo foxtrot`);
+    await flush();
+
+    const { x, y } = origin(tui.transcript);
+    let paints = 0;
+    const real = tui.transcript.setContent.bind(tui.transcript);
+    tui.transcript.setContent = (content) => { paints += 1; return real(content); };
+
+    // Every report written back to back, so they decode in one turn. The pointer moves each
+    // step (so each is a genuine change, not a duplicate to be ignored).
+    input.write(report(0, x, y, 'mousedown'));
+    for (let s = 1; s <= 30; s += 1) input.write(report(32, x + s, y, 'mousedown'));
+    input.write(report(32, x + 30, y, 'mouseup'));
+    await flush();
+
+    assert.ok(paints > 0, 'the drag did paint');
+    assert.ok(paints <= 4, `a 30-step burst painted only a few times, got ${paints}`);
+  });
+}, { columns: 80, rows: 24 });
+
+test('the final position of a burst is the one painted, and the release paints at once', async () => {
+  await withTui(async (tui, { input, clipboardDir }) => {
+    tui.log('alpha bravo charlie delta echo');
+    tui.log('foxtrot golf hotel india juliet');
+    await flush();
+
+    const { x, y } = origin(tui.transcript);
+    const lines = tui.transcriptModel.lines;
+
+    // A burst whose last step is well past its first: coalescing must paint the *last* point,
+    // not the first, or the band (and the copy) would be short.
+    input.write(report(0, x, y, 'mousedown'));
+    for (let s = 1; s <= 6; s += 1) input.write(report(32, x + s, y + 1, 'mousedown'));
+    await flush(2);
+    assert.match(tui.transcript.getContent(), /\x1b\[7m/, 'the band is up mid-burst');
+
+    // The release paints immediately: the band is gone the moment it settles, not a turn later.
+    input.write(report(32, x + 6, y + 1, 'mouseup'));
+    await flush(2);
+    assert.doesNotMatch(tui.transcript.getContent(), /\x1b\[7m/, 'the release cleared the band at once');
+
+    const saved = clipboardFiles(clipboardDir);
+    assert.equal(saved.length, 1, 'the burst saved exactly one file');
+    assert.equal(
+      saved[0].text,
+      `${lines[0]}\n${sliceCells(lines[1], 0, 6)}`,
+      'and saved from the press to the last point of the burst',
+    );
   });
 }, { columns: 80, rows: 24 });

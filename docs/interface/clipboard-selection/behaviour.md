@@ -45,6 +45,150 @@ copies its header instead of toggling it.
 Whichever edge finishes it, the selection is **cleared** at that moment and the band is
 repainted away, so a release never leaves a stale highlight on screen.
 
+### A drag step costs one paint per turn, not one per report
+
+The band is repainted during a drag only when the point really **changed**, and that repaint
+is **coalesced to one per turn** (`app/paint-coalescer.js`). Both halves are load-bearing,
+and both answer the same reported symptom: *"when the conversation is very long, it really
+lags … like a second to catch up with the position of the cursor"*, while a short one is
+instant.
+
+A paint is not cheap — it re-renders **the whole conversation** (`paint()` in
+`app/transcript-view.js` maps every record through the palette, bands every line, highlights
+every line, hands the lot to `setContent()` and repaints the screen). So a drag step's cost
+grows with the length of the transcript, which is exactly what the reader feels.
+
+A fast drag arrives as a **burst**: blessed decodes a chunk of input and emits every report
+it contained in the same synchronous turn, so a flick of the wrist is dozens of reports
+before the event loop turns. Painting for each cost the *sum* of those paints, and the band
+fell further behind the pointer the longer the conversation was.
+
+Two things make it one paint instead:
+
+- **a changed point, not every report.** One report reaches the gesture twice — the widget it
+  landed on *and* the screen, which re-emits every report — and a repeat press on the same
+  cell is not a move. The comparison is by **value** (`isSamePoint`): an identity test on two
+  freshly-built point objects is always true, so it repainted for every duplicate report;
+- **one paint per turn.** Every request made before the turn ends collapses into the single
+  paint at the end of it, which is the same paint the last request would have produced — so
+  the band still lands on the pointer's final position, and the frames in between are work
+  never done rather than work thrown away. It is deliberately **not** a clock-based throttle:
+  an arbitrary interval would make the band lag the pointer by design.
+
+The release is the one edge that bypasses the coalescer: it paints **at once** and drops any
+pending coalesced paint first, because the band has to leave the screen at that instant and a
+late paint would redraw the very band the release just cleared.
+
+**The coalescer is not the whole answer, and an earlier revision of this section overstated
+it.** Measured with every report emitted synchronously in one turn, a 40-step burst dropped
+from 83 paints to 2 — but a real terminal delivers each report in its **own** event-loop
+turn, so nothing collapses and the same 40-step drag still caused ~42 paints. The count only
+looks fixed when the reports are batched. What a drag step actually costs is therefore one
+paint, and the fix that matters is making that paint cheap: `highlightCells()` segments the
+line in one pass instead of re-segmenting the remainder at every character (measured 55.6ms
+→ 1.55ms over 40 lines), and the decorator leaves a line it does not touch byte-for-byte.
+Measured after those changes, on a 1600-entry transcript: **0.22–0.40ms per drag step**, from
+~38ms before.
+
+### Shift belongs to the terminal, so no modifier opens a gesture
+
+**A bare press opens the gesture, and Shift deliberately does not.** Shift+drag is the
+*terminal's* chord, not this program's: xterm, iTerm2, Kitty, Windows Terminal, Ghostty and
+Warp all treat it as a request to **suspend mouse reporting** so the reader can select with
+the terminal itself. Ghostty's VT documentation states the consequence outright — "the
+running terminal program cannot detect shift-clicks because the terminal emulator captures
+the event" — and the same is true of the other emulators' Shift+drag handling.
+
+An earlier revision of this feature tried the opposite rule — Shift *required* to open a
+selection — and it could not work, for two reasons that both follow from the above:
+
+- **the press is not ours.** The terminal captures Shift+mousedown (or, on some emulators,
+  a Shift+mousemove) and never reports it, so the gesture never opens on the cell the reader
+  meant while the terminal paints its own selection over the conversation;
+- **the release is not ours either.** Where a press does slip through, the release that
+  follows it can be swallowed the same way, and the band this program painted is left
+  stranded on screen with nothing copied.
+
+So the two selections are **complements rather than rivals**: a bare drag copies into the
+file this program writes, and a Shift+drag is the terminal's own native selection, which the
+reader pastes with the terminal's paste key. Nothing in this program tries to own Shift, and
+nothing fights the terminal for the mouse.
+
+This is why no `data.shift` check appears in the gesture: had the reader the muscle memory
+of a TUI that hijacks bare drags (htop, vim on some setups), Shift+drag is the escape hatch
+they already reach for, and it is the terminal — not this program — that answers it.
+
+### Handing the mouse to the terminal (`NATIVE_SELECTION_ENABLED`)
+
+The terminal's own drag-to-select and its copy key are an alternative to everything above,
+and the switch is **opt-in**: left unset, this program owns the mouse and the drag-to-copy
+band described above is what a reader gets. The two cannot both own a bare drag: blessed
+enables mouse reporting the moment **any** mouse listener is bound
+(`screen.js#_listenMouse` -> `program.enableMouse()`), and while a terminal is reporting the
+mouse it sends drags to this program and keeps its own selection off. So the switch is not
+"disable our gesture" — a bare drag would then be answered by neither — but "do not ask for
+the mouse at all".
+
+**Off by default, and the reason is the cost.** Every mouse interaction in this program is
+built on the reports the switch gives up, so turning it on takes all of them away at once:
+
+- **the in-app selection** and the file it writes — the copy is the terminal's, so nothing
+  here ever sees a selection and no `.moncho.clipboard.*` file appears;
+- **the wheel.** Keyboard scrolling is unaffected (`pageup`/`S-up`, `pagedown`/`S-down`,
+  `home`, `end` in `app/tui-keys.js`);
+- **the click-to-expand tool block.** A block's body has **no keyboard or command path**
+  today — `toggleBlock` is reachable only through `clickAt` — so a reader who needs a tool
+  result's body reads the file the tool wrote, or leaves the switch off;
+- **the click that removes a queued message** (`app/queue-bar.js#clickAt`).
+
+A default that silently removed four interactions would be a poor default, so the mouse stays
+with this program unless a reader asks otherwise. A reader who prefers the terminal's own
+selection sets the variable and knows what they are trading.
+
+**`NATIVE_SELECTION_ENABLED=1`** (also `true`, `on`, `yes`, `y`) hands the mouse to the
+terminal. `app/tui-screen.js` makes `program.enableMouse()` a no-op, which is the only place
+that can decide it: the negotiation is a side effect of binding a listener, not an option,
+and blessed re-arms it from `Screen#resume` as well. No `?1000`/`?1002`/`?1003`/`?1006` is
+sent, so no report ever reaches this program and the terminal's native selection works.
+`app/tui-transcript.js` goes further and does not bind the gesture, the click or the band
+decorator at all, so nothing answers a report and nothing arms the dispatcher.
+
+**The alternate screen bounds it.** blessed draws into the terminal's alternate screen
+(`screen.js#enter` -> `program.alternateBuffer()`), so the terminal can select only what is
+*drawn*; the scrollback of a long conversation does not exist for it. A reader wanting older
+lines scrolls this program to them first, and then selects.
+
+**Shift+drag is the middle ground the terminal already offers.** With the switch off — the
+default — a reader who wants a one-off native copy does not need the flag at all: Shift+drag
+is the chord every major emulator intercepts to suspend mouse reporting, so the terminal
+selects natively for that drag while the program keeps the mouse for everything else. That is
+why the in-app gesture deliberately ignores modifiers (`### Shift belongs to the terminal`).
+
+### The encoding is SGR, so a modified release still reads as a mouseup
+
+The gesture *finishes* on `mouseup`, so a release that decodes as anything else leaves the
+band stranded and copies nothing. Which encoding the terminal speaks decides whether a
+release carrying a modifier survives that trip.
+
+blessed negotiates the protocol from `$TERM`, and on every xterm-like terminal it asks for
+**?1005, the UTF-8 extended X10 encoding** (`program.js#enableMouse`, the xterm branch:
+`utfMouse: true`). X10 packs the button **and** the modifiers into one byte and has no
+separate field for the *edge*: its decoder does `b -= 32` and then tests `b === 3` for a
+release, which a plain release (`35 - 32 = 3`) passes and a release carrying a modifier
+(`35 + 4 = 39`, `39 - 32 = 7`) fails — arriving instead as `mousedown` with
+`button: 'unknown'`. blessed's own comment admits the limitation: "x10 and urxvt have no way
+of telling which button mouseup used".
+
+That is what strands a band, and it is not specific to Shift: X10 cannot carry a modifier on
+a release at all. `app/tui-screen.js` therefore replaces blessed's `enableMouse` and asks
+for **?1006 (SGR)**, where the button and the modifiers are decimal parameters and the edge
+is the final byte (`M` press, `m` release). blessed already decodes that correctly, so a
+release with any modifier is still a `mouseup` and always finishes the gesture.
+
+This is why the wire suite writes SGR reports **and** asserts that the app asks for SGR: the
+suite fires reports past the decoder, so without that assertion a revert to ?1005 would leave
+every case green while a modified release stranded the band in the reader's hands.
+
 One arithmetic detail belongs here because it is easy to get wrong when reading a terminal
 report: **the coordinates on the wire are 1-based** and blessed subtracts one
 (`program.js#_bindMouse`: `if (this.zero) key.x--, key.y--`). A report for the screen cell
@@ -243,7 +387,7 @@ nothing in the program claims a copy landed when it cannot prove it did.
 
 The same gesture, the same band and the same writer serve the **content modal** that
 `/task` opens (`docs/interface/task-viewer`, `app/content-modal.js`): a reader who knows how
-to copy a transcript row already knows how to copy a line of `task.md`. Two facts make it
+to copy a transcript row already knows how to copy a line of `task.md`. Three facts make it
 work there:
 
 - **the box parses tags.** A band is spliced into a line (`highlightRows`), which a
@@ -255,7 +399,14 @@ work there:
   in. `unlockMouse()` clears the flag while the lease stands: the keyboard stays the
   modal's, the pointer reaches the box, and the regions behind it are safe because each
   already opts out of focus and answers no drag. This is why a modal opened *mid-turn* is
-  still safe to read out of (`docs/interface/busy-commands`).
+    still safe to read out of (`docs/interface/busy-commands`).
+- **the mouse is the terminal's only when the switch says so.** The modal binds the same
+  gesture, so with the default (`NATIVE_SELECTION_ENABLED` unset) it selects and copies into a
+  file exactly as the conversation does. Setting `NATIVE_SELECTION_ENABLED=1` hands the mouse
+  to the terminal, no mouse reporting is negotiated, and the modal's band stays quiet — the
+  reader selects there with the terminal's own drag. The binding stays in place either way
+  because it costs nothing when no report arrives, and it is what makes the switch work
+  without a second code path.
 
 ## See also
 

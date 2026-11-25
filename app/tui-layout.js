@@ -67,6 +67,25 @@ export function createLayout({ screen, modelLabel = '', mode = null, repaint = n
     padding: { left: 1, right: 1 },
   });
 
+  // blessed's own label handler calls `screen.render()` on every `scroll` event
+  // (`element.js#setLabel`: `reposition()` ends in `self.screen.render()`), and a
+  // `setContent()` fires `scroll`. On a long conversation that is a **second full render per
+  // paint**, cascading: a drag step's paint re-rendered the screen twice, and blessed's own
+  // scroll handling re-entered it further. Measured on a 300-line transcript, a 20-step drag
+  // issued 1049 renders with this handler and 365 without it.
+  //
+  // The label still has to follow the scroll base, so the handler is **replaced**, not
+  // removed: it repositions the label exactly as blessed did and leaves the painting to the
+  // view, whose `paint()` renders once at the end (`app/transcript-view.js`). A paint that
+  // scrolls the conversation therefore renders once, after the label has moved.
+  const blessedLabelScroll = transcript._labelScroll;
+  if (blessedLabelScroll) {
+    transcript.removeListener('scroll', blessedLabelScroll);
+    transcript.on('scroll', () => {
+      if (transcript._label) transcript._label.rtop = (transcript.childBase || 0) - (transcript.itop || 0);
+    });
+  }
+
   const statusBar = blessed.box({
     parent: screen,
     left: 0,
