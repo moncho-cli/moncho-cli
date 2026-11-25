@@ -26,6 +26,7 @@ specs:
   - agent/file-safety
   - agent/host-fence
   - agent/line-edits
+  - agent/edit-repair
   - agent/patch-application
   - agent/command-sandbox
   - agent/command-capture

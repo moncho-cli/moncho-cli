@@ -60,6 +60,41 @@ So the ids are carried by **code, not by a model answer**, exactly as the user's
   is **not** dropped when the window would not shrink: it is a line, and losing it costs
   the whole capture. The report names the ids through `capturedIds`.
 
+## What an earlier summary left unaddressed survives
+
+A summary of a summary loses its pending list first: the newest summary describes the work
+that *happened*, and the older one's "things pending" is not work. So a compaction that
+finds a previous summary in the block it is evicting spends **one extra self-contained
+request** asking what that summary left unaddressed, and its answer rides ahead of the
+newest summary.
+
+- `previousSummaryChunk()` picks the **newest** summary in the evicted block — marked
+  `compacted: true`, or carrying `COMPACTION_SUMMARY_PREFIX` for a chunk restored from a
+  session written before the field existed. An older summary is superseded, so auditing it
+  again would resurrect work the newest one already closed.
+- A chunk written by an **item collapse** (`collapsed: true`) is deliberately *not* one: it
+  describes work that is done, so it holds nothing pending to audit.
+- `UNADDRESSED_SYSTEM_PROMPT` names the question narrowly — pending work, open questions
+  and promises the record shows were not completed — and asks for the single word `NONE`
+  when there is nothing, so "nothing is pending" is expressible without an empty answer.
+- `buildUnaddressedChunk()` returns `null` for `NONE`, for a blank answer and for a missing
+  one, and otherwise a `role: 'system'` chunk marked `unaddressed: true` and prefixed with
+  `COMPACTION_UNADDRESSED_PREFIX`. It is a chunk, not a bare string, for the reason the
+  capture carry is: a string would sit in the array and be invisible to the model.
+- The window after a repeated compaction reads, in order: the **unaddressed** chunk, the
+  **latest summary**, the **carried last user message**, then the untouched **kept tail**.
+  With nothing to carry it is the first compaction's shape: summary first.
+- The audit is **best-effort and never fatal**: a throwing call is reported
+  (`unaddressedAsked: false`) and the compaction still happens in the shape it would have
+  had without it, because losing the audit is cheaper than losing the compaction.
+- It obeys the same shrink rule as every carry. When the extra chunk would stop the window
+  shrinking, the audit is dropped rather than the compaction — summary first, audit second —
+  and the report says so through `unaddressedChunks: 0`.
+- What the audit finds is carried by code as a chunk, so a later compaction reads it as text
+  like any other. The report names the three facts through `previousSummary`,
+  `unaddressedAsked` and `unaddressedChunks`, and `app/compaction-runner.js` tells the user
+  which one happened.
+
 ## The announcement
 
 - A compaction is announced **twice** in the conversation thread: once when it starts and once when it is done. The first one is there because the summariser call takes time — the thread must not go quiet while the window is rewritten.

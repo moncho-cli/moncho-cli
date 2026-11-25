@@ -76,10 +76,27 @@ deletes nothing.
 ## inject
 
 The host loop drains the queue **between two turns** — "when possible" — through
-`nextPrompt()`: the oldest queued message becomes the next prompt, and only when the
-queue is empty is the front end's own question asked. Draining there, and never
-inside a tool chain, is what keeps an assistant `tool_calls` message together with
-its `tool` results: an injected message can never split them.
+`nextPrompt()`: the queue is emptied and **every** waiting message becomes the next
+prompt, and only when the queue is empty is the front end's own question asked.
+Draining there, and never inside a tool chain, is what keeps an assistant
+`tool_calls` message together with its `tool` results: an injected batch can never
+split them.
+
+### the whole queue is one prompt
+
+A user who queues three notes in the same minute meant them as **one instruction**
+(task-backlog: "if the user sends more than one message that get queued, all messages
+would have to be included at the same time, not 1 message then work then other
+message"). Handing them over one turn at a time would answer the first note before the
+second was even read — a whole turn spent on the wrong task — so `drainAll()` empties
+the queue at once and `joinQueued()` is the one place that says how several messages
+become one: the texts **in order, verbatim**, separated by a blank line. Nothing is
+added — no preamble, no numbering — because a preamble would be the harness talking to
+the model inside the user's own message. A queue of **one** is returned byte-for-byte,
+so the ordinary single-message case is exactly what it was before batching existed.
+
+`nextPrompt()` prefers `drainAll()` and falls back to a single `dequeue()` for a front
+end that has only that, so a queue of one crosses both paths identically.
 
 The drained text enters the conversation as the **ordinary user prompt** — the
 queue is a buffer in front of `question()`, not a chunk of its own — so

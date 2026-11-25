@@ -33,7 +33,8 @@ that seam with a stub provider.
 ## The conversation loop
 
 - **The prompt of each turn comes from `nextPrompt()`**, which drains the
-  pending-message queue and only asks the front end when the queue is empty. It is
+  pending-message queue — every waiting message at once, joined into one prompt
+  (`joinQueued()`) — and only asks the front end when the queue is empty. It is
   called at the top of the loop — between two turns, never inside a tool chain —
   so an injected message can never split an assistant `tool_calls` message from its
   `tool` results, and the drained text enters the conversation as the ordinary user

@@ -315,7 +315,13 @@ export async function runSessionLoop({
     // (app/message-queue.js#nextPrompt): a message typed while the last turn was in
     // flight becomes the next prompt. Draining here, and never inside a tool chain,
     // is what keeps an assistant `tool_calls` message together with its results.
+    // The queue is emptied **as a batch**: several notes typed during one turn are one
+    // instruction the user wants addressed together, and handing them over one turn at a
+    // time would work the first before the second was even read. `drainAll` is offered
+    // only when the front end really has one — `nextPrompt()` prefers it, so a stand-in
+    // that merely returns `[]` would silently swallow the messages `dequeue` holds.
     const userInput = await nextPrompt({
+      drainAll: typeof tui?.drainAll === 'function' ? () => tui.drainAll() : null,
       dequeue: () => tui?.dequeue(),
       // The keyboard is the *third* source of a prompt: the queue is drained first, and
       // while `work:on` the self-drive (app/work-drive.js) hands over the next task.md

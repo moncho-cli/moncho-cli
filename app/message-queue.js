@@ -7,6 +7,12 @@
  * are the bytes the user typed), visible right above the input box, deletable one
  * row at a time, and drained by the host loop between two turns.
  *
+ * The drain is the **whole queue, not the oldest message**: a user who queues three
+ * notes in the same minute meant them as one instruction, and handing them over one
+ * turn at a time would answer the first before the second was even read — working the
+ * wrong task for a whole turn. `drainAll()` empties the queue at once and
+ * `joinQueued()` is the single place that says how several messages become one prompt.
+ *
  * Pure: no neo-blessed, no screen, so the order, the deletion and the click
  * geometry are all unit testable without a pty. How a message is *drawn* — one row
  * fitted to the width the bar really has — lives in `app/queue-rows.js`, which is
@@ -41,21 +47,57 @@ export function queueRowAt({ data, pos, messages = [], itop = 0, offset = 0, rto
 }
 
 /**
- * The prompt of the next turn: the oldest queued message when one is waiting,
+ * Turn everything waiting in the queue into the one prompt of the next turn.
+ *
+ * The messages are taken **in order, verbatim**, and joined by a blank line — nothing
+ * else is added: no preamble, no numbering, no rewording. A preamble would be the
+ * harness talking to the model in the user's own message, and the separator is the
+ * minimum that keeps two notes from running into one sentence. A queue of **one** is
+ * returned byte-for-byte, so the ordinary single-message case is exactly what it was
+ * before batching existed.
+ *
+ * Pure: an array in, a string out.
+ *
+ * @param {Array<string|{text: string}>} messages queued messages, oldest first
+ * @returns {string} the prompt, or `''` when nothing is waiting
+ */
+export function joinQueued(messages = []) {
+  const texts = (Array.isArray(messages) ? messages : [])
+    .map((entry) => (typeof entry === 'string' ? entry : String(entry?.text ?? '')))
+    .filter((text) => text.trim() !== '');
+  if (texts.length === 0) return '';
+  if (texts.length === 1) return texts[0];
+  return texts.join('\n\n');
+}
+
+/**
+ * The prompt of the next turn: **every** queued message when any is waiting,
  * otherwise the front end's own question. This is the *injection point* of
  * task.md — the host loop calls it between two turns and never inside a tool
- * chain, so an injected message can never split an assistant `tool_calls` message
+ * chain, so an injected batch can never split an assistant `tool_calls` message
  * from its `tool` results.
+ *
+ * `drainAll` is preferred when the front end has it: it empties the queue and the
+ * batch becomes one prompt through `joinQueued`. `dequeue` is the single-message
+ * drain of a front end that has only that, and a queue of one crosses both paths
+ * identically.
  *
  * Pure and async, so the drain rule is unit tested without a pty or a loop.
  *
  * @param {object} options
- * @param {Function|null} [options.dequeue] the queue's drain (null without one)
- * @param {Function} options.ask            the front end's question()
+ * @param {Function|null} [options.drainAll] the queue's batch drain (returns every text)
+ * @param {Function|null} [options.dequeue]  the queue's single-message drain
+ * @param {Function} options.ask             the front end's question()
  */
-export async function nextPrompt({ dequeue = null, ask = null } = {}) {
-  const queued = typeof dequeue === 'function' ? dequeue() : null;
-  if (queued != null) return queued;
+export async function nextPrompt({ drainAll = null, dequeue = null, ask = null } = {}) {
+  if (typeof drainAll === 'function') {
+    const batch = drainAll();
+    const prompt = joinQueued(batch);
+    if (prompt !== '') return prompt;
+  } else if (typeof dequeue === 'function') {
+    const queued = dequeue();
+    if (queued != null) return queued;
+  }
   return typeof ask === 'function' ? ask() : null;
 }
 
@@ -101,6 +143,20 @@ export function createMessageQueue() {
     return { ...first };
   };
 
+  /**
+   * Take **every** message out at once, oldest first; `[]` when the queue is empty.
+   *
+   * One notification for the whole batch, because the batch is one change: the bar
+   * repaints once to an empty region instead of once per message.
+   */
+  const drainAll = () => {
+    if (!items.length) return [];
+    const drained = items;
+    items = [];
+    notify();
+    return drained.map((item) => ({ ...item }));
+  };
+
   /** Drop one message by id; returns it, or null when the id is unknown. */
   const remove = (id) => {
     const found = items.find((item) => item.id === id);
@@ -122,6 +178,7 @@ export function createMessageQueue() {
   return {
     enqueue,
     dequeue,
+    drainAll,
     remove,
     clear,
     /** The oldest message without removing it, or null. */

@@ -57,7 +57,7 @@ tests:
   - path: tests/message-queue.test.js
     cases:
       - "nextPrompt() injects the oldest queued message between turns, else asks"
-      - "nextPrompt() drains one message per turn, in order"
+      - "nextPrompt() drains every waiting message as one prompt, in order"
   - path: tests/conversation-manager.test.js
     cases:
       - processInput runs the tool loop, prints intents, and keeps them in context

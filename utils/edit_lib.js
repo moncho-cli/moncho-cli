@@ -10,6 +10,7 @@ import {
   diagnoseMiss,
   sourceExcerpt,
 } from './edit-miss.js';
+import { repairSearch, whitespaceCandidates } from './edit-repair.js';
 
 /**
  * Exact, literal text replacement — the editing primitive behind `edit_file`
@@ -56,6 +57,7 @@ export {
   diagnoseMiss,
   sourceExcerpt,
 } from './edit-miss.js';
+export { repairSearch, whitespaceCandidates, REPAIR_RULES } from './edit-repair.js';
 
 /** How many edits one call may carry. A larger batch is a rewrite, not an edit. */
 export const MAX_EDITS = 50;
@@ -108,8 +110,18 @@ export function applyOne(content, edit = {}) {
     );
   }
 
-  const found = occurrences(source, search);
+  let found = occurrences(source, search);
+  // A search that missed *only on formatting* is repaired once, deterministically, before
+  // anything is refused (utils/edit-repair.js). The repair only ever normalises line-edge
+  // whitespace and line endings, never the interior of a line, and it returns null when
+  // more than one block matches — in which case the refusal below reports the ambiguity.
+  let repaired = null;
   if (found.length === 0) {
+    repaired = repairSearch(source, search);
+    if (repaired) found = occurrences(source, repaired.search);
+  }
+  if (found.length === 0) {
+    const ambiguity = whitespaceCandidates(source, search);
     const candidates = nearestCandidates(source, search);
     const diagnosis = diagnoseMiss(source, search);
     const excerpt = sourceExcerpt(source, search);
@@ -120,6 +132,15 @@ export function applyOne(content, edit = {}) {
         candidates,
         ...(diagnosis ? { hint: diagnosis } : {}),
         ...(excerpt ? { source: excerpt.lines, sourceNote: excerpt.note, sourceFrom: excerpt.from, sourceTo: excerpt.to } : {}),
+        // Whitespace-only near matches are reported separately: they are not a repair the
+        // engine refuses, they are a repair it will not choose between. Quoting more of the
+        // surrounding text makes it exactly one, and then the repair applies.
+        ...(ambiguity.length > 1
+          ? {
+              whitespaceMatches: ambiguity.map((start) => ({ line: start + 1 })),
+              hint: `the text matches on line-edge whitespace alone at ${ambiguity.length} places, so repairing it would be a guess: quote more surrounding text`,
+            }
+          : {}),
         // Handing the bytes back only pays off if the caller stops guessing: a retry of
         // the same search spends a call to be told what this answer already said.
         retry: 'do not retry this search text unchanged',
@@ -142,15 +163,26 @@ export function applyOne(content, edit = {}) {
   }
 
   const targets = all ? found : [found[0]];
+  // The bytes that really matched: after a repair they are the file's own, not the search
+  // the caller wrote, so the slice must advance by *their* length.
+  const matchedText = repaired ? repaired.search : search;
   let out = '';
   let cursor = 0;
   for (const target of targets) {
     out += source.slice(cursor, target.index) + replace;
-    cursor = target.index + search.length;
+    cursor = target.index + matchedText.length;
   }
   out += source.slice(cursor);
 
-  return { content: out, replacements: targets.length, lines: targets.map((entry) => entry.line) };
+  return {
+    content: out,
+    replacements: targets.length,
+    lines: targets.map((entry) => entry.line),
+    // Present only when the edit landed because of a repair, so a caller can say so.
+    ...(repaired
+      ? { repaired: { rule: repaired.rule, note: repaired.note, line: repaired.line } }
+      : {}),
+  };
 }
 
 /**
@@ -200,7 +232,12 @@ export function applyEditsToText(content, edits = []) {
       throw error;
     }
     out = result.content;
-    report.push({ editIndex: index + 1, replacements: result.replacements, lines: result.lines });
+    report.push({
+      editIndex: index + 1,
+      replacements: result.replacements,
+      lines: result.lines,
+      ...(result.repaired ? { repaired: result.repaired } : {}),
+    });
   });
 
   return {

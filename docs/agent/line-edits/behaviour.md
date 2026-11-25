@@ -60,6 +60,12 @@ input. Never reach for it to express your own change.
 
 ### A refusal is meant to be fixable in one retry
 
+A refusal that only says "not found" costs a re-read and another model call. Before that
+point is reached, a search whose bytes differ only in **line-edge whitespace or line
+endings** is repaired once and applied (`docs/agent/edit-repair`): the repair normalises only
+the line edges, refuses to choose when the block matches in several places, and never
+re-indents the replacement. What follows is the refusal, for the misses no repair can settle.
+
 A refusal that only says "not found" costs a re-read and another model call. So
 `SEARCH_NOT_FOUND` answers with **evidence**:
 

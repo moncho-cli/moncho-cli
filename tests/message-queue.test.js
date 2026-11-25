@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   createMessageQueue,
+  joinQueued,
   nextPrompt,
   queueRowAt,
 } from '../app/message-queue.js';
@@ -160,15 +161,82 @@ test('nextPrompt() injects the oldest queued message between turns, else asks', 
   assert.equal(await nextPrompt(), null);
 });
 
-test('nextPrompt() drains one message per turn, in order', async () => {
+test('nextPrompt() drains every waiting message as one prompt, in order', async () => {
+  const queue = createMessageQueue();
+  queue.enqueue('first');
+  queue.enqueue('second');
+  queue.enqueue('third');
+  const drainAll = () => queue.drainAll().map((item) => item.text);
+  const dequeue = () => queue.dequeue()?.text;
+  const ask = () => 'never asked while messages are waiting';
+
+  // One turn, one prompt: the whole queue is handed over, emptied in a single drain.
+  assert.equal(await nextPrompt({ drainAll, dequeue, ask }), 'first\n\nsecond\n\nthird');
+  assert.equal(queue.size, 0, 'the batch empties the queue at once');
+  assert.equal(await nextPrompt({ drainAll, dequeue, ask }), 'never asked while messages are waiting');
+});
+
+test('nextPrompt() hands a single queued message over byte-for-byte', async () => {
+  const queue = createMessageQueue();
+  const pasted = 'line 1\nline 2\n\n  line 4 with spaces  \n';
+  queue.enqueue(pasted);
+  const drainAll = () => queue.drainAll().map((item) => item.text);
+
+  assert.equal(await nextPrompt({ drainAll, ask: () => 'never' }), pasted);
+  assert.equal(queue.size, 0);
+});
+
+test('nextPrompt() keeps the single-message drain for a front end without a batch', async () => {
   const queue = createMessageQueue();
   queue.enqueue('first');
   queue.enqueue('second');
   const dequeue = () => queue.dequeue()?.text;
   const ask = () => 'never asked while messages are waiting';
 
+  // A front end that has only `dequeue()` still works, one message per turn.
   assert.equal(await nextPrompt({ dequeue, ask }), 'first');
   assert.equal(await nextPrompt({ dequeue, ask }), 'second');
   assert.equal(await nextPrompt({ dequeue, ask }), 'never asked while messages are waiting');
   assert.equal(queue.size, 0);
+});
+
+test('joinQueued() keeps one message verbatim and separates several by a blank line', () => {
+  // Nothing waiting: an empty prompt, which nextPrompt() treats as "nothing queued".
+  assert.equal(joinQueued([]), '');
+  assert.equal(joinQueued(null), '');
+
+  // One message is returned as-is: no trimming, no extra bytes.
+  assert.equal(joinQueued(['  spaced  ']), '  spaced  ');
+
+  // Several keep their own bytes and order, separated by exactly one blank line.
+  assert.equal(joinQueued(['a', 'b\nc']), 'a\n\nb\nc');
+
+  // A blank entry is dropped: there is nothing to inject from it.
+  assert.equal(joinQueued(['a', '   ', 'b']), 'a\n\nb');
+  // Queue items are objects with a `text`, not bare strings.
+  assert.equal(joinQueued([{ text: 'a' }, { text: 'b' }]), 'a\n\nb');
+});
+
+test('drainAll() empties the queue in one notification, oldest first', () => {
+  const queue = createMessageQueue();
+  const seen = [];
+  queue.subscribe((items) => seen.push(items.map((item) => item.text)));
+
+  queue.enqueue('a');
+  queue.enqueue('b');
+  seen.length = 0;
+
+  const drained = queue.drainAll();
+  assert.deepEqual(drained.map((item) => item.text), ['a', 'b'], 'oldest first');
+  assert.equal(queue.size, 0);
+  // One repaint for the batch: the bar is told once that it is now empty.
+  assert.deepEqual(seen, [[]]);
+
+  // Draining hands out copies: mutating one cannot reach the queue.
+  drained[0].text = 'mutated';
+  assert.equal(queue.enqueue('c').text, 'c');
+  assert.deepEqual(queue.drainAll().map((item) => item.text), ['c'], 'the mutation never landed');
+  assert.equal(queue.size, 0);
+
+  assert.deepEqual(queue.drainAll(), [], 'an empty queue drains to nothing');
 });

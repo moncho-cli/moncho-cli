@@ -210,6 +210,15 @@ export const COMPACTION_OLD_RATIO = toRatio(process.env.COMPACTION_OLD_RATIO, 0.
 export const COMPACTION_KEEP_RATIO = 1 - COMPACTION_OLD_RATIO;
 /** Marker prefixed to the summarised chunk so it is identifiable in the window. */
 export const COMPACTION_SUMMARY_PREFIX = "[compacted summary of earlier context]";
+/**
+ * Marker prefixed to the chunk that names what an earlier summary left unaddressed.
+ *
+ * A summary of a summary loses the pending list first: the newest compaction describes
+ * the work, and the older one's "things pending" is what the next summary quietly drops.
+ * This chunk is the answer to that, kept ahead of the newest summary in the window.
+ */
+export const COMPACTION_UNADDRESSED_PREFIX =
+  "[unaddressed items carried from an earlier compaction]";
 
 // ---------------------------------------------------------------------------
 // Model-call pulse (task-backlog: "keep in the context an incremental pulse on

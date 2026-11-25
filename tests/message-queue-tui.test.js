@@ -123,6 +123,23 @@ test('the queued text is verbatim, and the queue drains in order between turns',
   });
 });
 
+test('the surface drains the whole queue at once, so a batch is one prompt', async () => {
+  await withTui(async (tui) => {
+    tui.startSpinner();
+    for (const text of ['one', 'two', 'three']) await typeAndEnter(tui, text);
+    assert.equal(tui.queuedCount, 3);
+
+    tui.stopSpinner();
+    // The host loop prefers the batch drain: every note typed during one turn becomes
+    // the single prompt of the next one, in order and verbatim.
+    assert.deepEqual(tui.drainAll(), ['one', 'two', 'three']);
+    await flush();
+    assert.equal(tui.queuedCount, 0);
+    assert.equal(tui.queueHeight, 0, 'the bar empties in one repaint');
+    assert.deepEqual(tui.drainAll(), [], 'an empty queue drains to nothing');
+  });
+});
+
 test('a click on a ✕ row deletes that message only, and the region shrinks back', async () => {
   await withTui(async (tui) => {
     tui.startSpinner();

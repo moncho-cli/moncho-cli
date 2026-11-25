@@ -81,6 +81,35 @@ test('runSessionLoop() drains the queue before asking, runs one turn and saves i
   assert.ok(logged.includes('Exiting...'));
 });
 
+test('runSessionLoop() turns a whole queued batch into one turn', async () => {
+  const pending = ['steer left', 'and also check the tests'];
+  const turns = [];
+  const cli = scriptedCli(['exit']);
+
+  const result = await runSessionLoop({
+    cli,
+    log: () => {},
+    manager: { processInput: async (input) => turns.push(input) },
+    commands: createCommandRegistry(),
+    abortManager: noopAbort(),
+    saveSession: () => {},
+    // A front end with the batch drain: both notes leave the queue together.
+    tui: {
+      drainAll: () => {
+        const drained = pending.splice(0, pending.length);
+        return drained;
+      },
+      dequeue: () => pending.shift() ?? null,
+      startSpinner() {},
+      stopSpinner() {},
+    },
+  });
+
+  assert.equal(result, 'exit');
+  // One turn, carrying both messages in order, separated by a blank line.
+  assert.deepEqual(turns, ['steer left\n\nand also check the tests']);
+});
+
 test('runSessionLoop() answers a command without calling the model', async () => {
   const registry = createCommandRegistry();
   registry.register({

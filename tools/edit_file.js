@@ -117,7 +117,7 @@ function errorResponse(error, path) {
 
 const { definition, execute } = defineTool({
   name: 'edit_file',
-  description: 'Change part of a file by replacing literal text: the routine way to edit. Pass "search" (the text to find, copied verbatim with its indentation) and "replace" (what to put there). The search is literal, never a regular expression; it must match exactly once, or pass "all": true to replace every occurrence. Several edits can be sent at once as "edits": [{ "search", "replace" }] and are applied in order, all-or-nothing: nothing is written unless every edit matched. A search that does not match is refused with SEARCH_NOT_FOUND plus the nearest lines and, when it can tell, why they differ; one that matches several times is refused with SEARCH_NOT_UNIQUE plus every line. Never write a diff yourself — compose the edit as search/replace. "patchStr" takes a unified diff verbatim and exists for one case only: the USER pasted a diff and asked for it to be applied. The file is written atomically and verified byte-for-byte before success is reported.',
+  description: 'Change part of a file by replacing literal text: the routine way to edit. Pass "search" (the text to find, copied verbatim with its indentation) and "replace" (what to put there). The search is literal, never a regular expression; it must match exactly once, or pass "all": true to replace every occurrence. Several edits can be sent at once as "edits": [{ "search", "replace" }] and are applied in order, all-or-nothing: nothing is written unless every edit matched. A search that does not match is refused with SEARCH_NOT_FOUND plus the nearest lines and, when it can tell, why they differ; one whose bytes differ only in line-edge whitespace or line endings is repaired once and applied, and the success reports "repaired" so you know the file\'s own bytes were used. one that matches several times is refused with SEARCH_NOT_UNIQUE plus every line. Never write a diff yourself — compose the edit as search/replace. "patchStr" takes a unified diff verbatim and exists for one case only: the USER pasted a diff and asked for it to be applied. The file is written atomically and verified byte-for-byte before success is reported.',
   parameters: {
     properties: {
       path: {
@@ -216,6 +216,12 @@ const { definition, execute } = defineTool({
       forgetRead(path);
 
       const replacements = applied.report.reduce((sum, entry) => sum + entry.replacements, 0);
+      // The repairs the engine had to make, so a success that needed one says so instead of
+      // reading as if the search had matched the bytes the model wrote.
+      const repairs = applied.report.filter((entry) => entry.repaired);
+      const repairedNote = repairs.length
+        ? ` Repaired ${repairs.length} search(es) that differed only in formatting: ${repairs.map((entry) => entry.repaired.note).join('; ')}.`
+        : '';
       return JSON.stringify({
         status: 'success',
         path,
@@ -223,9 +229,10 @@ const { definition, execute } = defineTool({
         replacements,
         bytes: written.bytes,
         ...(applied.crlf ? { crlf: true } : {}),
+        ...(repairs.length ? { repaired: repairs.map((entry) => ({ editIndex: entry.editIndex, ...entry.repaired })) } : {}),
         verification: { readbackMatches: true, bytes: written.bytes },
         edits: applied.report,
-        message: `Successfully applied ${applied.report.length} edit(s) making ${replacements} replacement(s) in ${path}.`,
+        message: `Successfully applied ${applied.report.length} edit(s) making ${replacements} replacement(s) in ${path}.${repairedNote}`,
       });
     } catch (error) {
       return errorResponse(error, path);

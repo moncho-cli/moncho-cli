@@ -11,14 +11,18 @@ summary: >
   the queue height (app/queue-bar.js, app/tui-layout.js#setQueueHeight), a click on
   a row deletes that message only, and the host loop drains the queue between two
   turns through nextPrompt() so an injected message can never split an assistant
-  tool_calls message from its tool results. Every painted row is fitted to the
+  tool_calls message from its tool results. The whole queue is handed over as one
+  prompt (nextPrompt() plus joinQueued()), so several notes typed during one turn are
+  addressed together in a single turn instead of one turn each, oldest first and
+  separated by a blank line; a queue of one crosses byte-for-byte. Every painted row
+  is fitted to the
   interior width of the bar it is drawn in, so a long message uses the whole of a
   wide terminal and stays one display line that is never clipped (app/queue-rows.js);
   a caller with no width — the line CLI, which has no bar — keeps the fallback
   preview cap. The line CLI has no queue bar and keeps readline's own buffering.
 code:
   - path: app/message-queue.js
-    symbols: [createMessageQueue, nextPrompt, queueRowAt]
+    symbols: [createMessageQueue, nextPrompt, joinQueued, queueRowAt]
   - path: app/queue-rows.js
     symbols: [displayWidth, truncateToWidth, queuePreviewBudget, previewMessage, formatQueueRow, formatQueueRows, formatQueueTail, QUEUE_PREVIEW_CHARS, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER]
   - path: app/queue-bar.js
@@ -39,7 +43,11 @@ tests:
       - "createMessageQueue() removes one message by id and clears the rest"
       - "queueRowAt() maps a click to the message under the cursor"
       - "nextPrompt() injects the oldest queued message between turns, else asks"
-      - "nextPrompt() drains one message per turn, in order"
+      - "nextPrompt() drains every waiting message as one prompt, in order"
+      - "nextPrompt() hands a single queued message over byte-for-byte"
+      - "nextPrompt() keeps the single-message drain for a front end without a batch"
+      - "joinQueued() keeps one message verbatim and separates several by a blank line"
+      - "drainAll() empties the queue in one notification, oldest first"
   - path: tests/queue-rows.test.js
     cases:
       - "displayWidth() and truncateToWidth() count cells, not characters"
@@ -52,6 +60,7 @@ tests:
       - "a submission while a request is in flight is queued, and shown above the input box"
       - "the box stays armed after a queued submission, so the next keystroke lands"
       - "the queued text is verbatim, and the queue drains in order between turns"
+      - "the surface drains the whole queue at once, so a batch is one prompt"
       - "a click on a ✕ row deletes that message only, and the region shrinks back"
       - "a message typed while idle is not queued: the box settles the armed question"
       - "a long queued message uses the whole bar and is never wrapped or clipped"

@@ -112,6 +112,8 @@ export function createQueueBar({
       const item = queue.dequeue();
       return item ? item.text : null;
     },
+    /** Take every queued message at once (oldest first); [] when the bar is empty. */
+    drainAll: () => queue.drainAll().map((item) => item.text),
     remove: (id) => queue.remove(id),
     clear: () => queue.clear(),
     subscribe: (listener) => queue.subscribe(listener),
@@ -146,6 +148,8 @@ export function queueSurface(queue, target = {}) {
   return Object.defineProperties(target, {
     /** Drop the oldest queued message and return its verbatim text, or null. */
     dequeue: { value: () => queue.dequeue(), enumerable: true },
+    /** Take every queued message at once (oldest first) as verbatim texts; [] when empty. */
+    drainAll: { value: () => queue.drainAll(), enumerable: true },
     /** How many messages are waiting. */
     queuedCount: { get: () => queue.count, enumerable: true },
     /** The queued messages, oldest first (a copy: mutating it changes nothing). */

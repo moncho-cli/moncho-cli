@@ -6,7 +6,7 @@ summary: >
   An over-budget window is compacted by summarising the older share (by token mass) into one marked summary chunk and keeping the newer share verbatim, never evicting the newest chunk. The split comes from one configured factor, COMPACTION_OLD_RATIO (default 0.7, overridable through the COMPACTION_OLD_RATIO env var), with the keep ratio derived from it, and every message that names the split derives its percentages from that config through describeCompactionSplit(). The last message the user wrote inside the summarised block is carried over verbatim between the summary and the kept tail by code, not by the model, unless that would not still shrink the window. The summariser call is a single self-contained request — its own instruction plus the evicted chunks, with the agent system prompt deliberately absent — and config/prompt.md says nothing about compaction at all. An empty summary or a provider error leaves the window untouched. compact_context reaches the live window via the host registry and defers the real call to the host loop.
 code:
   - path: utils/compaction.js
-    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, lastUserChunk, describeCompactionSplit, alignSplitToToolBatches, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, capturePointers, buildCaptureCarry, compactChunks, needsCompaction]
+    symbols: [SUMMARIZER_SYSTEM_PROMPT, chunkToText, serializeChunks, lastUserChunk, describeCompactionSplit, alignSplitToToolBatches, splitByTokenBudget, buildSummaryPrompt, buildSummaryChunk, capturePointers, buildCaptureCarry, previousSummaryChunk, UNADDRESSED_SYSTEM_PROMPT, buildUnaddressedPrompt, buildUnaddressedChunk, compactChunks, needsCompaction]
   - path: utils/compaction-render.js
     symbols: [chunkToText, serializeChunks, lastUserChunk, describeCompactionSplit]
   - path: app/context-window.js
@@ -22,7 +22,7 @@ code:
   - path: app/compaction-request.js
     symbols: [COMPACTION_REQUEST_CODE, detectCompactionRequest]
   - path: config/constants.js
-    symbols: [COMPACTION_OLD_RATIO, COMPACTION_KEEP_RATIO, COMPACTION_SUMMARY_PREFIX]
+    symbols: [COMPACTION_OLD_RATIO, COMPACTION_KEEP_RATIO, COMPACTION_SUMMARY_PREFIX, COMPACTION_UNADDRESSED_PREFIX]
 tests:
   - path: tests/context-window.test.js
     cases:
@@ -60,3 +60,13 @@ tests:
       - the carry is placed right after the summary, ahead of the kept tail
       - a compaction with no collapsed section adds no carry line
       - every capture named in the evicted block is carried, deduplicated
+  - path: tests/compaction-unaddressed.test.js
+    cases:
+      - previousSummaryChunk finds the newest summary, and a collapsed section is not one
+      - buildUnaddressedChunk keeps a real answer and refuses "nothing pending"
+      - the audit request quotes the earlier summary once and carries the record beside it
+      - a repeated compaction carries what the previous summary left unaddressed
+      - a first compaction asks nothing extra and keeps the shape it had
+      - an answer of NONE falls back to the shape it had, and says it was asked
+      - a failed audit never costs the compaction
+      - the kept tail and the carried user message still survive a repeated compaction

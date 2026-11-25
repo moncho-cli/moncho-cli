@@ -1,0 +1,54 @@
+id: agent/edit-repair
+domain: agent
+title: Repairing a formatting-only edit miss before refusing it
+status: active
+summary: >
+  A search whose bytes differ from the file's only in line-edge whitespace or line endings
+  is repaired once, deterministically, instead of being refused: utils/edit-repair.js
+  repairSearch rewrites it in the file's own bytes, and applyOne then matches against their
+  real length. Only line-edge whitespace and line endings are ever normalised, so the
+  interior of a line — where code and string literals live — is compared byte for byte and a
+  difference there is never repaired. The repair refuses to guess: it answers null when the
+  block matches in more than one place, and the refusal then carries whitespaceMatches naming
+  every place so the model can quote more context. The replacement is never re-indented,
+  because shifting it is a guess about a block that may hold a template literal. A search
+  that already matches literally is not a repair, and the repair runs only after the literal
+  match found nothing. The success reports repaired ({ rule, note, line }) in the edit's batch
+  entry and as a top-level array in edit_file's JSON, with a sentence in message, so a success
+  that needed one says so. repairSearch is called in the engine's LF domain, so the
+  line-ending rule answers a search that still carries CR/CRLF while the text it means is LF.
+code:
+  - path: utils/edit-repair.js
+    symbols: [REPAIR_RULES, normalizeLineEndings, whitespaceCandidates, classifyRepair, repairSearch]
+  - path: utils/edit_lib.js
+    symbols: [applyOne, applyEditsToText]
+  - path: utils/edit-miss.js
+    symbols: [splitLines, lineOfIndex]
+  - path: tools/edit_file.js
+    symbols: [definition, execute]
+tests:
+  - path: tests/edit-repair.test.js
+    cases:
+      - "a search indented differently is repaired to the file's own bytes"
+      - a search carrying trailing whitespace the file lacks is repaired
+      - "a CRLF search against a CRLF file is repaired to the file's endings"
+      - a repair that would match in two places is refused rather than guessed
+      - only line-edge whitespace is normalised, so interior bytes are never rewritten
+      - a search that already matches literally is not a repair
+      - a search matching nothing at all is not repaired
+      - a multi-line search is repaired as a block, not line by line
+      - the classification names the rule the repair actually applied
+      - line endings are folded to LF, CRLF and a lone CR alike
+      - "a repaired edit writes the file's own bytes, not the search that was typed"
+      - an unambiguous formatting miss is applied instead of refused
+      - the repair never re-indents the replacement
+      - an ambiguous formatting miss stays a refusal, and names every place
+      - a refusal with no whitespace match at all reports none
+      - an exact match is still an exact match, with no repair recorded
+  - path: tests/edit-repair-tool.test.js
+    cases:
+      - a search that differs only in indentation is applied and reported as repaired
+      - a search carrying trailing whitespace the file lacks is applied, not refused
+      - an exact match reports no repair at all
+      - an ambiguous formatting match is still refused, and names every place
+      - the tool description states the repair, so the model knows a retry is not needed

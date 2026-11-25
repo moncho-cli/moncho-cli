@@ -1,7 +1,8 @@
 import {
   COMPACTION_OLD_RATIO,
   COMPACTION_KEEP_RATIO,
-  COMPACTION_SUMMARY_PREFIX
+  COMPACTION_SUMMARY_PREFIX,
+  COMPACTION_UNADDRESSED_PREFIX
 } from '../config/constants.js';
 import { estimateMessageTokens, estimateMessagesTokens, exceedsTokenBudget } from './tokens.js';
 import {
@@ -230,6 +231,101 @@ export function buildCaptureCarry(captures = []) {
   };
 }
 
+/**
+ * The newest summary already in the window, or `null` when this is the first compaction.
+ *
+ * A chunk is a summary when it is marked `compacted` — every compaction writes that field
+ * — or, for a chunk restored from a session written before the field existed, when its
+ * text carries `COMPACTION_SUMMARY_PREFIX`. Recognising it is what lets the *next*
+ * compaction ask a different question: not "summarise this again", but "what did your
+ * predecessor promise that nobody has done?"
+ *
+ * Deliberately one chunk and not a list: only the most recent summary is still the live
+ * statement of what is pending. An older one has been superseded, so asking about it
+ * again would resurrect work the newest summary already closed.
+ *
+ * @param {any[]} chunks
+ * @returns {any|null}
+ */
+export function previousSummaryChunk(chunks = []) {
+  if (!Array.isArray(chunks)) return null;
+  for (let i = chunks.length - 1; i >= 0; i -= 1) {
+    const chunk = chunks[i];
+    if (!chunk || typeof chunk !== 'object') continue;
+    // A collapsed item's summary shares the prefix family but is not a compaction: it
+    // describes work that is *done*, so there is nothing pending to audit in it.
+    if (chunk.collapsed === true) continue;
+    if (chunk.compacted === true) return chunk;
+    if (typeof chunk.content === 'string' && chunk.content.startsWith(COMPACTION_SUMMARY_PREFIX)) return chunk;
+  }
+  return null;
+}
+
+/**
+ * The instruction for the one extra request a repeated compaction costs.
+ *
+ * It is self-contained for the same reason the summariser is: this message names what is
+ * being asked and carries the payload, and nothing else rides the request — no agent
+ * system prompt, no conversation. The question is narrow on purpose. The summariser's
+ * job is to describe work that happened; this call's job is to name work that was
+ * promised and did not happen, which is the part a summary of a summary loses first.
+ */
+export const UNADDRESSED_SYSTEM_PROMPT = [
+  'You are the context-compaction component of a coding agent.',
+  'An earlier compaction summarised part of this conversation and listed things that were still pending.',
+  'This message is the whole instruction: nothing else is sent with this request, and the payload below is the entire record you are given.',
+  'Name what the earlier summary left unaddressed: the pending work, open questions and promises that the record shows were not completed or resolved.',
+  'Answer with a short markdown list, one item per line, each item traceable to the record.',
+  'Only name what is genuinely unaddressed: work that the record shows as completed, verified or withdrawn is not unaddressed.',
+  'If the earlier summary left nothing unaddressed, answer exactly with the single word NONE.',
+  'Do not add preamble, apologies or meta commentary.'
+].join('\n');
+
+/**
+ * Build the user message of the unaddressed request.
+ *
+ * The previous summary comes first because it is the thing being audited, then the record
+ * that answers it — the code that does the auditing only has to read one block.
+ */
+export function buildUnaddressedPrompt(previousSummary, chunks) {
+  // The summary is the thing being audited, so it is quoted once at the top; the record
+  // below is the rest of the block without it, so the payload carries every byte once.
+  const record = (Array.isArray(chunks) ? chunks : []).filter((chunk) => chunk !== previousSummary);
+  return [
+    'Earlier compaction summary:',
+    '',
+    chunkToText(previousSummary),
+    '',
+    `Record that followed it (${record.length} context chunk(s) now being evicted):`,
+    '',
+    serializeChunks(record)
+  ].join('\n');
+}
+
+/**
+ * The chunk that carries the unaddressed items, or `null` when there are none.
+ *
+ * `null` for an empty answer, and `null` for the exact word `NONE` — the model is asked
+ * for that word so "nothing is pending" is expressible without an empty string, which is
+ * also what an empty or broken answer looks like. Carrying a chunk that says nothing would
+ * still cost its tokens in every request until the next compaction, and this chunk exists
+ * to save them.
+ *
+ * It is a **chunk**, not a string, for the reason the capture carry is: everything in the
+ * window is an object with a `role` and `content`, so a bare string would sit in the array
+ * and be invisible to the model.
+ */
+export function buildUnaddressedChunk(answer, { prefix = COMPACTION_UNADDRESSED_PREFIX } = {}) {
+  const text = String(answer ?? '').trim();
+  if (!text) return null;
+  if (text.toUpperCase() === 'NONE') return null;
+  return {
+    role: 'system',
+    content: `${prefix}\n${text}`,
+    unaddressed: true
+  };
+}
+
 /** Build the user message handed to the summariser model. */
 export function buildSummaryPrompt(chunks) {
   return [
@@ -316,18 +412,57 @@ export async function compactChunks(chunks, options = {}) {
   // the conversation had kept (`docs/context/chunkpaction`).
   const carry = buildCaptureCarry(capturePointers(split.older));
 
+  // What an *earlier* summary left unaddressed is the first thing a summary of a
+  // summary loses: the newest summary describes the work, and the older one's pending
+  // list is not work that happened. So when the evicted block holds a summary, one extra
+  // self-contained request asks what that summary promised and the record shows undone,
+  // and its answer rides ahead of the newest summary in the window.
+  //
+  // The request is only made when there *is* a previous summary — a first compaction has
+  // nothing to audit and must not pay for a second model call. A throwing or empty answer
+  // is not fatal either: the compaction still happens, in today's shape, because losing
+  // the audit is cheaper than losing the compaction.
+  const previousSummary = previousSummaryChunk(split.older);
+  let unaddressedChunk = null;
+  let unaddressedAsked = false;
+  if (previousSummary) {
+    const unaddressedMessages = [
+      { role: 'system', content: UNADDRESSED_SYSTEM_PROMPT },
+      { role: 'user', content: buildUnaddressedPrompt(previousSummary, split.older) }
+    ];
+    try {
+      const answer = await callModel(unaddressedMessages, { signal, purpose: 'context-compaction-unaddressed' });
+      unaddressedAsked = true;
+      unaddressedChunk = buildUnaddressedChunk(answer);
+    } catch {
+      // The audit is best-effort; the compaction is not.
+      unaddressedAsked = false;
+    }
+  }
+
   // The user's own message survives the eviction: the last one they wrote inside
   // the summarised block is re-inserted verbatim, after the summary and ahead of
   // the untouched tail. The summariser saw it too — the summary paraphrases it,
   // this keeps it as written.
   const carried = lastUserChunk(split.older);
-  const head = carry ? [summaryChunk, carry] : [summaryChunk];
+  const head = [
+    ...(unaddressedChunk ? [unaddressedChunk] : []),
+    summaryChunk,
+    ...(carry ? [carry] : [])
+  ];
   const withCarry = carried ? [...head, carried, ...split.kept] : null;
   // A carry is a fidelity rule, never a licence to grow the window: if it did not
-  // still shrink the window, the summary stands alone. The capture line is *not*
-  // dropped that way — it is tiny, and losing it costs the whole capture.
+  // still shrink the window, the summary stands alone. The capture line and the
+  // unaddressed line are *not* dropped that way — they are small, and losing either
+  // costs more than the tokens it holds.
   const carryFits = withCarry !== null && estimateMessagesTokens(withCarry) < split.totalTokens;
-  const nextChunks = carryFits ? withCarry : [...head, ...split.kept];
+  const withHead = carryFits ? withCarry : [...head, ...split.kept];
+  // The audit answered something, and in a window where the user's message was most of
+  // the evicted block it may be the only reason the window cannot shrink. Then it goes
+  // rather than the compaction: the order is summary first, audit second.
+  const shrinkFits = estimateMessagesTokens(withHead) < split.totalTokens;
+  const nextChunks = shrinkFits ? withHead : [...head.filter((chunk) => chunk !== unaddressedChunk), ...split.kept];
+  const keptUnaddressed = Boolean(unaddressedChunk) && shrinkFits;
   const afterTokens = estimateMessagesTokens(nextChunks);
 
   return {
@@ -338,7 +473,10 @@ export async function compactChunks(chunks, options = {}) {
       ...stats,
       afterTokens,
       carriedChunks: carryFits ? 1 : 0,
-      capturedIds: carry ? capturePointers(split.older) : []
+      capturedIds: carry ? capturePointers(split.older) : [],
+      previousSummary: Boolean(previousSummary),
+      unaddressedAsked,
+      unaddressedChunks: keptUnaddressed ? 1 : 0
     }
   };
 }

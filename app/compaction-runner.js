@@ -39,7 +39,14 @@ export function createCompactionRunner({ window, callModel, log = () => {}, noti
           // The user's own message rides the summary (`utils/compaction.js`), so the
           // line says so instead of leaving the extra chunk unexplained.
           const carried = Number(result.carriedChunks) > 0 ? ', carrying the last user message verbatim' : '';
-          log(`\n[Context] Compacted ${result.olderChunks} older chunk(s) into a summary (${result.olderTokens} -> ${result.afterTokens} tokens)${carried}.`);
+          // A repeated compaction costs one extra request: it audits what the previous
+          // summary left unaddressed. Naming it here means a second model call is never
+          // a silent one — and no unaddressed chunk is reported honestly too, since
+          // "asked and nothing was pending" is different from "did not ask".
+          const audited = result.previousSummary
+            ? `, ${Number(result.unaddressedChunks) > 0 ? 'carrying what the previous summary left unaddressed' : 'previous summary had nothing unaddressed'}`
+            : '';
+          log(`\n[Context] Compacted ${result.olderChunks} older chunk(s) into a summary (${result.olderTokens} -> ${result.afterTokens} tokens)${carried}${audited}.`);
           log(`[Context] Window: ${result.usage}`);
           // The window was rewritten underneath the chunks, so the meter has to be
           // repainted with the smaller number straight away.

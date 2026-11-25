@@ -417,29 +417,32 @@ test('the collapse switch is off unless CHUNKPACTION_ENABLED reads as a yes', ()
 });
 
 test('with the switch off, a completing update_task asks for no collapse and none runs', () => {
-  // Off is the default, so an unset variable is itself the off case.
-  assert.equal(chunkpactionEnabled(), false);
-  registerSession({ id: SESSION_ID });
-  const window = new ContextWindow({ maxTokens: 1_000_000 });
-  registerContextWindow(window);
-
-  window.setCurrentItem('item one');
-  window.addMany([
-    { role: 'user', content: `${'x'.repeat(400)} do it` },
-    { role: 'assistant', content: 'reasoning' },
-  ]);
-  window.setCurrentItem(null);
-
+  // The switch is **pinned** off for the whole case rather than assumed off: it is read from
+  // the live environment (`config/constants.js#chunkpactionEnabled`), and a maintainer whose
+  // own `.env` exports CHUNKPACTION_ENABLED=1 would otherwise fail here — the environment
+  // would be what broke the case, not the behaviour it proves.
   withSwitch(undefined, () => {
+    assert.equal(chunkpactionEnabled(), false);
+    registerSession({ id: SESSION_ID });
+    const window = new ContextWindow({ maxTokens: 1_000_000 });
+    registerContextWindow(window);
+
+    window.setCurrentItem('item one');
+    window.addMany([
+      { role: 'user', content: `${'x'.repeat(400)} do it` },
+      { role: 'assistant', content: 'reasoning' },
+    ]);
+    window.setCurrentItem(null);
+
     assert.equal(requestItemCollapse(['item one']), false, 'off means the request is refused');
     assert.equal(runItemCollapse(), null, 'and there is nothing to drain');
+
+    assert.equal(window.chunks.length, 2, 'the section stays verbatim in the window');
+    assert.equal(window.chunks[0].collapsed, undefined, 'nothing was collapsed');
+    assert.equal(hasChunkpaction(SESSION_ID), false, 'and no capture file was written');
+
+    clearContextWindow();
   });
-
-  assert.equal(window.chunks.length, 2, 'the section stays verbatim in the window');
-  assert.equal(window.chunks[0].collapsed, undefined, 'nothing was collapsed');
-  assert.equal(hasChunkpaction(SESSION_ID), false, 'and no capture file was written');
-
-  clearContextWindow();
 });
 
 test('a request recorded while on does not collapse once the switch is turned off', () => {
