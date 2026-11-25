@@ -1,0 +1,39 @@
+id: maintainer/lint
+domain: maintainer
+title: The static gate every other check leaves open
+status: active
+summary: >
+  npm test is all runtime proof, and a runtime test can only fail on a path it happens to
+  execute, so a statically knowable defect can ship: the skinSubchat crash in main.js was an
+  identifier passed as a shorthand property inside a closure and bound nowhere, throwing on
+  every mid-turn command while every suite passed, because each mid-turn test injects its own
+  stand-in run and never evaluates the host's closure. eslint.config.js closes that hole with
+  exactly two rules and no preset. no-undef is an error, because "is this name declared?" has
+  one right answer and a tree with an undeclared name is broken rather than untidy; it is
+  affordable at error strength because the tree already satisfies it (zero hits across 349
+  files measured before adoption, so nothing was rewritten). no-unused-vars is a warning,
+  because it is the inverse question and a much weaker one: a deliberate re-export barrel and a
+  test's convenience import are both "unused" to a static reader, which is why the tree carries
+  dozens and why this must never block a build. js.configs.recommended was measured and left
+  out, with the numbers: it adds 81 errors here, mostly no-control-regex on the \x1b escape
+  bytes the TUI suites match on purpose — the byte is what they are testing — and silencing a
+  rule that often is how a config becomes noise. The six real findings it would also surface
+  (no-useless-assignment in six modules, no-unreachable in utils/task-pulse.js) deserve their
+  own change with their own tests. agent/ and vendor/ are ignored, because scratch and a
+  second copy of a published package are not this project's source, and the globals come from
+  globals.node rather than a hand-written list, which is a second place to forget process after
+  Buffer. node --check stays the cheap per-file parse; this answers what a single-file syntax
+  check cannot, and it needs the dependency installed to do it. The command is npm run lint,
+  which make lint wraps so CI and the agent run the same one.
+code:
+  - path: eslint.config.js
+  - path: package.json
+  - path: Makefile
+tests:
+  - path: tests/lint.test.js
+    cases:
+      - an undeclared identifier is an error, which is the defect no suite could see
+      - the declared version of that same code passes, so the rule is not blanket refusal
+      - the node globals are declared, so the check is not a hand-written list
+      - no-unused-vars is a warning, so an unused import never blocks a build
+      - the shipped tree the realm roots name lints with zero errors

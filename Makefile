@@ -5,6 +5,7 @@
 # cannot express on its own:
 #
 #   make test          the test suite
+#   make lint          the static gate: no-undef as an error, no-unused-vars a warning
 #   make check-shell   parse every shipped script and set the executable bits
 #   make probe         the docker-free half of the runner's behaviour
 #   make payload       stage the distribution payload into build/ and prove that
@@ -32,10 +33,11 @@ SHELL := /bin/bash
 VERSION ?= dev
 BUMP ?= patch
 
-.PHONY: help test check-shell probe payload install bump release base dev clean
+.PHONY: help test lint check-shell probe payload install bump release base dev clean
 
 help:
 	@echo "make test         run the test suite"
+	@echo "make lint         the static gate: no-undef at error strength"
 	@echo "make check-shell  bash -n every shipped script, set the exec bits"
 	@echo "make probe        docker-free checks of the runner's logic"
 	@echo "make payload      stage the distribution payload into build/payload"
@@ -48,6 +50,10 @@ help:
 
 test:
 	npm test
+
+# The one spelling CI and the agent share (docs/maintainer/lint): eslint.config.js.
+lint:
+	npm run lint
 
 check-shell:
 	node agent/utils/shell-sanity.mjs

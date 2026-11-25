@@ -39,7 +39,7 @@ Domains:
 - `context/` — the context window: token accounting (the live meter and the per-model totals), compaction, size resolution, the working-time counter the session adds up (`context/working-time`), and the per-call budget line (`context/call-pulse`) with its two resets.
 - `interface/` — what the user sees and presses: TUI (including the per-block timestamps, `interface/conversation-timestamps`, the background band around each side of the dialogue, `interface/prose-bands`, the aligned markdown tables of a reply, `interface/markdown-tables`, the slash-command popup over the input box, `interface/slash-autocomplete`, and the `design` checklist the host puts back on screen when a turn stops and the session waits for the user, `interface/design-review`), line CLI, interrupts.
 - `runtime/` — provider calls and startup wiring.
-- `maintainer/` — what a session owes the release: the version bump and how far it must go (`maintainer/version-bump`).
+- `maintainer/` — what a session owes the release: the version bump and how far it must go (`maintainer/version-bump`), and the static gate behind it, where `no-undef` is an error and `no-unused-vars` a warning (`maintainer/lint`).
 
 ## `spec.yaml` format
 
