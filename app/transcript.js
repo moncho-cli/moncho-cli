@@ -4,8 +4,8 @@ import { withStamp } from './transcript-stamp.js';
  * The transcript as a model, independent of any terminal widget.
  *
  * The conversation is an ordered list of *entries*: plain display lines (prose,
- * notices) and *blocks* (a tool result, collapsed by default into a single header
- * line carrying its "X char response" size, expandable on click). The display
+ * notices) and *blocks* (a tool result, collapsed into a single header line carrying
+ * its "X char response" size, expandable on click). The display
  * lines are derived from the entries, so toggling a block never loses the payload
  * — the exact bytes stay in `block.body`.
  *
@@ -18,9 +18,6 @@ import { withStamp } from './transcript-stamp.js';
  *
  * Pure: no neo-blessed, no screen, so every rule below is unit testable.
  */
-
-/** Results longer than this many chars start collapsed. */
-export const COLLAPSE_THRESHOLD_CHARS = 60;
 
 /** Glyphs marking a collapsed / expanded block header. */
 export const COLLAPSED_MARKER = '▸';
@@ -109,9 +106,11 @@ export class TranscriptModel {
    *
    * `header` is one display-ready line (the caller sanitises and escapes it),
    * `body` the raw payload whose length is reported, `bodyLines` the formatted
-   * lines actually painted. Anything spanning several lines — or longer than
-   * COLLAPSE_THRESHOLD_CHARS — starts collapsed, so tool output is hidden behind
-   * a click "most of the times" while a one-word result stays readable inline.
+   * lines actually painted. **Every block starts collapsed**, whatever its size: tool
+   * output is what a reader scans past, and a result — a one-word one included — is
+   * opened by a click rather than painted into the conversation unasked. A caller that
+   * really wants its payload visible (`collapsed: false`) is the exception, and it is
+   * always an announcement rather than a tool result (a tracking block, a review).
    *
    * `stamp` marks the entry the way `addLine()` does, on the header line.
    */
@@ -134,9 +133,7 @@ export class TranscriptModel {
       chars: source.length,
       stamp: stamp || null,
       role: role || null,
-      collapsed: collapsed == null
-        ? lines.length > 1 || source.length > COLLAPSE_THRESHOLD_CHARS
-        : Boolean(collapsed),
+      collapsed: collapsed == null ? true : Boolean(collapsed),
     };
     this.#entries.push(block);
     return block;

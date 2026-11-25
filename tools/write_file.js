@@ -1,5 +1,8 @@
 import { writeFileVerified } from '../utils/file-io.js';
+import fs from 'fs';
 import { forgetRead, staleWriteRefusal } from '../utils/read-tracker.js';
+import { resolveProjectPath } from '../utils/path-safety.js';
+import { recordWriteCapture } from '../utils/write-journal.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { canonicalTrackingWrite, isToolOwnedFile, trackingLocationRefusal } from '../utils/tracking-fence.js';
 import { hostExecutableRefusal } from '../utils/host-fence.js';
@@ -53,9 +56,15 @@ const { definition, execute } = defineTool({
       const hostExec = hostExecutableRefusal(args.path);
       if (hostExec) return JSON.stringify(hostExec);
 
-      const tracking = canonicalTrackingWrite(args.path, args.content);
-      const content = tracking ? tracking.content : args.content;
-      const result = writeFileVerified(args.path, content);
+        const tracking = canonicalTrackingWrite(args.path, args.content);
+        const content = tracking ? tracking.content : args.content;
+        // The bytes around the write are captured for the screen, never returned: the
+        // value below is what the model is billed for on every later call, so a diff
+        // cannot ride on it (utils/write-journal.js).
+        const existed = fs.existsSync(resolveProjectPath(args.path));
+        const before = existed ? fs.readFileSync(resolveProjectPath(args.path), 'utf-8') : null;
+        const result = writeFileVerified(args.path, content);
+        recordWriteCapture({ path: args.path, before, after: content, created: !existed });
       // The bytes on disk are now the model's own: no stale view is left to guard.
       forgetRead(args.path);
       return JSON.stringify({

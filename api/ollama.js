@@ -103,6 +103,39 @@ async function clearThinkingFile() {
   fs.writeFileSync(THINKING_FILE, '', 'utf-8');
 }
 
+/**
+ * Record one call's reasoning where the `Thinking` view can read it.
+ *
+ * The streaming branch appends each delta as it arrives, but **no production call site
+ * streams** (`app/conversation-manager.js`, `app/compaction-runner.js` and `main.js` all
+ * pass `isStreaming = false`, because `api/stream-reader.js#readStream` assembles content
+ * and not `tool_calls`). So a capture written only from the streaming branch is written
+ * by nothing, and the view that reads it opens on an empty file.
+ *
+ * This is the non-streaming half of the same rule: the reasoning the provider already
+ * returned is written once, verbatim, at the start of the call that produced it. The file
+ * is cleared first so it holds *this* call's reasoning rather than an older call's — the
+ * capture is a view of the reasoning in flight, not a history (`docs/interface/thinking-view`).
+ *
+ * A reasoning that is missing, empty or not a string is the ordinary case — a model
+ * without a reasoning channel, or a plain completion — and writes nothing at all, so the
+ * file is left as the last real capture rather than truncated for nothing.
+ *
+ * Never throws: a capture is a view, and losing a view must not cost the reply.
+ *
+ * @param {unknown} thinking the reasoning the provider returned
+ */
+function captureThinking(thinking) {
+  if (!THINKING_FILE) return;
+  const text = typeof thinking === 'string' ? thinking : '';
+  if (!text) return;
+  try {
+    fs.writeFileSync(THINKING_FILE, text, 'utf-8');
+  } catch (error) {
+    logEvent('warn', 'provider', 'could not write the thinking capture', error);
+  }
+}
+
 /** How long to wait before retrying a failed attempt. */
 const RETRY_DELAY_MS = 5000;
 
@@ -237,7 +270,11 @@ export async function callOllama(messages, tools, isStreaming = false, signal = 
           });
         }
 
-        return normalizeResponse(await response.json());
+        // The reasoning rides the same reply (api/provider-response.js keeps it), so
+        // the `Thinking` view has a capture whether or not the call streamed.
+        const payload = await response.json();
+        captureThinking(payload?.message?.thinking);
+        return normalizeResponse(payload);
       } else {
         // Streaming call with thinking capture
         const response = await fetch(BASE_URL, {

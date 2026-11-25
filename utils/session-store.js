@@ -19,7 +19,8 @@ import {
   sessionUsage,
   formatSession,
 } from './session-format.js';
-import { canOpenSession } from './session-version.js';
+import { runningVersion, sessionVerdict, sessionVersion, upgradedPin } from './session-version.js';
+import { migrateRecord } from './session-compat.js';
 
 /**
  * Conversation sessions **on disk** (task.md item 3).
@@ -257,6 +258,91 @@ export function migrateSession(id, { dir = SESSION_DIR } = {}) {
   return true;
 }
 
+/**
+ * Carry a stored session forward across the declared compatibility breaks
+ * (`docs/runtime/session-compat`).
+ *
+ * This is the write half of the era rule. The gate decides *whether* a session opens
+ * (`sessionVerdict()`); this does the part that decision deferred — run the migrations the
+ * breaks name, in order, and re-stamp the pin so the record now belongs to `version`.
+ *
+ * Three things make it a different operation from `writeSession()`:
+ *
+ *  - **it reads raw JSON, not `parseSession()`.** The bytes a migration exists to fix are
+ *    exactly the ones this build's validator may refuse — a future shape, an unknown
+ *    format version — so validating first would refuse the record before the function
+ *    written to fix it could see it.
+ *  - **it never re-serialises through `serializeSession()`.** That builder keeps only the
+ *    fields it knows, so a round-trip would drop anything a migration added. The migrated
+ *    object is written as it stands, with the pin merged in.
+ *  - **the pin is rewritten with `upgradedPin()`**, so the move carries the audit line and
+ *    the old build refuses the session afterwards — the same rewrite `/upgrade` performs,
+ *    for the case where the user never had to know.
+ *
+ * All-or-nothing: a broken or missing migration answers `migrated: false` and writes
+ * nothing, so the session is left exactly as it was for the refusal to report.
+ *
+ * @returns {{migrated: boolean, code: string, verdict: object, record: object,
+ *   applied?: string[], from?: string|null, blocked?: object|null, error?: Error|null}}
+ */
+export function migrateStoredSession(id, { dir = SESSION_DIR, version = runningVersion(), now = new Date(), options = {} } = {}) {
+  const candidates = [sessionPath(id, { dir }), legacySessionPath(id, { dir })];
+  let raw = null;
+  for (const relative of candidates) {
+    try {
+      const absolute = resolveProjectPath(relative);
+      if (!fs.existsSync(absolute)) continue;
+      raw = fs.readFileSync(absolute, 'utf-8');
+      break;
+    } catch {
+      continue;
+    }
+  }
+  if (raw === null) {
+    throw new SessionStoreError('NOT_FOUND', `No session stored at ${candidates[0]}.`, { id });
+  }
+
+  let record;
+  try {
+    record = JSON.parse(raw);
+  } catch (error) {
+    throw new SessionStoreError('INVALID_JSON', `Session file is not valid JSON: ${error.message}`, { id });
+  }
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    throw new SessionStoreError('INVALID_SESSION', 'Session file must hold a JSON object.', { id });
+  }
+
+  const verdict = sessionVerdict(record, version, options);
+  if (verdict.verdict !== 'migrate') {
+    return {
+      migrated: false,
+      code: verdict.verdict === 'refuse' ? 'VERSION_LOCKED' : 'UP_TO_DATE',
+      verdict,
+      record,
+    };
+  }
+
+  const result = migrateRecord(record, verdict.steps, options);
+  if (!result.ok) {
+    return { migrated: false, code: 'MIGRATION_FAILED', verdict, record, blocked: result.blocked, error: result.error };
+  }
+
+  const pin = upgradedPin(sessionVersion(record), version, now);
+  const next = { ...result.record, ...pin };
+  writeFileVerified(sessionPath(id, { dir }), formatSession(next));
+
+  // A flat file left by the older layout is stale the moment the record lands in its
+  // folder — the same retirement `writeSession()` performs.
+  try {
+    const legacy = resolveProjectPath(legacySessionPath(id, { dir }));
+    if (fs.existsSync(legacy)) fs.unlinkSync(legacy);
+  } catch {
+    // Housekeeping: it must never fail a good migration.
+  }
+
+  return { migrated: true, code: 'MIGRATED', verdict, record: next, applied: result.applied, from: pin.upgradedFrom };
+}
+
 /** The most recent session, or null when none is stored. */
 export function latestSession({ dir = SESSION_DIR } = {}) {
   const [first] = listSessions({ dir });
@@ -276,18 +362,26 @@ export function latestSession({ dir = SESSION_DIR } = {}) {
  * to see that the history is still there and why it cannot be entered
  * (`docs/runtime/session-version`).
  *
+ * The three answers are told apart, because they are three different situations: a locked
+ * row cannot be entered at all, a row **needing upgrade** opens once its bytes are carried
+ * forward (`docs/runtime/session-compat`), and a row this build owns carries no mark.
+ *
  * @param {object} summary a listing entry from `listSessions()`
  * @param {string} [version] the running version, when the caller wants the mark
+ * @param {{breaks?: object[], migrations?: object}} [options] the break list under test
  */
-export function describeSession(summary, version = undefined) {
+export function describeSession(summary, version = undefined, options = {}) {
   if (!summary) return '';
   if (summary.error) return `${summary.id} — unreadable (${summary.error})`;
   const when = summary.updatedAt || summary.createdAt || '';
   const turns = summary.counts?.roles?.user ?? 0;
   const chunks = summary.counts?.chunks ?? 0;
   const model = summary.model ? ` · ${summary.model}` : '';
-  const locked = version !== undefined && !canOpenSession(summary, version)
-    ? ` · locked (${summary.monchoVersion})`
-    : '';
-  return `${summary.id} — ${turns} turn(s), ${chunks} chunk(s)${model} · ${when}${locked}`;
+  const verdict = version === undefined ? null : sessionVerdict(summary, version, options);
+  const mark = verdict === null || verdict.verdict === 'open'
+    ? ''
+    : verdict.verdict === 'refuse'
+      ? ` · locked (${summary.monchoVersion})`
+      : ` · upgrade (${summary.monchoVersion})`;
+  return `${summary.id} — ${turns} turn(s), ${chunks} chunk(s)${model} · ${when}${mark}`;
 }

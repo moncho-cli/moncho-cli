@@ -1,0 +1,56 @@
+id: runtime/session-compat
+domain: runtime
+title: The compatibility era, and the migrations that cross a break
+status: active
+summary: >
+  A session records the version that last wrote it, and the pin used to be judged by strict
+  equality of the two strings. Equality was right about the one thing that must never
+  happen — an older build opening bytes a newer one wrote, then saving them in a shape the
+  older build can no longer read — and wrong about everything else: a patch release that
+  touched a prompt or a document refused the whole history on the disk for nothing. So the
+  pin is judged by compatibility era instead. Ordering decides the direction and no table can
+  override it: a pin newer than the running build is refused always, because there is no
+  un-migration once the newer build has written these bytes. An older pin opens while nothing
+  between the two versions declares a break, and is carried forward where a declared
+  migration exists, falling back to the refusal of yesterday where it does not. A break is a
+  release that really made older bytes unreadable, listed oldest first and append-only,
+  because the era is a count of the entries at or below a version — an insert in the middle
+  would silently re-label every session on the disk, so validateCompatBreaks() reports it. A
+  migration is a pure record-to-record the break names, and migrateStoredSession() runs them
+  on the raw JSON before parseSession() would reject a future record shape; the walk is
+  all-or-nothing, so a failed migration leaves the session exactly as it was for the refusal
+  to report rather than half carried forward.
+code:
+  - path: utils/session-compat.js
+    symbols: [FIRST_ERA, COMPAT_BREAKS, MIGRATIONS, validateCompatBreaks, compatEra, compatEraBreaks, compatVerdict, migrateRecord]
+  - path: utils/session-version.js
+    symbols: [sessionVerdict, canOpenSession, sessionVersionRefusal, upgradedPin]
+  - path: utils/session-store.js
+    symbols: [migrateStoredSession, describeSession]
+  - path: utils/version-bump.js
+    symbols: [parseSemver, semverRank]
+  - path: app/commands.js
+    symbols: [sessionsCommand]
+  - path: app/upgrade-command.js
+    symbols: [upgradeCommand]
+tests:
+  - path: tests/session-compat.test.js
+    cases:
+      - the shipped break list is sound, append-only and ascending
+      - an era is one plus every break at or below the version
+      - the era of a version that is not a semver is no era at all
+      - the breaks between two versions are the ones after the first and up to the second, in order
+      - a session with no pin is open, and a newer pin is refused, whatever the table says
+      - an older session in the same era opens without a migration
+      - an older session across a declared break is migrated before it opens
+      - a break with no migration is refused, and told apart from a newer pin
+      - a pin that is not a semver is refused rather than assumed to be in the era
+      - a migration is a pure record-to-record that may leave a record unchanged
+      - a missing or throwing migration blocks the walk, all-or-nothing
+      - a table that is not append-only or names an unknown migration is reported
+      - migrating a stored session carries the record forward, re-stamps the pin and audits the move
+      - a session the era already opens is not migrated, and one that is refused is left alone
+      - a migration that fails or is missing writes nothing, so the session stays readable as it was
+      - /sessions migrates a session across a break and then resumes it
+      - /sessions refuses a session stranded by a break nobody can cross, without touching it
+      - the picker marks a migratable row as upgradeable and a stranded one as locked

@@ -17,9 +17,14 @@ terminal widget involved (pure, so every rule here is unit testable):
 - a **block** — one header line plus the payload (`body`, stored verbatim) and the
   formatted `bodyLines` actually painted.
 
-- A block starts **collapsed** when it spans several lines or exceeds
-  `COLLAPSE_THRESHOLD_CHARS` characters, so tool output is collapsed "most of the
-  times" while a one-word result stays readable inline.
+- A block starts **collapsed**, whatever its size: every tool response is one header
+  line until the reader asks for the payload, a one-word result included. Size-based
+  folding was the earlier rule, and it made the click depend on arithmetic the reader
+  cannot see; the price of the change is that even a two-character result needs a click.
+- A caller may pass `collapsed: false` to keep a block open, and that is reserved for an
+  **announcement** rather than a tool response — a tracking block's full content
+  (`docs/interface/tracking-block`), the design review. Nothing a tool returns arrives
+  that way.
 - The collapsed header ends with the size of the payload, `X char response`
   (`formatCharCount()`), so the user can tell how much is hidden before clicking.
 - Collapsed blocks paint exactly one display line; expanding paints the header

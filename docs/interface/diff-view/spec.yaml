@@ -1,0 +1,55 @@
+id: interface/diff-view
+domain: interface
+title: A file write's diff, side by side with line numbers
+status: active
+summary: >
+  A tool result says a file changed; the row below it says what changed. The before and
+  after bytes are captured inside the writer that holds them and carried through a host
+  registry (utils/write-journal.js), never on the value the tool returns, because
+  utils/tool-loader.js hands that value to the model and it is re-sent on every later
+  call of the session. app/diff-view.js is the pure half: a line-level longest-common-
+  subsequence pairing, where a modified line is one changed row rather than a removal
+  beside an addition, and line numbers are kept per side. The layout is measured, not
+  assumed — below DIFF_MIN_SPLIT_WIDTH the two columns fall back to the stacked form,
+  which is the same information at half the width rather than a truncated guess — and a
+  line is cut between grapheme clusters. Every diff block starts collapsed, like every
+  other tool result — a changed file, a created one and a whole-file rewrite alike — so
+  the header states the change (`+n −m`, "new file, N lines", `(whole file)`) and a
+  click shows the bytes; a capture that was never recorded adds no block at all. The
+  block is a logBlock route, so it is never a chunk and never a session file, and the
+  line CLI prints none of it.
+code:
+  - path: app/diff-view.js
+    symbols: [textLines, matchLines, diffRows, sideText, fitSide, gutterWidth, diffLayout, renderDiff, writeDiffBlock, DIFF_MIN_SPLIT_WIDTH, DIFF_MAX_GUTTER, DIFF_MARKERS]
+  - path: utils/write-journal.js
+    symbols: [recordWriteCapture, takeWriteCapture, peekWriteCapture, captureKey, pendingCaptureCount, clearWriteCaptures, DIFF_CAPTURE_MAX_CHARS]
+  - path: app/tool-echo.js
+    symbols: [createToolEcho]
+  - path: tools/write_file.js
+    symbols: [execute]
+  - path: tools/edit_file.js
+    symbols: [execute, readApplied]
+  - path: main.js
+    symbols: [main]
+tests:
+  - path: tests/diff-view.test.js
+    cases:
+      - "textLines ends the last line at a trailing newline and never invents one"
+      - "matchLines finds the anchors of an insertion and of a modification"
+      - "a modified line is one changed row, not a removal beside an addition"
+      - "diffRows keeps line numbers on both sides across an insertion"
+      - "diffRows reports a pure removal with no new side"
+      - "diffRows answers no rows when nothing changed"
+      - "diffLayout keeps the split on a wide region and stacks it on a narrow one"
+      - "gutterWidth grows with the file and is capped"
+      - "fitSide cuts between clusters and says what it cut"
+      - "renderDiff aligns both columns and marks each kind of row"
+      - "a changed file earns a collapsed block naming its additions and removals"
+      - "a created file names its line count, and a whole rewrite names its count"
+      - "a capture with no bytes or no path earns no block"
+      - "the journal holds one pair per path, sorted out by take and peek"
+      - "an oversize pair is filed as a shape without its bytes"
+      - "the echo draws the diff and leaves the tool result untouched"
+      - "a failed call and a path the journal never saw draw no diff"
+      - "the line CLI prints no diff block, so a headless run stays plain"
+      - "the writers record a capture, which is what the screen draws"

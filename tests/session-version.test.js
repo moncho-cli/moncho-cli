@@ -23,11 +23,12 @@ import { upgradeCommand } from '../app/upgrade-command.js';
  * Which version is running, and which sessions it may open
  * (`docs/runtime/session-version`).
  *
- * The rule these cases protect is narrow and load-bearing: a session belongs to the build
- * that wrote it, and opening one from another build is refused rather than attempted. The
- * two ways to get this wrong are worth naming, because each is a case below — refusing an
- * unpinned record (which strands every session on disk) and letting a *newer* build open
- * an older session (which silently rewrites it into a shape the older build cannot read).
+ * The rule these cases protect is the **one-way door**: bytes a newer build wrote may not be
+ * opened by an older one, which would write them back in a shape the newer build's record no
+ * longer means. Ordering is what keeps it shut, so a newer pin is refused and an older one
+ * opens wherever the releases declared no break (`docs/runtime/session-compat`). The ways to
+ * get this wrong are each a case below — refusing an unpinned record (which strands every
+ * session on disk) and letting an *older* build open a *newer* session.
  */
 
 /** A record as `serializeSession()` builds it, with the pin as the argument under test. */
@@ -67,21 +68,25 @@ test('a session pinned to the running version opens', () => {
   assert.equal(canOpenSession(record('0.28.3'), '0.28.3'), true);
 });
 
-test('a session pinned to another version is refused, and the refusal names the command', () => {
-  const locked = record('0.28.2');
-  assert.equal(canOpenSession(locked, '0.28.3'), false);
+test('a newer pin is refused, and the refusal names the command that opens it', () => {
+  // The one-way door: 0.28.2 may not read bytes 0.28.3 wrote, whatever the two versions are.
+  const locked = record('0.28.3');
+  assert.equal(canOpenSession(locked, '0.28.2'), false);
 
-  const message = sessionVersionRefusal(locked, '0.28.3');
-  assert.match(message, /0\.28\.2/, 'it names the version that owns the session');
-  assert.match(message, /this is 0\.28\.3/, 'and the one that refused it');
-  assert.match(message, /moncho-cli --version 0\.28\.2/, 'the exact command is the way in');
+  const message = sessionVersionRefusal(locked, '0.28.2');
+  assert.match(message, /0\.28\.3/, 'it names the version that owns the session');
+  assert.match(message, /this 0\.28\.2/, 'and the one that refused it');
+  assert.match(message, /moncho-cli --version 0\.28\.3/, 'the exact command is the way in');
   assert.match(message, /\/upgrade/, 'and the command that moves it forward');
 });
 
-test('the pin is strict equality, so a newer version is still refused', () => {
-  // The one-way door: 0.29.0 must not read 0.28.0's record, because it would write it
-  // back in a shape 0.28.0 cannot read. A comparison of semvers would allow this.
-  assert.equal(canOpenSession(record('0.28.0'), '0.29.0'), false);
+test('the pin is judged by era, so an older session opens and a newer one is refused', () => {
+  // The whole change from strict equality: 0.29.0 opens 0.28.0's record, because nothing
+  // between the two releases declared a break (`docs/runtime/session-compat`). Equality cost
+  // the user every session on disk for a patch release, which is the friction this removes.
+  assert.equal(canOpenSession(record('0.28.0'), '0.29.0'), true);
+  // The door stays shut the other way, and ordering is what shuts it: 0.28.0 must not read
+  // bytes 0.29.0 wrote, because it would write them back in a shape 0.29.0 cannot read.
   assert.equal(canOpenSession(record('0.29.0'), '0.28.0'), false);
 });
 
@@ -140,7 +145,8 @@ function spyManager() {
 
 test('/sessions refuses a locked session before touching the conversation', async () => {
   const dir = tempDir('gate-refuse');
-  storeSession(dir, '2026-01-01T00-00-00-000Z', '0.28.2');
+  // A *newer* pin is the door that stays shut: 0.28.3 may not read what 0.28.4 wrote.
+  storeSession(dir, '2026-01-01T00-00-00-000Z', '0.28.4');
   const manager = spyManager();
 
   const result = await sessionsCommand().run({
@@ -149,8 +155,8 @@ test('/sessions refuses a locked session before touching the conversation', asyn
 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'VERSION_LOCKED');
-  assert.match(result.message, /moncho-cli --version 0\.28\.2/, 'it names the way in');
-  assert.equal(result.monchoVersion, '0.28.2', 'the pin travels with the refusal');
+  assert.match(result.message, /moncho-cli --version 0\.28\.4/, 'it names the way in');
+  assert.equal(result.monchoVersion, '0.28.4', 'the pin travels with the refusal');
   assert.deepEqual(manager.calls, [], 'nothing was loaded and no window was replaced');
   cleanup(dir);
 });
@@ -173,25 +179,25 @@ test('/sessions opens a session written by the running version', async () => {
 
 test('the picker marks a locked row and still lists it', async () => {
   const dir = tempDir('gate-mark');
-  storeSession(dir, '2026-01-03T00-00-00-000Z', '0.28.2');
-  storeSession(dir, '2026-01-04T00-00-00-000Z', '0.28.3');
+  storeSession(dir, '2026-01-02T00-00-00-000Z', '0.28.2'); // older, nothing broke: open
+  storeSession(dir, '2026-01-03T00-00-00-000Z', '0.28.4'); // newer: locked
+  storeSession(dir, '2026-01-04T00-00-00-000Z', '0.28.3'); // this build: owned
 
   // No choose function, so /sessions answers with the lines it would have shown.
   const result = await sessionsCommand().run({ dir, version: '0.28.3' });
   assert.equal(result.code, 'LISTED');
-  assert.equal(result.lines.length, 2, 'both rows are shown: a lock is not a disappearance');
-  assert.match(result.lines.join('\n'), /locked \(0\.28\.2\)/, 'the locked row says why');
-  assert.doesNotMatch(
-    result.lines.find((line) => line.includes('2026-01-04')),
-    /locked/,
-    'the row this build owns carries no mark',
-  );
+  assert.equal(result.lines.length, 3, 'every row is shown: a lock is not a disappearance');
+
+  const row = (id) => result.lines.find((line) => line.includes(id));
+  assert.match(row('2026-01-03'), /locked \(0\.28\.4\)/, 'the locked row says why');
+  assert.doesNotMatch(row('2026-01-02'), /locked/, 'an older row the era opens carries no mark');
+  assert.doesNotMatch(row('2026-01-04'), /locked/, 'the row this build owns carries no mark');
   cleanup(dir);
 });
 
 test('the picker refuses the locked row it was told to open', async () => {
   const dir = tempDir('gate-choose');
-  storeSession(dir, '2026-01-05T00-00-00-000Z', '0.28.2');
+  storeSession(dir, '2026-01-05T00-00-00-000Z', '0.28.4');
   const manager = spyManager();
 
   const result = await sessionsCommand().run({
@@ -328,21 +334,36 @@ test('/upgrade moves the session, pins it to the running version and asks to clo
   cleanup(dir);
 });
 
-test('/upgrade refuses a session that belongs to another version', () => {
-  const dir = tempDir('upgrade-locked');
+test('/upgrade re-pins a session this build may read and refuses one it may not', () => {
   const id = '2026-01-01T00-00-00-000Z';
+
+  // Older pin, nothing broke between the two releases: this build may read the bytes, so the
+  // upgrade carries them forward and re-stamps the claim — exactly the pin the equality rule
+  // used to refuse, which is the friction this removes.
+  const dir = tempDir('upgrade-older');
   storeSession(dir, id, '0.28.2');
 
-  const result = upgradeCommand().run({
-    dir, version: '0.28.3', running: '0.28.3', sessions: { id, monchoVersion: '0.28.2' },
+  const carried = upgradeCommand().run({
+    dir, version: '0.28.3', running: '0.28.2', sessions: { id, monchoVersion: '0.28.2' },
   });
-
-  // A build may only write a conversation it owns — upgrading means reading and writing it.
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 'VERSION_LOCKED');
-  assert.match(result.message, /0\.28\.2/, 'it names the version that may open it');
-  assert.ok(fs.existsSync(path.join(process.cwd(), dir, id)), 'nothing moved');
+  assert.equal(carried.ok, true, carried.message);
+  assert.equal(carried.code, 'UPGRADED');
+  assert.equal(carried.monchoVersion, '0.28.3');
   cleanup(dir);
+
+  // A *newer* pin: a build may only write a conversation it may read, and ordering puts this
+  // one on the far side of the one-way door. Nothing moves and the way in is named.
+  const lockedDir = tempDir('upgrade-locked');
+  storeSession(lockedDir, id, '0.36.0');
+
+  const locked = upgradeCommand().run({
+    dir: lockedDir, version: '0.37.0', running: '0.35.0', sessions: { id, monchoVersion: '0.36.0' },
+  });
+  assert.equal(locked.ok, false);
+  assert.equal(locked.code, 'VERSION_LOCKED');
+  assert.match(locked.message, /moncho-cli --version 0\.36\.0/, 'it names the version that may open it');
+  assert.ok(fs.existsSync(path.join(process.cwd(), lockedDir, id)), 'nothing moved');
+  cleanup(lockedDir);
 });
 
 test('/upgrade on a session already at the running version is a no-op', () => {

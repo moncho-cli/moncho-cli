@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { createTui } from '../app/tui.js';
 import {
   TranscriptModel,
-  COLLAPSE_THRESHOLD_CHARS,
   COLLAPSED_MARKER,
   EXPANDED_MARKER,
   formatCharCount,
@@ -29,7 +28,7 @@ function clickLine(tui, displayLine) {
   return tui.clickTranscript({ x: tui.transcript.lpos.xi + 2, y: rowOf(tui, displayLine) });
 }
 
-test('the transcript model collapses long blocks and keeps the payload verbatim', () => {
+test('the transcript model collapses a block and keeps the payload verbatim', () => {
   const model = new TranscriptModel();
   const body = 'a\nb\nc';
 
@@ -60,19 +59,21 @@ test('the transcript model collapses long blocks and keeps the payload verbatim'
   assert.equal(model.collapseBlock('nope'), null);
 });
 
-test('a short single-line result is not hidden behind a click', () => {
+test('every block starts collapsed, whatever its size', () => {
   const model = new TranscriptModel();
 
+  // A one-word result is folded too: nothing a tool returns is painted unasked.
   const short = model.addBlock({ header: '  [tool Output]', body: 'ok' });
-  assert.equal(short.collapsed, false);
-  assert.ok(short.chars <= COLLAPSE_THRESHOLD_CHARS);
+  assert.equal(short.collapsed, true, 'a short single-line result is collapsed as well');
+  assert.deepEqual(model.lines, ['▸   [tool Output] — 2 char response (click to expand)']);
+  assert.equal(model.expandBlock(short.id), short);
   assert.deepEqual(model.lines, ['▾   [tool Output] — 2 char response (click to collapse)', 'ok']);
 
-  // one very long line is worth collapsing even though it is a single line
-  const long = model.addBlock({ header: '  [tool Output]', body: 'x'.repeat(COLLAPSE_THRESHOLD_CHARS + 1) });
-  assert.equal(long.collapsed, true);
+  // Size makes no difference, in either direction.
+  assert.equal(model.addBlock({ header: 'h', body: 'x'.repeat(500) }).collapsed, true);
+  assert.equal(model.addBlock({ header: 'h', body: '' }).collapsed, true);
 
-  // an explicit choice always wins
+  // An explicit choice always wins — this is how an announcement stays visible.
   assert.equal(model.addBlock({ header: 'h', body: 'a\nb', collapsed: false }).collapsed, false);
   assert.equal(model.addBlock({ header: 'h', body: 'a', collapsed: true }).collapsed, true);
 });
@@ -147,9 +148,11 @@ test('a tool result is collapsed by default and says "X char response" inline', 
     // the payload itself is not painted while collapsed
     assert.doesNotMatch(content, /const a = 1;/);
 
-    // a short single-line result stays readable inline (nothing to expand)
+    // a short single-line result is folded too, and opens on a click
     const short = tui.logBlock({ header: '  [read_file Output]', body: 'tiny' });
-    assert.equal(short.collapsed, false);
+    assert.equal(short.collapsed, true);
+    assert.doesNotMatch(visible(tui), /tiny/);
+    tui.expandBlock(short.id);
     assert.match(visible(tui), /tiny/);
   });
 });

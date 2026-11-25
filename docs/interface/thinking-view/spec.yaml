@@ -1,0 +1,50 @@
+id: interface/thinking-view
+domain: interface
+title: The Thinking label as a door onto the reasoning stream
+status: active
+summary: >
+  While a request is in flight the status bar's left slot reads `Thinking`, and a click on
+  it opens the stream the provider is writing, in the same read-only viewer /task uses. The
+  hit zone is measured by repeating composeStatusRow's own arithmetic, so a truncated label
+  on a narrow terminal has a truncated zone rather than a guess. Between turns the label is
+  not a target at all. The capture is read forgivingly — a missing or half-written file is
+  an empty view, never a throw — and an empty capture opens nothing rather than an empty
+  box, because openContentModal answers null for an empty document list. The view reloads
+  on the viewer's own timer, so an open box follows a stream still being written.
+code:
+  - path: app/thinking-view.js
+    symbols: [readThinkingCapture, thinkingDocuments, thinkingView, thinkingHitZone, clickedThinkingLabel, bindThinkingClick, THINKING_VIEW_TITLE, THINKING_DOCUMENT_NAME]
+  - path: app/status-row.js
+    symbols: [createStatusRow]
+  - path: app/tui-layout.js
+    symbols: [createLayout]
+  - path: app/tui.js
+    symbols: [createTui]
+  - path: app/content-modal.js
+    symbols: [openContentModal]
+  - path: app/tui-surface.js
+    symbols: [createTuiSurface]
+  - path: config/constants.js
+    symbols: [THINKING_FILE]
+  - path: api/ollama.js
+    symbols: [callOllama]
+  - path: api/provider-response.js
+    symbols: [normalizeResponse]
+tests:
+  - path: tests/thinking-view.test.js
+    cases:
+      - "a missing capture is no view, and no error"
+      - "a capture outside the project is refused rather than read"
+      - "an empty capture is no document, so a click before the first delta opens nothing"
+      - "a capture with text becomes one document, and the reload re-reads it"
+      - "the hit zone is the painted left slot, never a wider guess"
+      - "a truncated label has a truncated zone, and a hit past it is a miss"
+      - "a hit is tested against the cells the label occupies"
+      - "no label is painted without a meter and no width, and the zone follows"
+      - "between turns the label is not a target at all"
+      - "a click on the spinning label opens the viewer, and one off it does not"
+      - "with no capture yet, the click is consumed and says there is nothing yet"
+      - "a failing open is reported through notify, never thrown into the click"
+      - "the binding is removed at teardown, so a click after close reaches nothing"
+      - "the Thinking label on the real screen opens the capture in the viewer"
+      - "a non-streaming reply keeps its reasoning, so the view has a capture to open"

@@ -1,6 +1,6 @@
-import { listSessions, loadSession, describeSession, sessionChunks, sessionStamps, sessionItems, sessionUsage, sessionModeState, sessionSkin, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
+import { listSessions, loadSession, describeSession, migrateStoredSession, sessionChunks, sessionStamps, sessionItems, sessionUsage, sessionModeState, sessionSkin, sessionTaskContent, sessionPlanContent } from '../utils/session-store.js';
 import { readConversationLog, readConversationLogMeta } from '../utils/conversation-log-store.js';
-import { canOpenSession, runningVersion, sessionVersionRefusal } from '../utils/session-version.js';
+import { runningVersion, sessionVerdict, sessionVersionRefusal } from '../utils/session-version.js';
 import { formatUsageRows, normalizeModelUsage } from '../utils/usage-stats.js';
 import { workCommand } from './work-command.js';
 import { compactCommand } from './compact-command.js';
@@ -129,8 +129,8 @@ export function sessionsCommand() {
     description: 'list stored conversations and continue one',
     aliases: ['resume'],
     async run(ctx = {}) {
-      const { arg = '', dir = undefined, choose, manager, version = runningVersion() } = ctx;
-      const summaries = listSessions({ dir });
+        const { arg = '', dir = undefined, choose, manager, version = runningVersion(), options = {} } = ctx;
+        const summaries = listSessions({ dir });
 
       if (summaries.length === 0) {
         return { ok: true, code: 'NO_SESSIONS', message: 'No stored sessions yet.' };
@@ -158,18 +158,45 @@ export function sessionsCommand() {
         return { ok: false, code: 'UNREADABLE', message: `Session ${picked?.id} cannot be read (${picked?.error}).` };
       }
 
-      // The version gate (`docs/runtime/session-version`). It runs *before* the record is
-      // loaded and before the context window is replaced, so a refused session leaves the
-      // conversation you are in exactly as it was. Only the pin `canOpenSession()` judges
-      // matters here; the chunks are never handed over.
-      if (!canOpenSession(picked, version)) {
+      // The version gate (`docs/runtime/session-version`, `docs/runtime/session-compat`).
+      // It runs *before* the record is loaded and before the context window is replaced, so
+      // a refused session leaves the conversation you are in exactly as it was, and the
+      // chunks are never handed over.
+      const verdict = sessionVerdict(picked, version, options);
+      if (verdict.verdict === 'refuse') {
         return {
           ok: false,
           code: 'VERSION_LOCKED',
-          message: sessionVersionRefusal(picked, version),
+          message: sessionVersionRefusal(picked, version, options),
           sessions: summaries,
           monchoVersion: picked.monchoVersion ?? null,
         };
+      }
+
+      // A `migrate` verdict opens only *after* the bytes are carried forward: the migration
+      // rewrites the record and re-stamps the pin, so this build now owns the session. A
+      // migration that fails writes nothing, and the session is refused exactly as it would
+      // have been — the refusal is the fallback, never a half-migrated record.
+      if (verdict.verdict === 'migrate') {
+        try {
+          const done = migrateStoredSession(picked.id, { dir, version, options });
+          if (!done.migrated) {
+            return {
+              ok: false,
+              code: 'VERSION_LOCKED',
+              message: sessionVersionRefusal(picked, version, options),
+              sessions: summaries,
+              monchoVersion: picked.monchoVersion ?? null,
+            };
+          }
+        } catch (error) {
+          return {
+            ok: false,
+            code: error.code || 'MIGRATION_FAILED',
+            message: `Session ${picked.id} could not be migrated: ${error.message}`,
+            sessions: summaries,
+          };
+        }
       }
 
       const session = loadSession(picked.id, { dir });

@@ -4,6 +4,7 @@ import { applyEditsToText, EditError, MAX_EDITS } from '../utils/edit_lib.js';
 import { applyPatch } from '../utils/patch_lib.js';
 import { writeFileVerified } from '../utils/file-io.js';
 import { forgetRead, staleWriteRefusal } from '../utils/read-tracker.js';
+import { recordWriteCapture } from '../utils/write-journal.js';
 import { resolveProjectPath, PathSafetyError } from '../utils/path-safety.js';
 import { defineTool } from '../utils/tool-schema.js';
 import { isToolOwnedFile, trackingEditRefusal } from '../utils/tracking-fence.js';
@@ -184,11 +185,28 @@ const { definition, execute } = defineTool({
 
       // The pasted-diff branch: the engine resolves its own path, applies the diff through
       // `diff` (jsdiff), re-verifies it and stages the rename (utils/patch_lib.js).
-      if (shape.kind === 'patch') {
-        const applied = applyPatch(args.patchStr, path);
-        forgetRead(path);
-        return JSON.stringify({ ...applied, mode: 'patch' });
+if (shape.kind === 'patch') {
+      // The old bytes have to be read **before** the patch lands, and captured after it,
+      // so the diff block shows what was replaced. A file the patch created has no
+      // before-side, which `existsSync` answers.
+      let beforePatch = null;
+      try {
+        const target = resolveProjectPath(path);
+        if (fs.existsSync(target)) beforePatch = fs.readFileSync(target, 'utf-8');
+      } catch {
+        // A path that cannot be resolved is refused by `applyPatch` itself, which owns
+        // the sandbox decision for this branch.
       }
+      const applied = applyPatch(args.patchStr, path);
+      recordWriteCapture({
+        path,
+        before: beforePatch,
+        after: readApplied(path),
+        created: beforePatch === null,
+      });
+      forgetRead(path);
+      return JSON.stringify({ ...applied, mode: 'patch' });
+    }
 
       let absPath;
       try {
@@ -212,6 +230,10 @@ const { definition, execute } = defineTool({
       }
 
       const written = writeFileVerified(path, applied.content);
+      // The bytes around the edit are captured for the screen, never returned: the
+      // result below is what the model is billed for on every later call, so a diff
+      // cannot ride on it (utils/write-journal.js).
+      recordWriteCapture({ path, before: original, after: applied.content, created: false });
       // The bytes on disk are now the model's own: no stale view is left to guard.
       forgetRead(path);
 
@@ -239,5 +261,23 @@ const { definition, execute } = defineTool({
     }
   },
 });
+
+/**
+ * The bytes a pasted patch left behind, for the diff block.
+ *
+ * Read back from disk rather than reconstructed from the patch text: the patch engine
+ * already wrote and verified them, so what is on disk is the one truth, and a read that
+ * fails (a patch that removed the file, a path that vanished) simply has no after-side.
+ *
+ * @param {string} path
+ * @returns {?string}
+ */
+function readApplied(path) {
+  try {
+    return fs.readFileSync(resolveProjectPath(path), 'utf-8');
+  } catch {
+    return null;
+  }
+}
 
 export { definition, execute };

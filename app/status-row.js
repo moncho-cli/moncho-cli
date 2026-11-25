@@ -57,8 +57,18 @@ export function createStatusRow({
     spinnerFrame = 0;
   };
 
-  return {
+    return {
     render,
+    /**
+     * The left slot as it is painted right now — the spinner frame while a
+     * request is in flight, the logical status otherwise.
+     *
+     * Exposed because something other than the painter has to know what the slot
+     * says: the `Thinking` label is a click target while it is up
+     * (`app/thinking-view.js`), and the hit zone is measured against these exact
+     * cells rather than against a second guess at them.
+     */
+    leftText: () => sanitize(left()),
     /** Set the logical status text (the left slot when idle). */
     setStatus(text) {
       statusText = text == null ? '' : String(text);

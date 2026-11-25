@@ -19,6 +19,7 @@ import { createCompactionNotifier } from './compaction-notice.js';
 import { createSelectionClipboard } from './tui-clipboard.js';
 import { createToastBar } from './tui-toast.js';
 import { createStickyBar } from './sticky-bar.js';
+import { bindThinkingClick } from './thinking-view.js';
 import { bindKeys } from './tui-keys.js';
 import { createResizeRepaint, createTeardown } from './tui-teardown.js';
 import {
@@ -252,6 +253,21 @@ export function createTui(options = {}) {
     queue.clickAt(data);
   });
 
+  // The `Thinking` label is a door onto the reasoning stream (app/thinking-view.js):
+  // while the spinner is up, a click on the label opens the capture the provider call
+  // is already appending to, in the same read-only viewer `/task` uses. It is
+  // late-bound because the surface — which owns that viewer — is built below this
+  // line, and `contentView` must be the surface's own so the box, its selection and
+  // its keyboard lease are not re-implemented here.
+  let surface = null;
+  const thinkingClick = bindThinkingClick({
+    statusBar,
+    statusRow,
+    width: statusRows.width,
+    contentView: (view) => surface?.contentView(view) ?? null,
+    notify: (error) => noticeBar?.notify?.('error', `thinking view failed: ${error?.message ?? error}`),
+  });
+
   // Escape / Ctrl+C and the scrolling keys (app/tui-keys.js): the interrupt is
   // taken on the program so blessed cannot turn Escape into the textarea's own
   // 'cancel', and the scrolling keys are taken on the screen so a synthetic
@@ -289,6 +305,8 @@ export function createTui(options = {}) {
       () => sticky.close(),
       () => view.close(),
       () => keys.dispose(),
+      // The status row's click target goes with the rows it measured.
+      () => thinkingClick.dispose(),
       () => statusRows.dispose(),
     ],
     screen,
@@ -299,7 +317,7 @@ export function createTui(options = {}) {
   queue.paint();
   overlays.paint();
 
-  return createTuiSurface({
+  surface = createTuiSurface({
     question: stack.question,
     promptInput,
     /** Install the host's mid-turn command handler, once the host exists. */
@@ -340,4 +358,5 @@ export function createTui(options = {}) {
     isClosed: screenClosed,
     modelLabel,
   });
+  return surface;
 }

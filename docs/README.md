@@ -38,7 +38,10 @@ Domains:
 - `agent/` — the agent's tool contract and its sandboxing rules, including the lossy `hint_file` sketch next to the exact read (`agent/file-hint`), the bright row a refused call gets, worded like the chunk the model receives (`agent/tool-refusal`), and the rule that the stated approach seeds the turn, written once and grown from (`agent/approach-gate`), and the two doors out of the sandbox: a bounded, GET-only `web_fetch` (`agent/web-fetch`) and the `web_search` that finds the URLs worth fetching through one provider seam (`agent/web-search`).
 - `context/` — the context window: token accounting (the live meter and the per-model totals), compaction, size resolution, the working-time counter the session adds up (`context/working-time`), and the per-call budget line (`context/call-pulse`) with its two resets.
 - `interface/` — what the user sees and presses: TUI (including the per-block timestamps, `interface/conversation-timestamps`, the background band around each side of the dialogue, `interface/prose-bands`, the aligned markdown tables of a reply, `interface/markdown-tables`, the slash-command popup over the input box, `interface/slash-autocomplete`, and the `design` checklist the host puts back on screen when a turn stops and the session waits for the user, `interface/design-review`), line CLI, interrupts.
-- `runtime/` — provider calls and startup wiring.
+- `runtime/` — provider calls and startup wiring, the stored-session record
+  (`runtime/session-store`), the pin that says which build wrote it
+  (`runtime/session-version`) and the compatibility era plus the migrations that carry an
+  older record forward (`runtime/session-compat`).
 - `maintainer/` — what a session owes the release: the version bump and how far it must go (`maintainer/version-bump`), and the static gate behind it, where `no-undef` is an error and `no-unused-vars` a warning (`maintainer/lint`).
 
 ## `spec.yaml` format

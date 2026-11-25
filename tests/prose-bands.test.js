@@ -89,7 +89,9 @@ test('the transcript model records the side of each entry, and a margin is a bla
   model.addLine('{blue-bg}hi{/blue-bg}', { role: 'user' });
   model.addLine('plain prose');
   model.addLine('{red-bg}answered{/red-bg}', { role: 'assistant' });
-  model.addBlock({ header: 'a result', body: 'x' });
+  // Expanded: the block paints its body rows too, and *every* row of it belongs to no
+  // side — a tool result is not prose (`docs/interface/transcript-blocks`).
+  model.addBlock({ header: 'a result', body: 'x', collapsed: false });
 
   const records = model.lineRecords();
   // only the two sides carry a role; the plain line and the block carry none

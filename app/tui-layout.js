@@ -86,6 +86,14 @@ export function createLayout({ screen, modelLabel = '', mode = null, repaint = n
     });
   }
 
+  // The status bar is the row that carries the spinner and the meter. It takes a
+  // click for one reason: the `Thinking` label is the door onto the reasoning
+  // stream while a request is in flight (`app/thinking-view.js`).
+  //
+  // `clickable` is what makes blessed hit-test the row at all — a plain box is never
+  // delivered a mouse event (the same flag the queue bar sets) — and `autoFocus` is
+  // off so a click can never pull the keyboard away from the input box, which is the
+  // single arming point for typing.
   const statusBar = blessed.box({
     parent: screen,
     left: 0,
@@ -93,6 +101,8 @@ export function createLayout({ screen, modelLabel = '', mode = null, repaint = n
     bottom: STATUS_BOTTOM,
     height: 1,
     tags: false,
+    clickable: true,
+    autoFocus: false,
     padding: { left: 1, right: 1 },
     content: 'Ready',
   });

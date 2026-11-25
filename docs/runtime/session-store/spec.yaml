@@ -26,7 +26,7 @@ summary: >
   with no times serialises to the bytes it always did (docs/interface/session-stamps).
 code:
   - path: utils/session-store.js
-    symbols: [SESSION_DIR, SESSION_RECORD_FILE, SessionStoreError, sessionId, sessionDir, sessionPath, legacySessionPath, formatSession, parseSession, serializeSession, countRoles, writeSession, sessionsDirExists, listSessions, loadSession, migrateSession, latestSession, describeSession]
+    symbols: [SESSION_DIR, SESSION_RECORD_FILE, SessionStoreError, sessionId, sessionDir, sessionPath, legacySessionPath, formatSession, parseSession, serializeSession, countRoles, writeSession, sessionsDirExists, listSessions, loadSession, migrateSession, migrateStoredSession, latestSession, describeSession]
   - path: utils/session-format.js
     symbols: [SESSION_FORMAT_VERSION, SessionStoreError, sessionId, serializeSession, countRoles, formatSession, parseSession, sessionTaskContent, sessionPlanContent, sessionChunks, sessionStamps, sessionUsage, sessionModeState]
   - path: app/session-recorder.js

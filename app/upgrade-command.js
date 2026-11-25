@@ -1,7 +1,7 @@
 import { moveSession } from '../utils/session-move.js';
-import { loadSession, writeSession } from '../utils/session-store.js';
+import { loadSession, migrateStoredSession, writeSession } from '../utils/session-store.js';
 import { serializeSession } from '../utils/session-format.js';
-import { upgradedPin, runningVersion, latestVersion, canOpenSession } from '../utils/session-version.js';
+import { upgradedPin, runningVersion, latestVersion, sessionVerdict, sessionVersionRefusal } from '../utils/session-version.js';
 
 /**
  * `/upgrade` — move the open session to the running version
@@ -21,12 +21,17 @@ import { upgradedPin, runningVersion, latestVersion, canOpenSession } from '../u
  *     the old build and cannot become the new one. That is not a limitation to work
  *     around: it is why the user is told to start again with `--continue`.
  *
- * Two refusals, and both are the rule rather than a limitation:
+ * Three refusals, and each is the rule rather than a limitation:
  *
  *  - **a session this build may not open is not upgraded.** Upgrading means reading and
  *    writing the conversation, which is exactly what the pin forbids for another build.
  *    The way in is to start the version that owns it — which is also the flow the user is
- *    already in when this command is useful.
+ *    already in when this command is useful. Under the era rule
+ *    (`docs/runtime/session-compat`) "may open" is wider than "wrote it": a pin in this
+ *    build's era is upgradable, while a break nobody has migrated is refused with the way in.
+ *  - **a session this build cannot carry forward is not upgraded.** A record still in an
+ *    older era has to be migrated *before* the pin moves, or the folder would move and
+ *    claim a version while holding a shape that version's migration exists to fix.
  *  - **a session already on this version is a no-op.** Nothing to move and nothing to pin;
  *    saying so is better than a second rename that would scramble the ordering for no gain.
  *
@@ -54,6 +59,9 @@ export function upgradeCommand() {
         // The version this process is: what authorises the write.
         running = runningVersion(),
         now = new Date(),
+        // The break list and migration table under test (`docs/runtime/session-compat`);
+        // the shipped ones by default.
+        options = {},
       } = ctx;
 
       if (String(arg).trim() !== '') {
@@ -76,14 +84,33 @@ export function upgradeCommand() {
           `This session is already on ${version}; there is nothing to upgrade.`,
         );
       }
-      // A build may only write a conversation it owns, and an upgrade is a read *and* a
+      // A build may only write a conversation it may read, and an upgrade is a read *and* a
       // write. This is why the flow is ordered: start the version that owns the session,
-      // open it, then move it towards the newest one.
-      if (!canOpenSession(sessions, running)) {
-        return refuse(
-          'VERSION_LOCKED',
-          `This session belongs to ${pinned ?? 'another version'}; open it with that version to upgrade it.`,
-        );
+      // open it, then move it towards the newest one. The era rule widens "owns" to "may
+      // read", so a pin this build can open — including one it can migrate — is upgradable.
+      const verdict = sessionVerdict(sessions, running, options);
+      if (verdict.verdict === 'refuse') {
+        return refuse('VERSION_LOCKED', sessionVersionRefusal(sessions, running, options));
+      }
+
+      // A `migrate` verdict means the record is still in an older era, so the bytes are
+      // carried forward *before* the pin moves: the folder must not claim a version while
+      // holding a shape that version's migration exists to fix. Opening the session already
+      // does this (the `/sessions` gate), so this is the belt for a caller that reached
+      // `/upgrade` without opening first.
+      if (verdict.verdict === 'migrate') {
+        try {
+          const done = migrateStoredSession(id, { dir, version: running, now, options });
+          if (!done.migrated) {
+            const where = done.blocked?.version ? ` (the break in ${done.blocked.version})` : '';
+            return refuse(
+              done.code || 'MIGRATION_FAILED',
+              `Session ${id} could not be carried forward${where}: ${done.error?.message ?? 'no migration ran'}.`,
+            );
+          }
+        } catch (error) {
+          return refuse(error.code || 'MIGRATION_FAILED', `Session ${id} could not be migrated: ${error.message}`);
+        }
       }
 
       // Move first: a crash after the rename leaves a session at its new id with the old

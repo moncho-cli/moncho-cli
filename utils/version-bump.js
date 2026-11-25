@@ -53,8 +53,20 @@ export function parseSemver(value) {
   };
 }
 
-/** The numeric mass of a version. A prerelease ranks with the release it precedes. */
-function rank(version) {
+/**
+ * The numeric mass of a version, for ordering two of them. A prerelease ranks with the
+ * release it precedes.
+ *
+ * Exported because it is the ordering key of *any* question about two versions, not just
+ * this rule's: `utils/session-compat.js` compares a session's pin with the running build
+ * with the same arithmetic rather than deriving a second one.
+ *
+ * @param {string|{major: number, minor: number, patch: number}} value a version, or the parse of one
+ * @returns {number|null} `null` when the value is not a semver
+ */
+export function semverRank(value) {
+  const version = typeof value === 'string' ? parseSemver(value) : value;
+  if (!version) return null;
   return version.major * 1_000_000 + version.minor * 1_000 + version.patch;
 }
 
@@ -68,8 +80,8 @@ export function bumpDistance(from, to) {
   const before = parseSemver(from);
   const after = parseSemver(to);
   if (!before || !after) return null;
-  if (rank(after) === rank(before)) return 'none';
-  if (rank(after) < rank(before)) return 'backwards';
+  if (semverRank(after) === semverRank(before)) return 'none';
+  if (semverRank(after) < semverRank(before)) return 'backwards';
   if (after.major !== before.major) return 'major';
   if (after.minor !== before.minor) return 'minor';
   return 'patch';

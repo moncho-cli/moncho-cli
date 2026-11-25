@@ -174,7 +174,7 @@ async function main() {
 
   // Tool results are echoed to the screen (with the call's intent) and also returned to
   // the model (`app/tool-echo.js`): a collapsible block in the TUI, plain lines in the CLI.
-  const onToolResult = createToolEcho({ tui, log });
+  const onToolResult = createToolEcho({ tui, log, width: () => process.stdout.columns || 0 });
 
   const { tools, toolFunctions } = await loadTools(onToolResult);
   log(`Loaded ${tools.length} tools:`, tools.map(t => t.function.name).join(', '));
@@ -267,12 +267,14 @@ async function main() {
   registerSession(sessions);
   ensureTrackingFiles();
 
-  // `--continue`: reopen the newest session of *this* version instead of starting a new
-  // one (`docs/runtime/session-version`). The runner only says it was asked for; the
-  // choice is made here because this is the process that can read `agent/sessions/` and
-  // judge each pin. A session another version wrote is skipped rather than refused: the
-  // point is to come back to this build's work, and an older conversation is reached
-  // through `/sessions` once it has been upgraded.
+    // `--continue`: reopen the newest session of *this* era instead of starting a new one
+    // (`docs/runtime/session-version`, `docs/runtime/session-compat`). The runner only says
+    // it was asked for; the choice is made here because this is the process that can read
+    // `agent/sessions/` and judge each pin. The verdict is the era rule, so a session the
+    // releases did not break compatibility under is continued rather than skipped — a release
+    // that merely moved the number no longer costs the user their history. What is skipped is
+    // a session this build may not open at all; an older conversation behind a break nobody
+    // can cross is reached through `/sessions`, which migrates it or names the way in.
   if (process.env.MONCHO_CONTINUE === '1') {
     const resumable = listStoredSessions().find((entry) => canOpenSession(entry, runningVersion()));
     if (!resumable) {

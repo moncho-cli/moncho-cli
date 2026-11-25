@@ -70,6 +70,13 @@ export function normalizeResponse(data) {
     return {
       message: {
         content: data.message.content ?? "",
+        // The reasoning is kept, not dropped: it is what the `Thinking` view reads
+        // (`docs/interface/thinking-view`), and a non-streaming call has no other way
+        // to hand it over. An empty one is left out, so a reply without reasoning is
+        // shaped exactly as it was before this field existed.
+        ...(typeof data.message.thinking === 'string' && data.message.thinking
+          ? { thinking: data.message.thinking }
+          : {}),
         tool_calls: normalizeToolCalls(data.message.tool_calls),
       },
       usage,

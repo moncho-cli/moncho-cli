@@ -54,11 +54,11 @@ test('a release saves the selection and a plain click still toggles a block', as
     assert.ok(second.startsWith(savedRows[1]), 'the saved second row starts where the drawn row does');
     assert.ok(savedRows[1].length < second.length, 'the second row is cut short of its end');
 
-    // The band is gone and the gesture is over, copied or not. The block starts expanded,
-    // so "the drag did not toggle it" means it is still expanded.
+    // The band is gone and the gesture is over, copied or not. The block starts
+    // collapsed, so expanding it proves the drag passed over it without toggling it.
     assert.equal(tui.selectionRange, null, 'the gesture is over');
     assert.doesNotMatch(transcript.getContent(), /\x1b\[7m/, 'the band left the screen');
-    assert.equal(block.collapsed, false, 'the drag did not toggle the block it passed');
+    assert.equal(block.collapsed, true, 'the drag did not toggle the block it passed');
 
     // A plain click still toggles the block. The row is computed from the model's own
     // range, the same arithmetic the block click uses, so the click lands on the block.
@@ -67,7 +67,7 @@ test('a release saves the selection and a plain click still toggles a block', as
     mouse('mousedown', x + 1, by);
     mouse('mouseup', x + 1, by);
     await flush();
-    assert.equal(block.collapsed, true, 'the plain click collapsed the block');
+    assert.equal(block.collapsed, false, 'the plain click expanded the block');
   });
 }, { columns: 80, rows: 24 });
 

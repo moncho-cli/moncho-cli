@@ -77,6 +77,7 @@ specs:
   - runtime/startup-wiring
   - runtime/session-store
   - runtime/session-version
+  - runtime/session-compat
   - runtime/conversation-log
   - runtime/chunk-provenance
   - runtime/logging
@@ -90,6 +91,8 @@ specs:
   - interface/clipboard-selection
   - interface/skins
   - interface/design-review
+  - interface/thinking-view
+  - interface/diff-view
   - maintainer/version-bump
   - maintainer/git-rule
   - maintainer/lint
