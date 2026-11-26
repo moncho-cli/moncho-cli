@@ -6,6 +6,8 @@ import {
   joinQueued,
   nextPrompt,
   queueRowAt,
+  takeQueued,
+  takeQueuedPrompt,
 } from '../app/message-queue.js';
 
 /**
@@ -239,4 +241,64 @@ test('drainAll() empties the queue in one notification, oldest first', () => {
   assert.equal(queue.size, 0);
 
   assert.deepEqual(queue.drainAll(), [], 'an empty queue drains to nothing');
+});
+
+test('takeQueued() is the one drain rule both injection points share', () => {
+  const queue = createMessageQueue();
+  queue.enqueue('first');
+  queue.enqueue('second');
+
+  // The batch drain is preferred when the front end has it: the whole queue is one
+  // instruction, in order, whatever the injection point.
+  assert.deepEqual(
+    takeQueued({ drainAll: () => queue.drainAll() }).map((item) => item.text),
+    ['first', 'second'],
+  );
+  assert.equal(queue.size, 0, 'the batch empties the queue at once');
+
+  // A front end with only `dequeue()` still works: one message, and the same rule.
+  queue.enqueue('third');
+  assert.deepEqual(
+    takeQueued({ dequeue: () => queue.dequeue() }).map((item) => item.text),
+    ['third'],
+    'a single message crosses both paths identically',
+  );
+  assert.equal(queue.size, 0);
+
+  // Nothing configured, and an empty answer, are `[]` rather than a throw: "nothing was
+  // queued" is the ordinary case at both injection points.
+  assert.deepEqual(takeQueued(), []);
+  assert.deepEqual(takeQueued({ dequeue: () => null }), []);
+  assert.deepEqual(takeQueued({ drainAll: () => [] }), []);
+  // A bare string is accepted, because a front end may return the text rather than the item.
+  assert.deepEqual(takeQueued({ dequeue: () => 'lone' }), ['lone']);
+});
+
+test('takeQueuedPrompt() joins a drain the one way a prompt is made', () => {
+  const queue = createMessageQueue();
+  queue.enqueue('first');
+  queue.enqueue('second');
+
+  // The prompt is `joinQueued()` of the drain: order kept, verbatim, blank line between.
+  assert.equal(takeQueuedPrompt({ drainAll: () => queue.drainAll() }), 'first\n\nsecond');
+  assert.equal(queue.size, 0);
+
+  // Nothing waiting is the empty string — the answer both injection points act on — and
+  // never a stray separator or a placeholder.
+  assert.equal(takeQueuedPrompt({ drainAll: () => queue.drainAll() }), '');
+  assert.equal(takeQueuedPrompt(), '');
+});
+
+test('nextPrompt() drains through the shared rule, byte-for-byte', async () => {
+  // A queue of one is the case both injection points must answer identically: the rule
+  // `nextPrompt()` now shares with the turn loop must not add a byte.
+  const queue = createMessageQueue();
+  const pasted = 'line 1\nline 2\n\n  line 4 with spaces  \n';
+  queue.enqueue(pasted);
+
+  assert.equal(
+    await nextPrompt({ drainAll: () => queue.drainAll().map((item) => item.text) }),
+    pasted,
+  );
+  assert.equal(queue.size, 0);
 });

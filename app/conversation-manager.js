@@ -67,6 +67,13 @@ export class ConversationManager {
     // Transient notices (app/notice-overlay.js): a recovered failure is shown in
     // the overlay and expires, instead of staying in the transcript forever.
     this.onNotice = options.onNotice || null;
+    // The mid-turn injection (task-backlog item 48): a message the user queued while
+    // this turn was in flight, read by the turn loop at the top of its per-call loop.
+    // The host supplies the function — it is the only side that knows where a queue
+    // lives (`app/message-queue.js#takeQueuedPrompt` is the drain rule underneath) —
+    // so the manager itself has no notion of one, and a session with no queue
+    // injected nothing, exactly as it did before this seam existed.
+    this.injectedPrompt = typeof options.injectedPrompt === 'function' ? options.injectedPrompt : null;
     // Which model answered: the key the usage table is kept under.
     this.model = options.model || null;
     // Token accounting per model (utils/usage-stats.js).
@@ -269,6 +276,28 @@ export class ConversationManager {
   /** Put the model-call pulse back to 0 (an item completed, a compaction, …). */
   resetPulse(reason = 'manual') {
     return this.pulse.reset(reason);
+  }
+
+  /**
+   * The prompt a message queued **during this turn** is worth, or `''` when nothing was
+   * waiting (task-backlog item 48).
+   *
+   * Read by the turn loop at the top of its per-call loop — the one boundary where a
+   * `user` chunk can land without splitting an assistant `tool_calls` message from its
+   * `tool` results (`app/message-queue.js#takeQueuedPrompt`). The drain rule itself is
+   * the queue's, so the batch order and the verbatim text are the same whether a message
+   * arrives mid-turn or between two turns; this method only decides whether a queue was
+   * wired at all, and contains a throwing one rather than letting it cost the user the
+   * turn.
+   */
+  takeInjectedPrompt() {
+    if (!this.injectedPrompt) return '';
+    try {
+      const prompt = this.injectedPrompt();
+      return typeof prompt === 'string' ? prompt : '';
+    } catch {
+      return '';
+    }
   }
 
   /**

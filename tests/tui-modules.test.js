@@ -55,22 +55,35 @@ test('createPasteRegistry() collapses a long paste and restores it byte-for-byte
   const original = 'a\nb\nc\nd\ne';
 
   const collapsed = pastes.collapse(original);
-  assert.equal(collapsed.text, '[[paste:0]]');
+  assert.equal(collapsed.text, '[pasted 5 lines #0]');
   assert.equal(collapsed.collapsed, true, 'the caller is told something was collapsed');
   assert.equal(pastes.expand(collapsed.text), original, 'the bytes come back exactly');
-  assert.deepEqual(pastes.all, [original]);
+  assert.deepEqual(pastes.all, [{ id: 0, text: original }]);
 
-  // a short input is left alone: nothing to collapse, nothing recorded
+  // a bare two-line block is a paste too: one line ending in a break must be collapsed,
+  // because that break is exactly what the widget drops or submits on
   const short = pastes.collapse('a\nb');
-  assert.equal(short.text, 'a\nb');
-  assert.equal(short.collapsed, false);
-  assert.equal(pastes.all.length, 1, 'a short paste does not grow the table');
+  assert.equal(short.text, '[pasted 2 lines #1]');
+  assert.equal(short.collapsed, true);
+  assert.equal(pastes.all.length, 2, 'a two-line paste does grow the table');
 
-  // a second long paste gets its own id and does not overwrite the first
+  // a chunk with no line break is not a paste: nothing to collapse, nothing recorded
+  const plain = pastes.collapse('one line');
+  assert.equal(plain.text, 'one line');
+  assert.equal(plain.collapsed, false);
+  assert.equal(pastes.all.length, 2, 'plain text does not grow the table');
+
+  // a second paste gets its own id and does not overwrite the first
   const second = pastes.collapse(original);
-  assert.equal(second.text, '[[paste:1]]');
-  assert.equal(pastes.expand('[[paste:0]] and [[paste:1]]'), `${original} and ${original}`);
-  assert.equal(pastes.expand('[[paste:9]]'), '[[paste:9]]', 'an unknown id is left as-is');
+  assert.equal(second.text, '[pasted 5 lines #2]');
+  assert.equal(pastes.expand('[pasted 5 lines #0] and [pasted 5 lines #2]'), `${original} and ${original}`);
+  assert.equal(pastes.expand('[pasted 9 lines #42]'), '[pasted 9 lines #42]', 'an unknown id is left as-is');
+
+  // deleting a token from the box shrinks the table, and a freed id is never reused
+  assert.deepEqual(pastes.prune('[pasted 5 lines #2]'), [0, 1], 'the tokens gone from the box are dropped');
+  assert.deepEqual(pastes.all, [{ id: 2, text: original }]);
+  const third = pastes.collapse(original);
+  assert.equal(third.id, 3, 'a new paste takes a fresh id, never the freed 0 or 1');
 });
 
 test('formatCompactionNotice() describes the split, tokens only when known', () => {

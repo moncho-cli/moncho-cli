@@ -3,6 +3,7 @@ import { createPromptKeys } from './prompt-keys.js';
 import { createSlashMenu } from './slash-menu.js';
 import { createSlashBar } from './slash-bar.js';
 import { bindFocusGuard } from './focus-guard.js';
+import { createPasteIntake, pasteBelongsToBox } from './paste-intake.js';
 
 /**
  * The input region of the TUI: the box, its slash-command popup and the guard that keeps
@@ -24,6 +25,8 @@ import { bindFocusGuard } from './focus-guard.js';
  *           about the arrows (app/prompt-keys.js, app/prompt-menu-keys.js)
  *   input → the armed-question / capturing-box machine over those keys
  *           (app/prompt-input.js)
+ *   paste → catches a pasted block on the program's `data` event, before blessed turns it
+ *           into keystrokes, and hands it to the box as one value (app/paste-intake.js)
  *   guard → keeps the box focused and reading, on a click and on a timer
  *           (app/focus-guard.js)
  * ```
@@ -68,6 +71,12 @@ export function createInputStack({
       menu.sync(text);
       slashBar.paint();
     },
+    // The box's text after **every** write, keystroke or not: a paste token removed from
+    // the box takes its bytes out of the table with it (app/paste-registry.js#prune), so
+    // the table never holds a block no token points at any more.
+    onChange: (text) => {
+      if (pastes) pastes.prune(text);
+    },
     // Enter on a highlighted row runs that command: the submission is the same one Enter
     // on the line makes, so the box empties, the queue drains and the command is answered
     // exactly as if it had been typed in full.
@@ -77,6 +86,26 @@ export function createInputStack({
   });
 
   promptInput = createPromptInput({ inputBox, pastes, queue, keys, log, refresh, onBusySubmit });
+
+  // The paste catcher sits on the **program's** `data` event, which is the earliest point
+  // that has a pasted block whole — neo-blessed parses that chunk into keypresses a moment
+  // later, and by then a `\n` is lost and a `\r` has submitted the message. The intake
+  // takes the keyboard lease for that one chunk, so the box receives none of the burst.
+  const pasteIntake = createPasteIntake({
+    program: screen?.program || null,
+    screen,
+    // Only while the box is the destination: it is inside its read cycle and no modal has
+    // taken the keyboard. A paste into a modal's field is the modal's, and a paste with no
+    // armed box has nowhere to land — in both cases the keys travel as they always did.
+    claim: pasteBelongsToBox({ isReading: () => promptInput.isReading }),
+    onPaste: (text) => {
+      if (!promptInput.acceptPaste(text)) return;
+      // A paste lands mid-turn as readily as between turns, so the box is re-armed the way
+      // a keystroke leaves it: the caret is where the next character goes.
+      promptInput.arm();
+    },
+  });
+
   // A submission from the widget goes through the same machine, so the two paths — Enter
   // on the line and Enter on a highlighted row — cannot disagree.
   if (inputBox && typeof inputBox.on === 'function') {
@@ -102,6 +131,7 @@ export function createInputStack({
     slashBar,
     keys,
     promptInput,
+    pasteIntake,
     focusGuard,
     /** Arm a question and resolve it with the next submission. */
     question: (prompt, callback) => promptInput.question(prompt, callback),
@@ -124,6 +154,7 @@ export function createInputStack({
     close() {
       focusGuard.close();
       slashBar.close();
+      pasteIntake.close();
       return promptInput.abandon();
     },
   };

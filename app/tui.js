@@ -327,6 +327,7 @@ export function createTui(options = {}) {
     queue,
     queueRegion,
     pastes,
+    pasteIntake: stack.pasteIntake,
     compaction,
     statusRow,
     workRow: statusRows.workRow,

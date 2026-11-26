@@ -48,6 +48,7 @@ specs:
   - interface/interrupt-controls
   - interface/collapse-notice
   - interface/tui
+  - interface/paste-input
   - interface/message-queue
   - interface/transcript-blocks
   - interface/transcript-scroll

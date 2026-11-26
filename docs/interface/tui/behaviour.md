@@ -72,8 +72,10 @@ Seven regions, laid out relatively so blessed relayouts them on resize:
   line range), `<grep …>` (pattern, path, match/file counts), `<blobs …>` / `<blob …>`
   (path, byte and line counts, `skipped` markers), and each carries its `truncated`
   flag into the header instead of printing the raw tag.
-- A long paste collapses into a single `[[paste:<id>]]` tag and expands back
-  **byte-for-byte**, so collapsing never alters the bytes the model receives.
+- A pasted block collapses into a single `[pasted N lines #id]` token and expands back
+  **byte-for-byte**, so collapsing never alters the bytes the model receives. The token is
+  one unit under the caret, and the block is caught before it becomes keystrokes
+  (`docs/interface/paste-input`).
 - The transcript is a model of plain lines and **collapsible blocks**: a tool
   result starts as one header line carrying its `X char response` size, and a click
   expands it (the next click collapses it) without touching the payload. The rules
@@ -200,7 +202,8 @@ user cannot see what they asked a moment ago. `app/input-hint.js` fixes that:
 
 - Implementation: `app/tui.js` (screen wiring), `app/tui-layout.js` (regions),
   `app/tui-render.js` (pure text helpers), `app/tui-keys.js` (key bindings),
-  `app/paste-registry.js` (the paste table), `app/compaction-notice.js` (the
+  `app/paste-registry.js` (the paste table, spec'd in `docs/interface/paste-input`),
+  `app/compaction-notice.js` (the
   once-per-event compaction line), `app/status-row.js` (status/spinner/meter
   bookkeeping), `app/status-rows.js` and `app/work-row.js` (the meter and the
   working-time counter, built as one pair), `app/tui-transcript.js` (the transcript

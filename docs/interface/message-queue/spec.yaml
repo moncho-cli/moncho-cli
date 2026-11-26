@@ -8,21 +8,26 @@ summary: >
   is stored FIFO and verbatim (paste tags expanded back) in a pure model
   (app/message-queue.js), the rows are painted with a ✕ each in a region right above
   the input box that shifts the status bar, the model row and the transcript up by
-  the queue height (app/queue-bar.js, app/tui-layout.js#setQueueHeight), a click on
-  a row deletes that message only, and the host loop drains the queue between two
-  turns through nextPrompt() so an injected message can never split an assistant
-  tool_calls message from its tool results. The whole queue is handed over as one
-  prompt (nextPrompt() plus joinQueued()), so several notes typed during one turn are
+  the queue height (app/queue-bar.js, app/tui-layout.js#setQueueHeight), and a click
+  on a row deletes that message only. The queue is drained at two points that share
+  one rule (takeQueued/takeQueuedPrompt, app/message-queue.js): between two turns
+  through nextPrompt(), and mid-turn at the top of the turn loop's per-call loop
+  (app/turn-runner.js#runTurn), so a message queued while a turn is running steers the
+  work without waiting for the turn to end. Neither point drains inside a tool chain,
+  so an injected message can never split an assistant tool_calls message from its tool
+  results, and the injected text is an ordinary user prompt (one chunk, the same echo,
+  the autosave event and the meter). The whole queue is handed over as one prompt
+  (nextPrompt() plus joinQueued()), so several notes typed during one turn are
   addressed together in a single turn instead of one turn each, oldest first and
   separated by a blank line; a queue of one crosses byte-for-byte. Every painted row
-  is fitted to the
-  interior width of the bar it is drawn in, so a long message uses the whole of a
-  wide terminal and stays one display line that is never clipped (app/queue-rows.js);
-  a caller with no width — the line CLI, which has no bar — keeps the fallback
-  preview cap. The line CLI has no queue bar and keeps readline's own buffering.
+  is fitted to the interior width of the bar it is drawn in, so a long message uses
+  the whole of a wide terminal and stays one display line that is never clipped
+  (app/queue-rows.js); a caller with no width — the line CLI, which has no bar — keeps
+  the fallback preview cap. The line CLI has no queue bar and keeps readline's own
+  buffering.
 code:
   - path: app/message-queue.js
-    symbols: [createMessageQueue, nextPrompt, joinQueued, queueRowAt]
+    symbols: [createMessageQueue, nextPrompt, joinQueued, queueRowAt, takeQueued, takeQueuedPrompt]
   - path: app/queue-rows.js
     symbols: [displayWidth, truncateToWidth, queuePreviewBudget, previewMessage, formatQueueRow, formatQueueRows, formatQueueTail, QUEUE_PREVIEW_CHARS, QUEUE_MAX_ROWS, QUEUE_DELETE_MARKER]
   - path: app/queue-bar.js
@@ -33,6 +38,12 @@ code:
     symbols: [createLayout, setQueueHeight, QUEUE_BOTTOM]
   - path: app/tui.js
     symbols: [createTui]
+  - path: app/turn-runner.js
+    symbols: [runTurn]
+  - path: app/session-loop.js
+    symbols: [runSessionLoop]
+  - path: app/conversation-manager.js
+    symbols: [ConversationManager]
   - path: main.js
     symbols: [main]
 tests:
@@ -48,6 +59,17 @@ tests:
       - "nextPrompt() keeps the single-message drain for a front end without a batch"
       - "joinQueued() keeps one message verbatim and separates several by a blank line"
       - "drainAll() empties the queue in one notification, oldest first"
+      - "takeQueued() is the one drain rule both injection points share"
+      - "takeQueuedPrompt() joins a drain the one way a prompt is made"
+      - "nextPrompt() drains through the shared rule, byte-for-byte"
+  - path: tests/turn-runner-inject.test.js
+    cases:
+      - "a message queued mid-turn is injected before the next call, not after the turn"
+      - "the injection never splits an assistant tool_calls message from its tool results"
+      - "the injected message is echoed to the transcript as the user side of the dialogue"
+      - "injecting announces the conversation change, so the record is written mid-turn"
+      - "a queue that is empty, absent, or throws changes nothing about the turn"
+      - "a steer is a new message, so the model owes it a seed of its own"
   - path: tests/queue-rows.test.js
     cases:
       - "displayWidth() and truncateToWidth() count cells, not characters"

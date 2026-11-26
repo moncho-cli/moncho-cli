@@ -32,6 +32,7 @@ export function createTuiSurface({
   queue,
   queueRegion,
   pastes,
+  pasteIntake = null,
   compaction,
   statusRow,
   workRow = null,
@@ -298,6 +299,10 @@ export function createTuiSurface({
     get focusRepairs() {
       return focusGuard ? focusGuard.repairs : 0;
     },
+    // The paste catcher (app/paste-intake.js): it reads the program's raw `data` chunk, so
+    // a pasted block never reaches the box as keystrokes. Exposed so the host and the tests
+    // can see whether it is listening without reaching into the wiring module.
+    pasteIntake,
     // The transient notices near the top of the screen (app/notice-overlay.js).
     noticeBar,
     // The copy confirmation in the top-right corner (app/tui-toast.js): the bar itself,

@@ -48,6 +48,16 @@ export const KEYBOARD_OWNER_MODAL = 'modal';
 /** The holder label the host's one-event lock is taken under. */
 export const KEYBOARD_OWNER_EVENT = 'event';
 
+/**
+ * The holder label a **paste** is swallowed under (`app/paste-intake.js`).
+ *
+ * A pasted block arrives as one raw `data` chunk that the terminal also turns into a
+ * burst of keypresses, and the box must not receive them one by one (a `\n` is dropped
+ * by the widget, a `\r` submits halfway through the paste). The intake takes a lease for
+ * that one chunk, so blessed's own dispatch stands down for the keys it would have made.
+ */
+export const KEYBOARD_OWNER_PASTE = 'paste';
+
 /** Every live lease. */
 const leases = new Set();
 

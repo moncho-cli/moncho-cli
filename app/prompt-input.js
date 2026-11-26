@@ -141,15 +141,32 @@ export function createPromptInput({
   };
 
   /**
-   * The bytes one submission stands for: a long paste collapses into a tag for the
-   * box (the original bytes stay in the paste table) and expands back verbatim, so
-   * the model receives exactly what the user typed.
+   * The bytes one submission stands for: every paste token expands back to the bytes it
+   * stands for, so the model receives exactly what the user pasted while the box only
+   * ever showed a token.
    */
   const prepare = (value) => {
     const raw = typeof value === 'string' ? value : '';
-    const collapsed = pastes ? pastes.collapse(raw) : { text: raw, collapsed: false };
-    if (collapsed.collapsed) log(`[pasted ${raw.split('\n').length} lines -> ${collapsed.text}]`);
-    return pastes ? pastes.expand(collapsed.text) : collapsed.text;
+    return pastes ? pastes.expand(raw) : raw;
+  };
+
+  /**
+   * Take a pasted block into the box as a token (`app/paste-intake.js` handed it over).
+   *
+   * The bytes go into the paste table and the box receives the token, never the raw text:
+   * that is the whole fix for the newline bug, because the widget strips a `\n` from its
+   * own value and reads a `\r` as Enter. The table is then pruned against the box's text,
+   * so a token the user deletes drops its bytes with it.
+   *
+   * @returns {{text: string, collapsed: boolean, lines: number}|null} what happened
+   */
+  const acceptPaste = (text) => {
+    if (!pastes) return null;
+    const collapsed = pastes.collapse(String(text ?? ''));
+    if (!collapsed.collapsed) return null;
+    promptKeys.write(collapsed.text);
+    log(collapsed.text);
+    return { text: collapsed.text, collapsed: true, lines: collapsed.lines };
   };
 
   /**
@@ -192,6 +209,11 @@ export function createPromptInput({
     submit,
     settle,
     arm,
+    /**
+     * Take a pasted block into the box as a token (the paste intake calls this).
+     * Returns what was collapsed, or null when the chunk was not a paste.
+     */
+    acceptPaste,
     /**
      * Install the host's mid-turn command handler, once the host exists
      * (`app/busy-command.js`). Returns the hook it replaced, so a wiring bug is

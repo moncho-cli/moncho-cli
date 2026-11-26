@@ -1,4 +1,5 @@
 import { graphemes, displayWidth, clustersWithin, tailWithin, cutCodePoints } from './cell-width.js';
+import { PASTE_TOKEN_RE } from './paste-tags.js';
 
 /**
  * The **text** of the input box and where the caret sits in it.
@@ -17,6 +18,11 @@ import { graphemes, displayWidth, clustersWithin, tailWithin, cutCodePoints } fr
  * Pure — a string in, a string and one number out, no widget and no screen — so every
  * key's effect is unit tested without a terminal; `app/prompt-keys.js` is what binds
  * this to the box.
+ *
+ * A **paste token** (`[pasted 3 lines #0]`, `app/paste-tags.js`) is one unit too: the
+ * caret moves over it whole and a backspace/delete removes the whole token, so a pasted
+ * block behaves as the single thing it looks like rather than as nineteen characters the
+ * user would have to pick apart (`docs/interface/tui`).
  */
 
 /**
@@ -41,6 +47,39 @@ export function createPromptEditor({ value = '', caret = null } = {}) {
     return position;
   };
 
+  /**
+   * The paste tokens currently in the text, as cluster-index spans.
+   *
+   * Recomputed from the text on each use rather than cached: the tokens are a *reading* of
+   * the value, and a cache would have to be invalidated by every operation — the kind of
+   * bookkeeping that drifts. The box is one line, so the scan is cheap.
+   */
+  const tokenSpans = () => {
+    const text = clusters.join('');
+    const spans = [];
+    for (const match of text.matchAll(PASTE_TOKEN_RE)) {
+      const start = graphemes(text.slice(0, match.index)).length;
+      spans.push({ start, end: start + graphemes(match[0]).length, id: Number(match[2]) });
+    }
+    return spans;
+  };
+
+  /** The token whose last cluster sits at `index` (the caret just after it). */
+  const spanEndingAt = (index) => tokenSpans().find((span) => span.end === index) || null;
+
+  /** The token whose first cluster sits at `index` (the caret just before it). */
+  const spanStartingAt = (index) => tokenSpans().find((span) => span.start === index) || null;
+
+  /** The token the caret is strictly inside (never at either edge). */
+  const spanAround = (index) => tokenSpans().find((span) => span.start < index && index < span.end) || null;
+
+  /** Remove a whole token span and park the caret where it began. */
+  const cutSpan = (span) => {
+    clusters.splice(span.start, span.end - span.start);
+    position = span.start;
+    return true;
+  };
+
   return {
     /** Replace the whole text; `caret` defaults to the end ('' → 0). */
     setValue(text, nextCaret = null) {
@@ -58,31 +97,45 @@ export function createPromptEditor({ value = '', caret = null } = {}) {
       return this.value;
     },
 
-    /** Delete the cluster before the caret. Returns true when something went. */
+    /** Delete the cluster before the caret, or the whole paste token it ends. */
     backspace() {
       if (position === 0) return false;
+      const span = spanEndingAt(position) || spanAround(position - 1);
+      if (span) return cutSpan(span);
       clusters.splice(position - 1, 1);
       position -= 1;
       return true;
     },
 
-    /** Delete the cluster under the caret. Returns true when something went. */
+    /** Delete the cluster under the caret, or the whole paste token it starts. */
     deleteForward() {
       if (position >= clusters.length) return false;
+      const span = spanStartingAt(position) || spanAround(position);
+      if (span) return cutSpan(span);
       clusters.splice(position, 1);
       return true;
     },
 
-    /** One cluster to the left; false at the start of the text. */
+    /** One cluster to the left; a paste token is crossed whole. */
     left() {
       if (position === 0) return false;
+      const span = spanEndingAt(position) || spanAround(position);
+      if (span) {
+        position = span.start;
+        return true;
+      }
       position -= 1;
       return true;
     },
 
-    /** One cluster to the right; false at the end of the text. */
+    /** One cluster to the right; a paste token is crossed whole. */
     right() {
       if (position >= clusters.length) return false;
+      const span = spanStartingAt(position) || spanAround(position);
+      if (span) {
+        position = span.end;
+        return true;
+      }
       position += 1;
       return true;
     },
@@ -139,6 +192,10 @@ export function createPromptEditor({ value = '', caret = null } = {}) {
       return cutCodePoints(this.value, maxChars);
     },
 
+    /** The paste tokens in the text right now, as `{start, end, id}` cluster spans. */
+    tokens() {
+      return tokenSpans();
+    },
     /** The whole text, verbatim: what the model receives is exactly this. */
     get value() {
       return clusters.join('');

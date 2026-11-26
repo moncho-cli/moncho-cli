@@ -54,6 +54,9 @@ function interiorWidth(inputBox) {
  *   keystroke, so the popup can follow it (it decides whether it is open)
  * @param {Function} [options.onAccept] called with the text an accepted row stands for,
  *   which the wiring submits exactly as Enter on the line would
+ * @param {Function} [options.onChange] called with the box's text after **every** write
+ *   to it, keystroke or not, so a caller can follow what the box holds (the paste table
+ *   shrinks from this: a token removed from the box takes its bytes with it)
  */
 export function createPromptKeys({
   inputBox = null,
@@ -63,6 +66,7 @@ export function createPromptKeys({
   menu = null,
   onMenuChange = null,
   onAccept = null,
+  onChange = null,
 } = {}) {
   if (!inputBox) {
     // No widget (the line CLI, a pure unit test): every entry point is a harmless no-op.
@@ -75,6 +79,7 @@ export function createPromptKeys({
       sync: inert,
       record: inert,
       reset: inert,
+      write: inert,
       value: '',
       caret: 0,
       caretColumn: 0,
@@ -148,6 +153,9 @@ export function createPromptKeys({
     // Every change of the text reaches the popup through here, so the two can never
     // fall out of step: `publish()` is the one path a keystroke takes into the box.
     if (typeof onMenuChange === 'function') onMenuChange(text);
+    // And every write — keystroke or not — reaches a caller that follows the box's text
+    // (the paste table prunes itself from here: a deleted token drops its bytes).
+    if (typeof onChange === 'function') onChange(text);
     refresh();
     return true;
   };
@@ -237,6 +245,20 @@ export function createPromptKeys({
     publish,
     /** Adopt a write that came from outside, then publish (the box is the source). */
     sync,
+    /**
+     * Write `text` into the box at the caret, through the editor and out through
+     * `publish()`, so the caret, the window, the hint and the popup all learn about it
+     * exactly as they would from a keystroke. This is how a paste token lands in the box:
+     * the intake hands over the bytes, the caller collapses them to a token, and the token
+     * is written here — never appended to the widget's value directly, which would leave
+     * the editor holding different text than the box.
+     */
+    write(text) {
+      if (closed) return false;
+      editor.insert(text);
+      publish();
+      return true;
+    },
     /**
      * Tab while the popup is open: complete the highlighted command's name into the box
      * and leave the caret after the space it adds, so arguments can be typed next.

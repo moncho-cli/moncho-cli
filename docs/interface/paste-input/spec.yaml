@@ -1,0 +1,57 @@
+id: interface/paste-input
+domain: interface
+title: A pasted block as a token in the input box, with its bytes kept verbatim
+status: active
+summary: >
+  A terminal delivers a paste as a burst of ordinary keypresses, and the widget cannot
+  hold one: neo-blessed's textarea appends every printable byte to the end of its value
+  and `Textbox.setValue()` strips every `\n` (lib/widgets/textbox.js), while a `\r` is read
+  as Enter and submits the message on the paste's first line. So a pasted block is caught
+  where its bytes are still whole — the program's raw `data` chunk, which arrives before
+  the parser turns it into keys (app/paste-intake.js) — the keystrokes it would have become
+  are swallowed by a keyboard lease (app/keyboard-ownership.js#KEYBOARD_OWNER_PASTE), and
+  the box receives a token instead: `[pasted N lines #id]`. The bytes are kept verbatim in
+  a table (app/paste-registry.js), so submitting restores them **byte-for-byte** and the
+  model receives exactly what was pasted, line endings included. The token is one unit
+  under the caret: left/right cross it whole and backspace/delete remove it whole
+  (app/prompt-editor.js), and removing it shrinks the table, because the table is pruned
+  against the box's text (app/paste-registry.js#prune). Ids are monotonic and never reused,
+  so several pastes in one box stay tellable apart. A chunk that is not a paste — ordinary
+  typing, a lone Enter, an arrow key — is left completely alone: no lease, no lock, no
+  callback, so this is a paste catcher rather than a keystroke filter. A paste is taken only
+  while the box is really its destination — it is inside its read cycle and no modal holds
+  the keyboard — so a paste into a modal's own field stays the modal's.
+code:
+  - path: app/paste-tags.js
+    symbols: [PASTE_THRESHOLD, PASTE_TOKEN_RE, stripBracketedPaste, hasLineBreak, pasteLines, pasteLineCount, isPasteChunk, formatPasteToken, nextPasteId, collapsePaste, expandPastes, pasteTokenIds]
+  - path: app/paste-registry.js
+    symbols: [createPasteRegistry]
+  - path: app/paste-intake.js
+    symbols: [createPasteIntake, pasteBelongsToBox]
+  - path: app/prompt-editor.js
+    symbols: [createPromptEditor]
+  - path: app/prompt-keys.js
+    symbols: [createPromptKeys]
+  - path: app/prompt-input.js
+    symbols: [createPromptInput, normalizePrompt]
+  - path: app/tui-input-stack.js
+    symbols: [createInputStack]
+  - path: app/keyboard-ownership.js
+    symbols: [KEYBOARD_OWNER_PASTE, claimKeyboard, releaseKeyboardLater]
+tests:
+  - path: tests/paste-input.test.js
+    cases:
+      - "isPasteChunk() tells a paste from a keystroke: a break plus something besides it"
+      - "pasteLines() counts content lines and drops exactly one trailing break"
+      - "stripBracketedPaste() removes the transport wrapper, never content"
+      - "collapsePaste() gives a token and expandPastes() restores the bytes exactly"
+      - "collapsePaste() gives each paste its own id, and never reuses a freed one"
+      - "formatPasteToken() spells the count out, singular included"
+      - "createPasteRegistry() keeps the table, restores bytes, and shrinks with the box"
+      - "createPasteIntake() swallows the chunk it collapses, and leaves other chunks alone"
+      - "createPasteIntake() without a program or a callback is a harmless no-op"
+      - "a paste token is one unit under the caret, so it is crossed and deleted whole"
+      - "a multi-line paste lands as a token and the box keeps reading, on a real TUI"
+      - "a CRLF or CR-only paste never submits halfway through, on a real TUI"
+      - "a paste arrives mid-turn as a token too, and the queued text is the bytes"
+      - "the intake is silent when the box is not armed, and never eats ordinary keys"

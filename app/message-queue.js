@@ -71,11 +71,58 @@ export function joinQueued(messages = []) {
 }
 
 /**
+ * Take whatever is waiting out of the queue, as verbatim texts, oldest first.
+ *
+ * This is the **one drain rule**, and it has two callers because the queue has two
+ * injection points: the host loop between two turns (`nextPrompt()`) and the turn loop
+ * itself, which injects at the top of the per-call loop (`app/turn-runner.js#runTurn`,
+ * task-backlog item 48). Both must agree on *which* messages came out and in what
+ * order, so neither drains the queue itself.
+ *
+ * `drainAll` is preferred when the front end has it — the whole queue is one
+ * instruction (`joinQueued()` says how it becomes one prompt) — and `dequeue` is the
+ * single-message drain of a front end that has only that. A single message crosses
+ * both paths identically, so the choice is a capability, never a behaviour change.
+ *
+ * Pure and synchronous: an array out, `[]` when nothing is waiting. Empty answers
+ * (a front end with neither call, a `dequeue()` of `null`) are `[]` rather than a
+ * throw, because "nothing was queued" is the ordinary case, not a failure.
+ *
+ * @param {object} [options]
+ * @param {Function|null} [options.drainAll] the queue's batch drain
+ * @param {Function|null} [options.dequeue]  the queue's single-message drain
+ * @returns {Array<string|{text: string}>} the queued messages, oldest first
+ */
+export function takeQueued({ drainAll = null, dequeue = null } = {}) {
+  const asList = (value) => {
+    if (value == null) return [];
+    return Array.isArray(value) ? value : [value];
+  };
+  if (typeof drainAll === 'function') return asList(drainAll());
+  if (typeof dequeue === 'function') return asList(dequeue());
+  return [];
+}
+
+/**
+ * The prompt a drain is worth: `takeQueued()` joined by `joinQueued()`, or `''` when
+ * nothing was waiting.
+ *
+ * The empty string is the "nothing to inject" answer both injection points act on —
+ * the host loop falls through to the front end's own question, and the turn loop leaves
+ * the turn alone — so a drain and the decision it feeds are one call rather than two
+ * that could disagree.
+ */
+export function takeQueuedPrompt(options = {}) {
+  return joinQueued(takeQueued(options));
+}
+
+/**
  * The prompt of the next turn: **every** queued message when any is waiting,
- * otherwise the front end's own question. This is the *injection point* of
- * task.md — the host loop calls it between two turns and never inside a tool
- * chain, so an injected batch can never split an assistant `tool_calls` message
- * from its `tool` results.
+ * otherwise the front end's own question. This is the *between-turns* injection
+ * point (`app/session-loop.js`); the *mid-turn* one is `takeQueuedPrompt()` read by
+ * `app/turn-runner.js#runTurn` at the top of its per-call loop (task-backlog item 48),
+ * and both sit at a boundary where an injected message cannot split an assistant
+ * `tool_calls` message from its `tool` results.
  *
  * `drainAll` is preferred when the front end has it: it empties the queue and the
  * batch becomes one prompt through `joinQueued`. `dequeue` is the single-message
@@ -90,14 +137,10 @@ export function joinQueued(messages = []) {
  * @param {Function} options.ask             the front end's question()
  */
 export async function nextPrompt({ drainAll = null, dequeue = null, ask = null } = {}) {
-  if (typeof drainAll === 'function') {
-    const batch = drainAll();
-    const prompt = joinQueued(batch);
-    if (prompt !== '') return prompt;
-  } else if (typeof dequeue === 'function') {
-    const queued = dequeue();
-    if (queued != null) return queued;
-  }
+  // One drain rule, shared with the turn loop's mid-turn injection: `nextPrompt()`
+  // differs from it only in what it does with an empty answer.
+  const prompt = takeQueuedPrompt({ drainAll, dequeue });
+  if (prompt !== '') return prompt;
   return typeof ask === 'function' ? ask() : null;
 }
 

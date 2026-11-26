@@ -22,6 +22,7 @@ import { runSessionLoop, handleCommand } from './app/session-loop.js';
 import { createWorkDrive } from './app/work-drive.js';
 import { createDesignReview } from './app/design-review.js';
 import { createBusyCommandRunner } from './app/busy-command.js';
+import { takeQueuedPrompt } from './app/message-queue.js';
 import { registerSession, registerTrackingNotifier, registerCollapseNotifier, registerLogger } from './utils/host.js';
 import { createLogger, logEvent } from './utils/logger.js';
 import { createTrackingAnnouncer } from './app/tracking-block.js';
@@ -213,6 +214,16 @@ async function main() {
     onProse: tui ? (role, text) => tui.logProse(role, text) : null,
     // Recovered failures go to the overlay, never to the transcript.
     onNotice: (kind, text, options) => notify(kind, text, options),
+    // A message queued *while a turn is in flight* is injected mid-turn by the turn loop
+    // (app/turn-runner.js, task-backlog item 48) instead of waiting for the turn to end,
+    // so a user can steer the work as it runs. The drain rule is the queue's own
+    // (app/message-queue.js#takeQueuedPrompt), so the batch order and the verbatim text
+    // match the between-turns drain; the line CLI has no queue bar, so nothing is wired
+    // and the injection is a no-op there.
+    injectedPrompt: tui ? () => takeQueuedPrompt({
+      drainAll: typeof tui.drainAll === 'function' ? () => tui.drainAll() : null,
+      dequeue: typeof tui.dequeue === 'function' ? () => tui.dequeue() : null,
+    }) : null,
     // Half 2 of the mode policy: every call still passes the pre-dispatch gate
     // (app/tool-guard.js), so a call named from an older prompt is refused instead of
     // touching anything. The mode is read live, so a Tab mid-turn bites at once.

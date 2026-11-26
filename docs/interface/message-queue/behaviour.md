@@ -75,12 +75,27 @@ deletes nothing.
 
 ## inject
 
-The host loop drains the queue **between two turns** — "when possible" — through
-`nextPrompt()`: the queue is emptied and **every** waiting message becomes the next
-prompt, and only when the queue is empty is the front end's own question asked.
-Draining there, and never inside a tool chain, is what keeps an assistant
-`tool_calls` message together with its `tool` results: an injected batch can never
-split them.
+The queue has **two injection points**, and both drain through the same rule
+(`app/message-queue.js#takeQueuedPrompt`), so which messages come out and in what order
+is one decision rather than two:
+
+- **between two turns** — the host loop's `nextPrompt()` (`app/session-loop.js`): the
+  queue is emptied and **every** waiting message becomes the next prompt, and only when
+  the queue is empty is the front end's own question asked.
+- **mid-turn** — the turn loop, at the top of its per-call loop
+  (`app/turn-runner.js#runTurn`, task-backlog item 48): a message the user queued while
+  the turn was running is injected before the next model call, so it steers the work as
+  it runs instead of waiting for the turn to end. It is *new work asked for*, so the
+  approach rule is re-armed with it — the model owes the new message a seed of its own
+  (`docs/agent/approach-gate`).
+
+What both points share is the **boundary**, not merely a moment: neither ever drains
+inside a tool chain, so an injected batch can never split an assistant `tool_calls`
+message from its `tool` results. Mid-turn that is exactly why the injection sits at the
+top of the loop — the one place where the previous batch has been answered in full and
+the next request has not yet been built. With no queue wired (the line CLI), nothing
+queued, or a queue that throws, the turn proceeds untouched: a missing steer must never
+cost the user the turn.
 
 ### the whole queue is one prompt
 
@@ -98,10 +113,17 @@ so the ordinary single-message case is exactly what it was before batching exist
 `nextPrompt()` prefers `drainAll()` and falls back to a single `dequeue()` for a front
 end that has only that, so a queue of one crosses both paths identically.
 
+The rule that *takes* the messages off the queue is one function
+(`app/message-queue.js#takeQueued`, wrapped by `takeQueuedPrompt`), the preferred
+`drainAll()` over `dequeue()` included, because both injection points must agree on which
+messages came out: the host loop's `nextPrompt()` and the turn loop's mid-turn injection
+differ only in what they *do* with the prompt, never in how it is assembled.
+
 The drained text enters the conversation as the **ordinary user prompt** — the
 queue is a buffer in front of `question()`, not a chunk of its own — so
 `docs/interface/user-messages` and the context window see exactly what they would
-have seen had the user typed it a moment later.
+have seen had the user typed it a moment later. That holds at both injection points: a
+message drained between two turns and one injected mid-turn are the same chunk.
 
 ## The line CLI
 
@@ -111,13 +133,18 @@ is the only source of prompts. The difference is stated, not hidden.
 
 ## See also
 
-- Implementation: `app/message-queue.js` (the model, the click geometry and the
-  injection rule), `app/queue-rows.js` (how a message is drawn: the cell counting
-  and the width budget), `app/queue-bar.js` (the widget binding),
-  `app/prompt-input.js` (the armed-question / queueing box),
-  `app/tui-layout.js#setQueueHeight` (the region), `app/tui.js#createTui`, `main.js`
+- Implementation: `app/message-queue.js` (the model, the click geometry and the two
+  drain functions both injection points share), `app/queue-rows.js` (how a message is
+  drawn: the cell counting and the width budget), `app/queue-bar.js` (the widget
+  binding), `app/prompt-input.js` (the armed-question / queueing box),
+  `app/tui-layout.js#setQueueHeight` (the region), `app/tui.js#createTui`,
+  `app/session-loop.js#runSessionLoop` (the between-turns point),
+  `app/turn-runner.js#runTurn` (the mid-turn point),
+  `app/conversation-manager.js#takeInjectedPrompt` (the seam), `main.js` (the wiring)
 - Spec of the surrounding screen: `docs/interface/tui`
 - Spec of the prompt as the model receives it: `docs/interface/user-messages`
 - Spec of the loop that drains it: `docs/runtime/startup-wiring`
+- The rule the mid-turn injection re-arms: `docs/agent/approach-gate`
 - Proof: `tests/message-queue.test.js`, `tests/queue-rows.test.js`,
-  `tests/message-queue-tui.test.js`, `tests/tui.test.js`
+  `tests/message-queue-tui.test.js`, `tests/turn-runner-inject.test.js`,
+  `tests/tui.test.js`

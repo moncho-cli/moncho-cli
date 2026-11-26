@@ -66,33 +66,31 @@ test('assistant replies are rendered with markdown coloring', async () => {
   });
 });
 
-test('a long paste collapses to a paste tag and expands back byte-for-byte', async () => {
+test('a pasted block collapses to a token and expands back byte-for-byte', async () => {
   const original = 'line 1\nline 2\nline 3\nline 4\nline 5';
   const collapsed = collapsePaste(original);
-  assert.equal(collapsed.text, '[[paste:0]]');
-  assert.deepEqual(collapsed.pastes, [original]);
-  assert.equal(expandPastes(collapsed.text, collapsed.pastes), original);
+  assert.equal(collapsed.text, '[pasted 5 lines #0]');
+  assert.deepEqual(collapsed.entries, [{ id: 0, text: original }]);
+  assert.equal(expandPastes(collapsed.text, collapsed.entries), original);
 
-  const short = collapsePaste('a\nb');
-  assert.equal(short.text, 'a\nb');
-  assert.deepEqual(short.pastes, []);
+  // A chunk with no line break is not a paste: it is left exactly as it arrived.
+  const plain = collapsePaste('just one line');
+  assert.equal(plain.text, 'just one line');
+  assert.equal(plain.collapsed, false);
+  assert.deepEqual(plain.entries, []);
 
-  const crlf = 'a\r\nb\r\nc\r\nd\r\ne\r\n';
-  const crlfCollapsed = collapsePaste(crlf);
-  assert.equal(expandPastes(crlfCollapsed.text, crlfCollapsed.pastes), crlf);
-  assert.ok(expandPastes(crlfCollapsed.text, crlfCollapsed.pastes).endsWith('\r\n'));
+  // Every line-ending shape survives the round trip, CRLF included.
+  for (const sample of ['a\nb\nc', 'a\r\nb\r\nc\r\n', 'a\rb\rc\r', 'a\nb\n\n']) {
+    const round = collapsePaste(sample);
+    assert.equal(expandPastes(round.text, round.entries), sample, `round trip lost bytes for ${JSON.stringify(sample)}`);
+  }
 
-  assert.equal(expandPastes('[[paste:9]]', []), '[[paste:9]]');
+  // Bracketed-paste markers are transport, never content.
+  const bracketed = collapsePaste('\x1b[200~a\nb\x1b[201~');
+  assert.equal(bracketed.text, '[pasted 2 lines #0]');
+  assert.equal(expandPastes(bracketed.text, bracketed.entries), 'a\nb');
 
-  await withTui(async (tui) => {
-    const answered = tui.question('> ');
-    tui.inputBox.setValue(original);
-    tui.inputBox.emit('submit', original);
-    assert.equal(await answered, original);
-    assert.deepEqual(tui.pastes, [original]);
-    assert.equal(tui.expandPastes('[[paste:0]]'), original);
-    assert.match(visible(tui), /pasted 5 lines/);
-  });
+  assert.equal(expandPastes('[pasted 9 lines #42]', []), '[pasted 9 lines #42]', 'an unknown id is left as written');
 });
 
 test('the read_file result tag renders as a header, not raw text', async () => {

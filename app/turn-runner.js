@@ -20,6 +20,9 @@
  *   - `notifyNotice(k, t, o)`— any other transient notice
  *   - `beginModelCall()`     — count the call for the model-call pulse, and take the
  *                              prelude messages that ride the request
+ *   - `takeInjectedPrompt()` — the prompt a message queued *during this turn* is worth,
+ *                              read at the top of the loop so the injection can never
+ *                              split a tool batch (task-backlog item 48)
  *   - `callModel(messages, tools, signal, options)` — the provider call itself, so a
  *                              turn can be driven by a stub instead of the network
  *   - `resetPulse(reason)`   — the pulse starts again after a compaction
@@ -46,9 +49,52 @@ export function isAbortFailure(error) {
 }
 
 /**
+ * Inject a message the user queued **while this turn was in flight**, if one is waiting.
+ *
+ * The drain rule is the queue's own (`app/message-queue.js#takeQueuedPrompt`), so the
+ * batch order and the verbatim text are identical to the between-turns case; this
+ * helper only decides *where* the chunk lands. That place is the top of the per-call
+ * loop, which is what keeps a `user` chunk from arriving between an assistant
+ * `tool_calls` message and its `tool` results.
+ *
+ * The injected text is an ordinary user prompt in every respect — one `user` chunk, the
+ * same echo the turn's own prompt gets, the autosave event and the meter — so the
+ * session record and the transcript show exactly what a message typed a moment later
+ * would have produced. It is *new work asked for*, so the caller re-arms the approach
+ * gate: the model owes the new message a seed of its own (`docs/agent/approach-gate`).
+ *
+ * Defensive where it has to be: no queue wired (`takeInjectedPrompt` absent, as in every
+ * stub session), nothing queued, or a throwing queue all leave the turn exactly as it
+ * was — a missing steer must never cost the user the turn.
+ *
+ * @returns {boolean} true when a message really landed in the window
+ */
+function injectQueuedMessage(session, echo) {
+  if (typeof session.takeInjectedPrompt !== 'function') return false;
+  // Contained here rather than only in the manager: `runTurn()` is driven by any session
+  // that implements the seam, and a broken queue must never cost the user their turn.
+  let text = '';
+  try {
+    text = session.takeInjectedPrompt();
+  } catch {
+    return false;
+  }
+  if (!String(text ?? '').trim()) return false;
+  session.contextWindow.add({ role: 'user', content: text });
+  echo('user', text);
+  session.notifyChunksChanged?.('injected');
+  session.notifyContextChange();
+  return true;
+}
+
+/**
  * Run one turn: the window is checked before every call, the calls are counted for
  * the pulse, tool batches are executed until a tool-free assistant message arrives,
  * and a recovered failure is a notice while the one that ends the task keeps a line.
+ *
+ * A message the user queues **while the turn runs** is injected at the top of the loop
+ * (`injectQueuedMessage`), so it steers the work without waiting for the turn to end
+ * and without splitting an assistant `tool_calls` message from its results.
  *
  * @param {object} session the ConversationManager (see the module doc)
  * @param {string} userInput the turn's prompt
@@ -89,6 +135,18 @@ export async function runTurn(session, userInput) {
 
   while (true) {
     const signal = session.getAbortSignal();
+
+    // A message the user queued while this turn was in flight is injected **here**, at
+    // the top of the per-call loop: the one boundary where a `user` chunk can land
+    // without splitting an assistant `tool_calls` message from its `tool` results
+    // (task-backlog item 48). Injecting it re-arms the approach rule — a steer is a new
+    // thing asked for, so the model owes it a seed of its own — and nothing is injected
+    // when nothing was queued, so a session with no queue is unchanged.
+    if (injectQueuedMessage(session, echo)) {
+      addressed = false;
+      approachRefusals = 0;
+      skipAnnounced = false;
+    }
 
     // Never call the model with an over-budget window. A compaction rewrote the
     // window, so the pulse starts again from 0.

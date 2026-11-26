@@ -6,8 +6,8 @@ summary: >
   With a pty, createTui() builds a blessed screen (input box, queue bar, status
   bar, the working-time row above it, model row, scrollable transcript) and returns
   null without one so the line CLI is kept. Model text is sanitised and escaped
-  before rendering, long pastes collapse and expand byte-for-byte through a paste
-  table, the status bar carries the status or spinner on the left and the context
+   before rendering, long pastes collapse and expand byte-for-byte through a paste
+   table (docs/interface/paste-input), the status bar carries the status or spinner on the left and the context
   meter pinned to its right edge (always visible), the row above it carries the
   working-time counter right-aligned through the same composer
   (docs/context/working-time), compactions are announced in the transcript exactly
@@ -86,7 +86,7 @@ tests:
     cases:
       - "sanitize() and formatArg() behave as documented"
       - "assistant replies are rendered with markdown coloring"
-      - "a long paste collapses to a paste tag and expands back byte-for-byte"
+      - "a pasted block collapses to a token and expands back byte-for-byte"
       - "the read_file result tag renders as a header, not raw text"
       - "the grep and blob result tags render as headers, not raw text"
   - path: tests/tui-modules.test.js
