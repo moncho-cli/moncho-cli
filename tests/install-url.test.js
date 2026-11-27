@@ -17,7 +17,14 @@ const root = process.cwd();
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf-8');
 const installer = fs.readFileSync(path.join(root, 'scripts', 'install.sh'), 'utf-8');
 
-const INSTALL_URL = /raw\.githubusercontent\.com\/([^/\s]+\/[^/\s]+)\/([^/\s]+)\/scripts\/install\.sh/;
+/**
+ * Every install one-liner the README quotes: the agent's (`scripts/install.sh`) and the
+ * bench companion's (`bench/install.sh`). Both are the same promise of the same shape — a
+ * complete URL, from the repository the matching installer really downloads from — so the
+ * guard covers both. The bench line was added later, and a regex tied to `scripts/` alone
+ * would fail it for a reason that has nothing to do with a broken URL.
+ */
+const INSTALL_URL = /raw\.githubusercontent\.com\/([^/\s]+\/[^/\s]+)\/([^/\s]+)\/(scripts|bench)\/install\.sh/;
 
 test('the README quotes a complete install URL, with no placeholder left in it', () => {
   const lines = readme.split('\n').filter((line) => line.includes('raw.githubusercontent.com'));
@@ -32,12 +39,17 @@ test('the install URL names the repository the installer really downloads from',
   const defaultRepo = installer.match(/REPO="\$\{MONCHO_REPO:-([^}]+)\}"/)?.[1];
   assert.ok(defaultRepo, 'scripts/install.sh must declare a default repository');
 
-  const quoted = readme.match(INSTALL_URL)?.[1];
-  assert.equal(
-    quoted,
-    defaultRepo,
-    'the README install URL and the installer default must name the same repository'
-  );
+  // The two installers are the same shape and default to the same repository, so a README
+  // line naming either one must name that repository — never a fork's or a stale slug.
+  const benchInstaller = fs.readFileSync(path.join(root, 'bench', 'install.sh'), 'utf-8');
+  const benchRepo = benchInstaller.match(/REPO="\$\{MONCHO_REPO:-([^}]+)\}"/)?.[1];
+  assert.equal(benchRepo, defaultRepo, 'the two installers must default to the same repository');
+
+  const quoted = [...readme.matchAll(new RegExp(INSTALL_URL, 'g'))].map((match) => match[1]);
+  assert.ok(quoted.length >= 2, 'README.md must quote both install one-liners');
+  for (const repo of quoted) {
+    assert.equal(repo, defaultRepo, `a README install URL names the wrong repository: ${repo}`);
+  }
 });
 
 test('the installer header and its help text name the same repository', () => {

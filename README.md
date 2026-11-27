@@ -59,6 +59,32 @@ knobs (`CONTEXT_MAX_LENGTH`, `PULSE_LIMIT`, `LOG_LEVEL`) sit beside them. A gene
 is deliberately ignored, so a project's own credentials never become the agent's provider.
 The full table is in [USAGE.md](USAGE.md#configuration).
 
+## Measuring the agent
+
+A **bench** measures the agent on a public benchmark, and it is a **separate program with
+its own install** — it is not part of `moncho-cli`, because a bench measures the agent and
+must not travel inside it. So `moncho-cli bench …` reaches a companion, `moncho-bench`, and
+until that companion is installed the CLI tells you exactly that:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/moncho-cli/moncho-cli/main/bench/install.sh | bash
+```
+
+That stages the framework under `~/.config/moncho-bench` and links `moncho-bench` onto your
+`PATH`. A bench then lives in a directory of its own, and `moncho-cli bench` is only one of
+two spellings — `moncho-bench` works the same way, and `MONCHO_BENCH_HOME=. bash
+bench/bench.sh` runs this checkout with nothing staged:
+
+```bash
+cd ~/benches && moncho-cli bench init --kind swe --name swe-lite
+cd swe-lite && $EDITOR .env.bench      # the provider, the model and the key for THIS bench
+moncho-cli bench build && moncho-cli bench select && moncho-cli bench run && moncho-cli bench grade
+```
+
+A bench drives containers, so it needs Docker, network access and more host tooling than
+the agent does; [bench/README.md](bench/README.md) states the full list and what each stage
+is for.
+
 ## Uninstall
 
 `moncho-cli` can remove itself — no download, no clone:
@@ -102,6 +128,7 @@ for the contract and [demos/README.md](demos/README.md) for a run-through.
 | [LIABILITY.md](LIABILITY.md) | The warranty and responsibility position |
 | [docs/README.md](docs/README.md) | The behavioural contract: one spec per capability |
 | [tests/README.md](tests/README.md) | The proof: one suite per capability |
+| [bench/README.md](bench/README.md) | The bench framework: measuring the agent on SWE-bench Lite, and the host it needs |
 
 ## What it costs
 

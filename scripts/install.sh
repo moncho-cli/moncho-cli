@@ -221,6 +221,16 @@ next_steps() {
   log "  * asks for the project type and writes a Monchofile from a starter"
   log "then bakes moncho-agent:$REF if it is missing, builds the project image,"
   log "and starts the agent. Nothing else needs preparing first."
+  log ""
+  # The one thing this installer does *not* bring, because a bench measures the agent and
+  # must not travel inside it. A reader who only ever sees this output would otherwise meet
+  # the companion seam's refusal ("no companion 'moncho-bench' was found on PATH") and
+  # reasonably read it as a bug. scripts/ is not part of the payload, so naming it here
+  # costs the container nothing (docs/agent/host-fence).
+  log "To *measure* the agent on a benchmark, install the bench companion separately:"
+  log "  curl -fsSL https://raw.githubusercontent.com/$REPO/$REF/bench/install.sh | bash"
+  log "It stages 'moncho-bench' and links it onto PATH; 'moncho-cli bench' then reaches it."
+  log "It is deliberately not part of the agent's own install (bench/README.md)."
 }
 
 uninstall() {
