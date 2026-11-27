@@ -233,8 +233,14 @@ swe_run_instance() {
   row="$(grep -m1 -F "\"instance_id\":\"$id\"" "$(swe_instances_file)" || true)"
   [ -n "$row" ] || { SWE_TRIAL_REASON="no dataset row for $id"; return 1; }
 
-  swe_write_prompts "$trial_dir" "$row"
-  swe_write_nudge "$trial_dir"
+  # Both prompt files go *inside* the workspace, because `/testbed` *is* the workspace and
+  # that is where the container reads them from. Written to `$trial_dir` — one level up and
+  # outside the mount — the agent would be handed a path that does not exist: it would run
+  # with no prompt and leave an empty diff on every instance, a bench that silently measures
+  # nothing. `swe_write_excludes` keeping `/.bench/` out of the patch is only meaningful once
+  # the directory is really in there.
+  swe_write_prompts "$ws" "$row"
+  swe_write_nudge "$ws"
   swe_write_agents_md "$ws" "$row" "$image"
   swe_write_excludes "$ws"
 

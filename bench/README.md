@@ -20,16 +20,19 @@ looks like a broken bench, and the two are fixed in completely different places.
 
 | Needed | By | Without it |
 | ------ | -- | ---------- |
-| `docker` **and a reachable daemon** | `build`, `select`, `run`, `grade`, `shell` | nothing runs: every stage is a container |
-| `curl` or `wget` | `build` (payload, runtime), `select` (the dataset) | the payload and the subset cannot be fetched |
+| `docker` **and a reachable daemon** | `build`, `run`, `grade`, `shell` | the containerised stages cannot run |
+| `curl` | `build` (payload, runtime), `select` (the dataset) | the payload and the subset cannot be fetched |
 | `tar` | `build` (unpacking both archives) | the fetched tarballs cannot be opened |
-| `git` | `run` (seeding a checkout, diffing the workspace) | no patch can be produced |
+| `git` | `run` (diffing the workspace on the host) | no patch can be produced |
+| `node` | `select` (drawing the sample), unless `build` fetched the pinned one | the subset cannot be drawn |
 | network access to the dataset viewer and to the release archive | `build`, `select` | no instances, no agent |
-| `python3` with the `swebench` package | `grade` | patches are produced and never scored |
 
-Everything except `grade` is the framework's own business and is checked by the framework
-before it starts work. `grade` is the one stage that depends on a *third-party* toolchain,
-and it says so when the harness is missing rather than reporting zero resolved.
+Everything above is the framework's own business and is checked before the stage that needs
+it starts work. `select` deliberately needs no docker: it draws the sample on the host, and
+only the rollouts are containerised. `grade` is the one stage whose *verdict* is not the
+framework's — it runs the official `swebench` harness inside a container
+(`python:3.11-slim`) and reads the report that harness writes, rather than reimplementing
+the evaluation.
 
 Nothing here is needed to **read** a bench — `status`, `explain` and `report` are host-side
 and answer from `plan.json` and the run store. A machine with no docker can still describe a
@@ -77,8 +80,9 @@ result that is not true.
 2. **One variable at a time.** A comparison changes exactly one knob. `moncho-cli bench compare`
    refuses a pair whose *controlled* variables differ — subset, model, agent ref, turns,
    grader — so a confounded difference can never be read as a finding.
-3. **Resolved, not re-derived.** One `resolve_plan()` feeds `run`, `explain` and the
-   manifest, so no document can describe a run other than the one performed.
+3. **Resolved, not re-derived.** One resolver — `apply_bench_defaults`
+   (`bench/lib/common.sh`), the single place every default lives — feeds `run`, `explain`
+   and the manifest, so no document can describe a run other than the one performed.
 4. **Recorded by source.** Every knob is captured as
    `{configured, default, effective, source}`, the shape
    `utils/context-size.js#resolveContextSize` already uses. This distinguishes "we left it
@@ -95,23 +99,32 @@ one variable needs the paired structure the metrics section describes.
 ```
 bench/
   Benchfile            the configuration: committed, no secrets
-  .env.bench           the credentials: gitignored, sourced as shell
-  .gitignore           ignores .env.bench, results/, node/, payload/
+  .env.bench           the credentials: gitignored, mode 600, sourced as shell
+  .gitignore           ignores .gitignore, .env.bench, results/, node/, payload/, *.partial
   plan.json            frozen at `select`, never rewritten
+  predictions/<run-id>.jsonl   the patches `grade` reads
   results/
     index.jsonl        append-only ledger, one line per run
     <run-id>/
-      manifest.json    identity: resolved plan, image digests, git revs
+      manifest.json    identity: plan + snapshot hashes, payload digest, framework rev
       config-snapshot.json   the knobs with their sources
-      trials.jsonl     one record per instance attempt
+      trials.jsonl     one record per instance, appended as it lands
       report.json      aggregates, machine-readable
       report.md        the writeup, human-readable
-      instances/<id>/attempt-N/
-        prompt.md      the exact prompt, as given
-        stdout.log     what the agent printed
-        context.json   the session record, copied out of the sandbox
+      grading/         the grader's log and the report source it wrote
+      instances/<id>/
+        workspace/     the checkout the agent worked in
+          .bench/      issue.md, prompt.md, nudge.md — what the agent was given
+          AGENTS.md    how to run the tests here (the project-rules channel)
+        cycle-N.log    what the agent printed that cycle
+        cycles.tsv     one line per cycle: number, seconds, status
         diff.patch     the model patch, extracted on the host
+        context.json   the session record, copied out of the sandbox
 ```
+
+`.bench/` and `AGENTS.md` are written inside the workspace because that is the only way the
+agent can reach them; `.git/info/exclude` keeps them, and the agent's own state, out of the
+diff — so the patch holds the agent's work and nothing the harness added.
 
 `results/index.jsonl` is what makes iteration cheap: comparing two runs reads two lines,
 not two trees. `BENCH_RESULTS_DIR` relocates the whole ledger, so a sweep can be
@@ -140,7 +153,7 @@ STRATIFY="repo"                  # how the sample is drawn from the subset
 SAMPLE="40"                      # how many instances
 
 # Grading and repeats.
-RUNS="1"                         # attempts per instance (pass@k)
+RUNS="1"                         # recorded, and must match for `compare`; repeats are not run yet
 GRADE_WORKERS="8"
 ```
 
@@ -187,9 +200,13 @@ moncho-cli bench versions             list the installed framework revisions
 Each cycle is **one `--exec` process**:
 
 ```
-cycle 1        node main.js --exec .bench/prompt.md            # a fresh session
-cycle 2..N     MONCHO_CONTINUE=1 node main.js --exec .bench/nudge.md
+cycle 1        /opt/node/bin/node /opt/moncho-cli/main.js --exec /testbed/.bench/prompt.md
+cycle 2..N     MONCHO_CONTINUE=1 /opt/node/bin/node /opt/moncho-cli/main.js --exec /testbed/.bench/nudge.md
 ```
+
+The prompt file is given by its path *inside* the container: the workspace is mounted at
+`/testbed`, so the harness writes `.bench/` at the checkout root and names it there. The
+agent's runtime and the payload are mounted read-only at `/opt/node` and `/opt/moncho-cli`.
 
 `MONCHO_CONTINUE=1` is the environment variable `main.js` reads; the runner's `--continue`
 flag only sets it, and a bench invokes `main.js` directly. The bench supplies the
@@ -201,8 +218,8 @@ moving:
 
 - the **workspace diff** (`git -C ws diff`), which needs no cooperation from the agent at
   all: if the model edited a file, this moves;
-- the **checklist ticks**, counted with
-  `utils/tracking-format.js#entriesOf`, which filters the seeded placeholder.
+- the **checklist ticks**, counted from the newest `task.md` with the same rule as
+  `utils/tracking-format.js#entriesOf`: the seeded placeholder is not an item.
 
 `task.md` is **telemetry, never the stopping rule**. The benchmark's truth is
 `FAIL_TO_PASS`; a run that fixes the bug in one turn and never authors a checklist is a
@@ -224,7 +241,7 @@ official harness. Everything else is recorded because it explains a score:
 | `pass@1` | resolved / attempted, with the sample size and a Wilson interval: 27 of 40 is not the claim that 270 of 400 is |
 | `no_patch` | ended with an empty diff — the opposite fix from a wrong patch, so never merged with it |
 | `stalled` | the guard fired with no diff and no tick |
-| `tokens` | by class, per instance, read from the session's own usage block (`utils/session-format.js#sessionUsage`) so it survives a run that dies |
+| `tokens` | by class, per instance, read from the copied-out session record (`utils/session-format.js#sessionUsage` reads the same usage block) so it survives a run that dies |
 | `wall_clock` | per instance, including the cycles that produced nothing |
 | `turns_used` | against the budget, which is how you learn whether more turns help |
 
