@@ -116,13 +116,18 @@ export function selectionText({ rows = [], anchor = null, focus = null } = {}) {
  * The rows the mouse named, tag- and colour-stripped, so what is copied is what the
  * reader saw.
  *
- * `widget._clines` is neo-blessed's **real** line table: one entry per line of content,
- * before wrapping. That is deliberately *not* `_clines.fake`, which holds the rows
- * blessed wrapped on screen. A mouse point names a line of content (`delta.y` is mapped
- * to `row` through the scroll base, with no wrapping involved), so indexing the real
- * table is what keeps the copy aligned with the pointer; reading `fake` here put the
- * copied text one line below the one under the cursor whenever a row was wide enough to
- * wrap.
+ * `widget._clines` is neo-blessed's **wrapped** line table: one entry per row the widget
+ * put on screen, a long line broken across as many entries as it needed. That is the unit
+ * a mouse point names — `delta.y` is mapped to a `row` through the scroll base, and the
+ * rows blessed wrapped are what sits under the pointer — so indexing this table is what
+ * keeps the copy aligned with the cursor. (`_clines.fake` is the other table, the logical
+ * lines *before* wrapping; reading it here put the copied text one line below the one under
+ * the cursor whenever a row was wide enough to wrap, which is why it is not used.)
+ *
+ * The wording matters because the two names invite the opposite reading: blessed fills
+ * `out` — the array returned as `_clines` — with the wrapped rows, and hangs the unwrapped
+ * lines off it as `fake` (`element.js#_wrapContent`; its own accessors agree,
+ * `getScreenLines()` returning `_clines` and `getLines()` returning `_clines.fake`).
  *
  * A widget that has not rendered yet has no table: the answer is an empty list, never a
  * crash, because a mouse event can arrive before the first paint.

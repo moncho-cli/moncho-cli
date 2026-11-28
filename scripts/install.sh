@@ -168,8 +168,21 @@ install_payload() {
   fi
 
   mkdir -p "$(dirname "$INSTALL_DIR")"
+  # The sibling version trees are kept: `versions/<ref>` holds the builds older sessions are
+  # pinned to, and a bare `rm -rf $INSTALL_DIR` took them with it — the opposite of what the
+  # pin is for (`docs/runtime/session-version`). They are stashed across the swap and restored,
+  # so replacing the root tree cannot delete another version's history.
+  local kept=""
+  if [ -d "$INSTALL_DIR/versions" ]; then
+    kept="$(mktemp -d)"
+    mv "$INSTALL_DIR/versions" "$kept/versions"
+  fi
   rm -rf "$INSTALL_DIR"
   mv "$staged" "$INSTALL_DIR"
+  if [ -n "$kept" ]; then
+    mv "$kept/versions" "$INSTALL_DIR/versions"
+    rmdir "$kept" 2>/dev/null || true
+  fi
   chmod 0755 "$INSTALL_DIR/bin/moncho-cli"
   chmod 0755 "$INSTALL_DIR/bin/lib"/*.sh
   trap - EXIT
@@ -194,11 +207,39 @@ install_versioned() {
   log "Run it with --version $ref (the newest version is the default)"
 }
 
+# Every ref this installation carries, newest first: the root tree when it holds a staged
+# version, plus one ref per directory under `versions/`.
+#
+# The root tree is in the list because it is a real installed version, not just a mount
+# point: the first install stages it there. The runner sorts the same two sources the same
+# way (`bin/lib/common.sh#moncho_versions`), and the two must agree — the link below and the
+# version a plain `moncho-cli` runs are the same question.
+installed_refs() {
+  {
+    if [ -f "$INSTALL_DIR/VERSION" ]; then cat "$INSTALL_DIR/VERSION"; fi
+    if [ -d "$INSTALL_DIR/versions" ]; then ls -1 "$INSTALL_DIR/versions" 2>/dev/null || true; fi
+  } | sort -Vr
+}
+
 link_binary() {
   [ -n "$BIN_DIR" ] || return 0
   mkdir -p "$BIN_DIR"
-  ln -sf "$INSTALL_DIR/bin/moncho-cli" "$BIN_DIR/moncho-cli"
-  log "Linked $BIN_DIR/moncho-cli"
+
+  # Point the entry at the NEWEST installed tree rather than at the root. The first version
+  # lives at the root and every later one under versions/<ref>, so a link pinned to the root
+  # kept running the *first* version after a newer one was installed — the user re-ran the
+  # installer and `moncho-cli` was still the old code. The root is used only when it really is
+  # the newest (a first install), or when no versions/ tree carries the runner.
+  local newest target
+  newest="$(installed_refs | head -n 1)"
+  [ -n "$newest" ] || die "no installed version to link"
+
+  target="$INSTALL_DIR/versions/$newest/bin/moncho-cli"
+  [ -f "$target" ] || target="$INSTALL_DIR/bin/moncho-cli"
+  [ -f "$target" ] || die "no runner for $newest under $INSTALL_DIR"
+
+  ln -sf "$target" "$BIN_DIR/moncho-cli"
+  log "Linked $BIN_DIR/moncho-cli -> $target"
 
   case ":$PATH:" in
     *":$BIN_DIR:"*) ;;

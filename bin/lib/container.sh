@@ -74,10 +74,17 @@ build_run_args() {
   # ("mkdirat /opt/moncho-cli/node_modules: read-only file system") before the agent
   # runs. Node walks up from /opt/moncho-cli and finds /opt/node_modules, so an
   # anonymous volume there gives the image's copy priority with no nested mount point.
-  # Conditional on the payload existing, because docker creates a *directory* at a
-  # mount point that does not exist.
-  if [ -n "${MONCHO_HOME:-}" ] && [ -f "$MONCHO_HOME/main.js" ]; then
-    RUN_ARGS+=(-v "$MONCHO_HOME:/opt/moncho-cli:ro")
+  #
+  # The **resolved version's** tree, not the install root: the mount is what actually shadows
+  # the baked code, so mounting the root would run the first-installed version's files even
+  # when `--version` named a newer one (`resolve_workspace` sets PAYLOAD_DIR per run). Every
+  # reference to `MONCHO_HOME` here stays guarded (`:-`): this library is sourced by suites
+  # that never source `common.sh`, under `set -u`.
+  # Conditional on the payload existing, because docker creates a *directory* at a mount
+  # point that does not exist.
+  local payload="${PAYLOAD_DIR:-${MONCHO_HOME:-}}"
+  if [ -n "$payload" ] && [ -f "$payload/main.js" ]; then
+    RUN_ARGS+=(-v "$payload:/opt/moncho-cli:ro")
     RUN_ARGS+=(-v /opt/node_modules)
   fi
 
@@ -301,7 +308,10 @@ show_status() {
   fi
   log "mount         $MOUNT_MODE"
   log "env file      ${ENV_FILE:-(none: $WORKSPACE/.env.moncho is absent)}"
-  log "installed at  $MONCHO_HOME"
+  log "installed at  ${MONCHO_HOME:-}"
+  # Which tree this run actually uses. With one version the two name the same path; with
+  # several, this is the line that says which code is running.
+  [ "${PAYLOAD_DIR:-${MONCHO_HOME:-}}" = "${MONCHO_HOME:-}" ] || log "running       $PAYLOAD_DIR"
 }
 
 # `--sync-files`: copy /app back into the checkout. Deletions only propagate with

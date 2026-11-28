@@ -221,6 +221,119 @@ test(
 );
 
 /**
+ * Replacing the root tree — what a re-run with the *same* ref does — must not take the sibling
+ * versions with it. Each `versions/<ref>` is where an older session's build lives, and the root
+ * swap is a `rm -rf` of `$MONCHO_HOME`: without stashing them across it, upgrading in place
+ * deleted exactly the trees the version pin exists to keep (`docs/runtime/session-version`).
+ */
+test(
+  'replacing the root tree keeps the sibling versions a session may be pinned to',
+  { skip: CAN_INSTALL_HERMETICALLY ? false : 'bash, git and tar are required to stage an archive' },
+  () => {
+    const OTHER = 'v0.19.0';
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-install-'));
+    const first = hermeticInstall({ work });
+    assert.equal(first.result.status, 0, `the first install must succeed:\n${first.result.stderr}`);
+    // A second version lands under versions/, and a marker file proves the tree survives the
+    // root swap as a *whole* tree rather than just its directory name.
+    hermeticInstall({ work, ref: OTHER });
+    const versioned = path.join(first.installDir, 'versions', OTHER);
+    assert.ok(fs.existsSync(path.join(versioned, 'VERSION')), 'the sibling version is installed');
+    fs.writeFileSync(path.join(versioned, 'MARKER'), 'kept\n');
+
+    // The same ref again: `installed == REF`, so this is the root-replacement path.
+    const again = hermeticInstall({ work });
+    assert.equal(again.result.status, 0, `the same-ref re-run must succeed:\n${again.result.stderr}`);
+
+    assert.equal(fs.readFileSync(path.join(first.installDir, 'VERSION'), 'utf-8').trim(), REF, 'the root tree is the ref that was installed');
+    assert.ok(fs.existsSync(path.join(versioned, 'VERSION')), 'the sibling version is still there');
+    assert.equal(fs.readFileSync(path.join(versioned, 'MARKER'), 'utf-8').trim(), 'kept', 'and it is the same tree, not a fresh empty one');
+    assert.ok(fs.existsSync(path.join(first.installDir, 'bin/lib/common.sh')), 'the root tree was really replaced, not skipped');
+  }
+);
+
+/**
+ * What the installed runner decides for a run there: the version, and the payload tree its
+ * code is baked and mounted from. Sourcing the real library is deliberate — it is the same
+ * `resolve_workspace()` the launcher calls, so this reads the decision rather than restating
+ * its arithmetic.
+ */
+function runnerDecision(installDir, { version = '' } = {}) {
+  const script = [
+    'set -euo pipefail',
+    `source ${JSON.stringify(path.join(installDir, 'bin/lib/common.sh'))}`,
+    version ? `VERSION_ARG=${JSON.stringify(version)}` : ':',
+    'resolve_workspace >/dev/null 2>&1 || true',
+    'printf "RUN_VERSION=%s\\n" "$RUN_VERSION"',
+    'printf "LATEST_VERSION=%s\\n" "$LATEST_VERSION"',
+    'printf "PAYLOAD_DIR=%s\\n" "$PAYLOAD_DIR"',
+  ].join('\n');
+  const result = run('bash', ['-c', script], { env: { ...process.env, MONCHO_HOME: installDir } });
+  assert.equal(result.status, 0, `the runner library must resolve:\n${result.stderr}`);
+  return Object.fromEntries(result.stdout.split('\n').filter(Boolean).map((line) => line.split('=')));
+}
+
+/**
+ * The question a user actually asks after re-running the installer: "did I get the new one?"
+ *
+ * It is two questions, and the first is not enough on its own. The re-run stages a different
+ * ref into `versions/<ref>` (the older tree stays, because a session is pinned to the version
+ * that wrote it), so the runner could *say* the new version while building and mounting the
+ * old tree's files — and the bin entry could keep pointing at the old tree. All three have to
+ * move together, or `moncho-cli` reads as upgraded and runs the old code.
+ */
+test(
+  're-running the installer serves the new version: the tree built and mounted, and the link',
+  { skip: CAN_INSTALL_HERMETICALLY ? false : 'bash, git and tar are required to stage an archive' },
+  () => {
+    const OTHER = 'v0.22.0';
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'moncho-install-'));
+    const first = hermeticInstall({ work, link: true });
+    assert.equal(first.result.status, 0, `the first install must succeed:\n${first.result.stderr}`);
+
+    // The re-run with a newer ref. `link: true` is the shape a real install has, because the
+    // entry on PATH is the thing that has to follow the newest tree.
+    const second = hermeticInstall({ work, ref: OTHER, link: true });
+    assert.equal(second.result.status, 0, `the re-run must succeed:\n${second.result.stderr}`);
+
+    // The new version is a tree of its own and the first is untouched.
+    const newTree = path.join(first.installDir, 'versions', OTHER);
+    assert.ok(fs.existsSync(path.join(newTree, 'main.js')), 'the new version has a payload of its own');
+    assert.equal(fs.readFileSync(path.join(first.installDir, 'VERSION'), 'utf-8').trim(), REF);
+
+    // 1. The runner resolves the new version *and* points its payload at the new tree. A
+    //    version name alone proved nothing before this: the tree was always the root.
+    const decided = runnerDecision(first.installDir);
+    assert.equal(decided.LATEST_VERSION, OTHER, 'a plain run picks the newest installed version');
+    assert.equal(decided.RUN_VERSION, OTHER);
+    assert.equal(decided.PAYLOAD_DIR, newTree, 'and its code comes from that version\'s own tree');
+
+    // 2. `--version` still selects the older tree, so a pinned run builds and mounts the code
+    //    that version actually is.
+    const pinned = runnerDecision(first.installDir, { version: REF });
+    assert.equal(pinned.RUN_VERSION, REF, '--version selects the version it names');
+    assert.equal(pinned.PAYLOAD_DIR, first.installDir, 'and the root tree that version lives in');
+
+    // 3. The entry on PATH follows the newest tree, so it is the new code that was linked.
+    assert.ok(fs.lstatSync(first.linkPath).isSymbolicLink(), 'the entry is still a symlink');
+    assert.equal(
+      fs.readlinkSync(first.linkPath),
+      path.join(newTree, 'bin/moncho-cli'),
+      'the link points at the new version\'s runner, not the first tree\'s'
+    );
+
+    // 4. And the tree it points at really runs: `status` sources every library and writes
+    //    nothing, so reaching it proves the linked runner is whole.
+    const status = run(first.linkPath, ['status'], {
+      cwd: work,
+      env: { ...process.env, MONCHO_HOME: first.installDir },
+    });
+    assert.equal(status.status, 0, `the linked runner must run:\n${status.stderr}`);
+    assert.match(status.stdout, new RegExp(OTHER), 'the linked runner reports the new version');
+  }
+);
+
+/**
  * The one shape every real install has and the staged-tree cases deliberately skip: the
  * runner is reached through `~/.local/bin/moncho-cli`, a symlink to the tree in
  * `MONCHO_HOME`. Deriving the library directory from `BASH_SOURCE[0]` there points at

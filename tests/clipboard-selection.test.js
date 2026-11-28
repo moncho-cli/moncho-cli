@@ -9,6 +9,7 @@ import {
   isBefore,
   createTextSelection,
 } from '../app/transcript-select.js';
+import { drawnRows } from '../app/transcript-geometry.js';
 
 /**
  * The selection *model* (docs/interface/clipboard-selection): a drag is two points, and the
@@ -194,4 +195,29 @@ test('cancel() drops a gesture without copying, and clears the band', () => {
   assert.equal(selection.anchor, null);
   assert.equal(copies.length, 0);
   assert.ok(harness.repaints > before, 'the band left the screen');
+});
+
+test('contentPoint() clamps into the rows that are drawn, not the rows that exist', () => {
+  // The clamp is `drawnRows()`, and it used to be `childBase + _clines.length - 1` — the scroll
+  // *base* added to a *content* length, two different spaces. On a scrolled pane that names a row
+  // far past the last one that exists (a measured 130 against 79), so a drag released below the
+  // pane copied every row in between: text the reader never pointed at and never saw.
+  const widget = {
+    lpos: { xi: 0, yi: 1, xl: 80, yl: 18 },
+    ileft: 2,
+    itop: 1,
+    childBase: 50,
+    height: 17,
+    iheight: 2, // 15 content rows on screen, so the last drawn is 50 + 15 - 1 = 64
+    _clines: Array.from({ length: 80 }, (_, i) => `row ${i}`),
+  };
+  assert.equal(drawnRows(widget), 64, 'the last row really painted');
+  assert.deepEqual(pointAt(widget, { x: 2, y: 2 }), { row: 50, cell: 0 }, 'the first drawn row');
+  // Below the pane: the last row on screen, not the last row that exists and not row 130.
+  assert.deepEqual(pointAt(widget, { x: 2, y: 40 }), { row: 64, cell: 0 }, 'clamped to the pane bottom');
+  // Above the pane a drag reaches for history, so it stops at the first row on screen rather than
+  // running to row 0 — the same mistake in the other direction.
+  assert.deepEqual(pointAt(widget, { x: 2, y: 0 }), { row: 50, cell: 0 }, 'clamped to the pane top');
+  // No layout: no opinion, and the row is bounded only by zero.
+  assert.equal(drawnRows({}), null, 'a widget with no lines has no opinion');
 });

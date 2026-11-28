@@ -82,7 +82,18 @@ export function drawnRows(widget) {
   const lines = widget?._clines;
   if (!Array.isArray(lines) || lines.length === 0) return null;
   const base = scrollBase(widget);
-  return base + lines.length - 1;
+  // The **last row the widget actually painted**, which is the viewport's bottom clamped to
+  // the content: `base + visibleHeight - 1` is where the pane ends, and `lines.length - 1` is
+  // the last row that exists at all.
+  //
+  // Deliberately NOT `base + lines.length - 1`, which is what this was: that adds the scroll
+  // *base* to a *content* length, mixing two coordinate spaces, so on a scrolled pane it named
+  // a row far below the last one that exists (measured: 130 against 79). A drag released below
+  // the pane clamps to this value, so the copy ran on through every row in between — text the
+  // reader never pointed at and never saw.
+  const visible = visibleHeight(widget);
+  const last = visible > 0 ? base + visible - 1 : lines.length - 1;
+  return Math.min(Math.max(0, last), lines.length - 1);
 }
 
 /**
@@ -136,9 +147,16 @@ export function contentPoint(widget, data) {
   if (!Number.isFinite(row) || !Number.isFinite(cell)) return null;
 
   const lastRow = drawnRows(widget);
-  const clampedRow = lastRow === null
+  // A point past the pane clamps into what is **drawn**, and that is true at the top as
+  // well as the bottom: a drag released above the pane reaches for more history, so it stops
+  // at the first row on screen (`scrollBase`) rather than running to row 0 — the top of the
+  // whole conversation, which is the same mistake in the other direction. With no layout the
+  // bounds are unknown and no row is clamped away beyond `>= 0`.
+  const firstRow = scrollBase(widget);
+  const ceiling = lastRow === null ? null : Math.max(firstRow, lastRow);
+  const clampedRow = ceiling === null
     ? Math.max(0, Math.trunc(row))
-    : Math.min(Math.max(0, Math.trunc(row)), lastRow);
+    : Math.min(Math.max(firstRow, Math.trunc(row)), ceiling);
   const widest = drawnWidth(widget);
   const clampedCell = widest === null
     ? Math.max(0, Math.trunc(cell))

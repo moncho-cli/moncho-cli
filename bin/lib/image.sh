@@ -6,7 +6,13 @@
 # root, because api/ollama.js reads config/prompt.md and app/brand.js imports package.json
 # *relative to it* — so the layout has to survive the copy.
 build_base_image() {
-  local context="$MONCHO_HOME"
+  # The context is the *resolved version's* tree (`resolve_workspace` sets PAYLOAD_DIR from
+  # `moncho_payload_dir`), not the install root: once a second version is installed the root
+  # still holds the first one, and building from it would bake the old code under the new
+  # tag — the version the image claims and the code inside it would disagree. Defaulted for a
+  # caller that resolves no workspace (`MONCHO_HOME=. bin/moncho-cli build --base` in a
+  # checkout).
+  local context="${PAYLOAD_DIR:-${MONCHO_HOME:-}}"
   [ -f "$context/main.js" ] || die "no agent payload in $context (run the installer, or set MONCHO_HOME)"
   [ -f "$context/Dockerfile.agent" ] || die "no Dockerfile.agent in $context"
   log "Building $BASE_IMAGE from $context"

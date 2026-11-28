@@ -58,7 +58,10 @@ agent_checkout_notice() {
 
 TEMPLATE_KINDS="node python go minimal"
 
-template_dir() { printf '%s/templates' "$MONCHO_HOME"; }
+# The starters travel with the payload, so they follow the *resolved* version like the code
+# does (`resolve_workspace` sets PAYLOAD_DIR): a new version's new template must not be
+# invisible because the root tree happens to hold the older one.
+template_dir() { printf '%s/templates' "${PAYLOAD_DIR:-${MONCHO_HOME:-}}"; }
 
 # What the project looks like, by the markers each ecosystem leaves in a repository
 # root. The answer preselects the menu and nothing else: detection never writes a file

@@ -87,6 +87,7 @@ tests:
       - "a drag that moves copies on whichever edge finishes it first"
       - "a second press extends the gesture instead of restarting it"
       - "cancel() drops a gesture without copying, and clears the band"
+      - "contentPoint() clamps into the rows that are drawn, not the rows that exist"
   - path: tests/clipboard-highlight.test.js
     cases:
       - "highlightCells() marks exactly the selected cells through the line's own tags"
@@ -97,6 +98,7 @@ tests:
       - "a release saves the selection and a plain click still toggles a block"
       - "a drag saves the line it started on, not the one below it"
       - "the copy is confirmed in the top-right toast and never enters the conversation"
+      - "a drag released below the pane copies exactly the rows on screen"
   - path: tests/clipboard-mouse-wire.test.js
     cases:
       - "a drag as a terminal sends it saves what was dragged over, exactly once"

@@ -121,3 +121,48 @@ test('the copy is confirmed in the top-right toast and never enters the conversa
     assert.ok(tui.toastBar.widget.top >= 0 && tui.toastBar.widget.top < 3, 'near the top');
   });
 }, { columns: 100, rows: 24 });
+
+test('a drag released below the pane copies exactly the rows on screen', async () => {
+  await withTui(async (tui, { clipboardDir }) => {
+    for (let i = 1; i <= 80; i += 1) tui.log(`LINE-${String(i).padStart(3, '0')} content`);
+    await flush();
+
+    const transcript = tui.transcript;
+    // Scrolled up, which is the state a reader reaches for older text in, and what the bug
+    // needed: the clamp for a release past the pane used to be `childBase + _clines.length - 1`,
+    // the scroll base added to a content length, so it named a row far below the last one drawn
+    // and the copy ran on through every row in between.
+    tui.scrollPage(-1);
+    await flush();
+
+    const x0 = transcript.lpos.xi + transcript.ileft;
+    const contentY = transcript.lpos.yi + transcript.itop;
+    // The rows the pane can draw: the content's first row down to the widget's last, less its border.
+    const visibleRows = transcript.lpos.yl - 2 - contentY + 1;
+
+    const mouse = (action, x, y) => tui.screen.program.emit('mouse', { x, y, action });
+    mouse('mousedown', x0, contentY);
+    mouse('mouseup', x0 + 4, transcript.lpos.yl + 8); // released well below the pane
+    await flush();
+
+    const saved = clipboardFiles(clipboardDir);
+    assert.equal(saved.length, 1, 'the drag saved one file');
+
+    // Compare against the transcript's own rows rather than the composited screen: the copy
+    // confirmation is a toast painted over the top row, so the grid reads that where the text is.
+    const rowText = (line) => String(line ?? '').replace(/\x1b\[[\d;]*m/g, '').replace(/\s+$/, '');
+    const base = transcript.childBase || 0;
+    const expected = transcript._clines.slice(base, base + visibleRows).map(rowText);
+    assert.equal(expected.length, visibleRows, 'the pane really shows that many rows');
+
+    const rows = saved[0].text.split('\n');
+    assert.equal(rows.length, visibleRows, 'the copy covers every row the pane drew and no more');
+    assert.deepEqual(rows.slice(0, -1), expected.slice(0, -1), 'every full row is copied whole');
+    // The release landed partway along the last row, so that row comes back as a prefix of it —
+    // and it is the pane's last row, never one below it.
+    assert.ok(
+      expected[visibleRows - 1].startsWith(rows[rows.length - 1]),
+      'the copy stops on the last drawn row',
+    );
+  }, { columns: 80, rows: 24 });
+});

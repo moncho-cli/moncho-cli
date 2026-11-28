@@ -34,6 +34,12 @@ onto your `PATH`. It needs `curl`, `tar` and a working Docker daemon — and no 
 on the host, because the agent runs in a container. Pin a release with
 `MONCHO_REF=v0.1.1`; install elsewhere with `MONCHO_HOME=/opt/moncho`.
 
+**To upgrade, run the same command again.** A later `--ref` is installed *beside* the
+version you have (a session is pinned to the build that wrote it, so the older tree is kept
+and stays reachable with `moncho-cli --version`), and the new one becomes the default: the
+`moncho-cli` on your `PATH`, the code baked into `moncho-agent:` and the payload mounted in
+the container all follow it. Re-running with the same ref replaces that tree in place.
+
 Then, in any project directory:
 
 ```bash

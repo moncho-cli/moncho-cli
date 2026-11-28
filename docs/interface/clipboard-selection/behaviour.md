@@ -221,15 +221,25 @@ drawn rows are the ones the reader pointed at. Releasing over the status bar the
 copies the passage the drag started in, to its end, rather than reaching for content that
 was never on screen.
 
+The drawn range is concrete: the first row on screen is `childBase`, and the last is
+`childBase` plus the rows the pane can hold, less one — **clamped to the last row that
+exists**. Both edges matter. A release below the pane must stop at the pane's last row and
+not at `childBase + _clines.length - 1`, which adds the scroll *base* to a *content* length
+and so names a row far below the last one drawn (a measured 130 against 79) — the copy then
+ran on through every row in between, text the reader never saw. A release above the pane
+must stop at `childBase` for the same reason in the other direction: the rows above it are
+history, not something the pointer reached.
+
 ## What is selected
 
 A selection is two points, each a **line** and a **cell**:
 
-- a **row** is an index into the lines of content — the same unit `childBase` is expressed
-  in, so scrolling needs no correction of its own. The lines are read from blessed's own
-  real table (`widget._clines`), which is deliberately *not* the wrapped rows: a mouse
-  point names a line of content, and indexing the wrapped rows instead put the copied
-  text one line below the one under the cursor whenever a row was wide enough to wrap;
+- a **row** is an index into the **wrapped rows** the widget put on screen — the same unit
+  `childBase` is expressed in, so scrolling needs no correction of its own. The rows are read
+  from blessed's own wrapped table (`widget._clines`, one entry per row drawn); the logical
+  lines *before* wrapping are the other table it hangs off the same array
+  (`_clines.fake`), and indexing *those* put the copied text one line below the pointer
+  whenever a row was wide enough to wrap;
 - a **cell** is a terminal cell measured from the content's left edge, which is `ileft`
   columns in from the widget's own edge — the border plus the padding.
 
